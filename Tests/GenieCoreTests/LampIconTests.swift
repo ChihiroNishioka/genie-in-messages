@@ -80,6 +80,27 @@ final class LampIconTests: XCTestCase {
         XCTAssertEqual(sizes["ic10"], 1024)
     }
 
+    /// 取っ手・フタ・雲の範囲が、角丸の内側に余裕を持って入る。
+    func testLampArtworkFitsInsideTheRoundedRect() throws {
+        let root = repoRoot()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [root.appendingPathComponent("scripts/make-app-icon.py").path, "--check-fit"]
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        process.waitUntilExit()
+        let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let err = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTAssertEqual(process.terminationStatus, 0, err + text)
+        let line = text.split(separator: "\n").first { $0.hasPrefix("clearance_px=") }
+        let value = Double(line?.dropFirst("clearance_px=".count) ?? "")
+        XCTAssertGreaterThan(value ?? 0, 0.5, text)
+        XCTAssertTrue(text.contains("content="), text)
+    }
+
     func testWriteIconArtifacts() throws {
         let dir = URL(fileURLWithPath: "/opt/cursor/artifacts")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }
