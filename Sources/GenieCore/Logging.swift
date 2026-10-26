@@ -38,17 +38,35 @@ package enum LogRedaction {
         "timeout", "timed", "out", "unable", "to", "open", "no", "such", "file", "or",
         "directory", "operation", "interrupted", "disk", "access", "full", "database",
         "imsg", "watch", "chat.db",
+        "permitted", "is", "busy", "readonly", "sqlite", "fatal", "invalid", "killed", "terminated",
     ]
 
     /// 標準エラーは最後の空でない行だけ。許可した語以外は単語ごと `[x]`。
+    /// 連続する `[x]` は1つにまとめる。120文字を超えるときは単語の境界で切る。
     package static func tail(_ text: String, maxChars: Int = 120) -> String {
         let lines = text.split(whereSeparator: \.isNewline).filter {
             !$0.trimmingCharacters(in: .whitespaces).isEmpty
         }
         guard let last = lines.last else { return "" }
-        let collapsed = last.split(whereSeparator: \.isWhitespace).map { redactWord(String($0)) }.joined(separator: " ")
-        if collapsed.count <= maxChars { return collapsed }
-        return String(collapsed.suffix(maxChars))
+        var words: [String] = []
+        for word in last.split(whereSeparator: \.isWhitespace) {
+            let redacted = redactWord(String(word))
+            if redacted == "[x]", words.last == "[x]" { continue }
+            words.append(redacted)
+        }
+        return capped(words.joined(separator: " "), maxChars: maxChars)
+    }
+
+    /// 末尾から最大文字数。途中で切れた先頭の語は落とす。全体が1語ならそのまま残す。
+    private static func capped(_ text: String, maxChars: Int) -> String {
+        guard maxChars > 0, text.count > maxChars else { return text }
+        let start = text.index(text.endIndex, offsetBy: -maxChars)
+        let midWord = start > text.startIndex && text[text.index(before: start)] != " "
+        var suffix = String(text[start...])
+        if midWord, let space = suffix.firstIndex(of: " ") {
+            suffix = String(suffix[suffix.index(after: space)...])
+        }
+        return suffix
     }
 
     static func redactWord(_ word: String) -> String {
@@ -60,7 +78,8 @@ package enum LogRedaction {
     private static func normalized(_ word: String) -> String {
         let scalars = word.lowercased().unicodeScalars
         let trimmed = scalars.drop(while: { !isToken($0) }).reversed().drop(while: { !isToken($0) }).reversed()
-        return String(String.UnicodeScalarView(trimmed))
+        let stripped = trimmed.drop(while: { $0 == "." }).reversed().drop(while: { $0 == "." }).reversed()
+        return String(String.UnicodeScalarView(stripped))
     }
 
     private static func isToken(_ scalar: Unicode.Scalar) -> Bool {

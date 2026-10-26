@@ -37,7 +37,7 @@ final class GenieController: @unchecked Sendable {
         stateLock.lock()
         stopped = true
         stateLock.unlock()
-        box.stopForUser()
+        box.stopForUserAndWait()
         supervisor?.cancel()
         poller?.cancel()
     }
@@ -72,6 +72,7 @@ final class GenieController: @unchecked Sendable {
                     continue
                 }
                 box.resetStop()
+                if self.isStopped { continue }
                 if await engine.isPaused() { continue }
                 let cursor = await engine.snapshot().cursorRowID
                 let loaded = (try? config.load()) ?? .productDefaults
@@ -90,7 +91,8 @@ final class GenieController: @unchecked Sendable {
                         return WatchSession.shouldStopApplying(result) ? .stop : .next
                     }
                 }
-                let userStop = box.wasUserStop()
+                let pausedNow = await engine.isPaused()
+                let userStop = box.wasUserStop() || pausedNow
                 let quitting = self.isStopped
                 await engine.noteWatchEnded(outcome, updateMenu: !userStop && !quitting)
                 if userStop || quitting { continue }

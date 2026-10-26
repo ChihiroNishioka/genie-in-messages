@@ -72,5 +72,25 @@ final class AllowlistOrderingTests: XCTestCase {
         XCTAssertEqual(harness.allow.guids[21], "guid-21")
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.enabledChatIDs, [21])
+        XCTAssertFalse(harness.log.records.contains { $0.code == "allowlist_guid_unknown" })
+    }
+
+    func testEnablingWithoutAKnownGuidIsLogged() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        await engine.toggleChat(id: 21, guid: "")
+        let unknown = harness.log.records.filter { $0.code == "allowlist_guid_unknown" }
+        XCTAssertEqual(unknown.count, 1)
+        XCTAssertEqual(unknown.first?.chatID, 21)
+        XCTAssertEqual(unknown.first?.level, LogLevel.warning.rawValue)
+        XCTAssertEqual(harness.allow.guids[21], "")
+
+        await engine.reconcileChats([
+            ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
+        ])
+        await engine.toggleChat(id: 21, guid: "")
+        await engine.toggleChat(id: 21, guid: "")
+        XCTAssertEqual(harness.allow.guids[21], "guid-21")
+        XCTAssertEqual(harness.log.records.filter { $0.code == "allowlist_guid_unknown" }.count, 1)
     }
 }

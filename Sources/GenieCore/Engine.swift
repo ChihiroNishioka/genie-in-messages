@@ -111,6 +111,9 @@ package actor GenieEngine {
         } else {
             resolved = guid
         }
+        if enabled && resolved.isEmpty {
+            log.record(level: .warning, code: "allowlist_guid_unknown", chatID: id, guid: nil, rowid: nil)
+        }
         setChatEnabled(id, guid: resolved, enabled: enabled)
     }
 

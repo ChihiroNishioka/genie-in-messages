@@ -112,25 +112,47 @@ package final class ProcessBox: @unchecked Sendable {
     private var process: Process?
     private var stopRequested = false
     private var userStop = false
+    /// 終了で立てる。`resetStop` では消さない。
+    private var sealed = false
 
     package init() {}
 
     package func begin(_ process: Process) {
         lock.lock()
-        self.process = process
         let stop = stopRequested
+        let wait = sealed
+        if !stop {
+            self.process = process
+        }
         lock.unlock()
         if stop {
-            stopProcess(process)
+            if wait {
+                Self.finish(process, timeout: 0.5)
+            } else {
+                stopProcess(process)
+            }
         }
     }
 
-    /// 一時停止か終了。あとから再開しても、勝手に落ちたことにはしない。
+    /// 一時停止。あとから再開しても、勝手に落ちたことにはしない。呼び出し側は待たない。
     package func stopForUser() {
         lock.lock()
         userStop = true
         lock.unlock()
         terminate()
+    }
+
+    /// アプリ終了。SIGTERM のあと、残っていれば SIGKILL を送り、子が止まるまで待つ。
+    /// このあと `resetStop` されても、新しい子は起動しない。
+    package func stopForUserAndWait(timeout: TimeInterval = 0.5) {
+        lock.lock()
+        userStop = true
+        stopRequested = true
+        sealed = true
+        let process = self.process
+        lock.unlock()
+        guard let process else { return }
+        Self.finish(process, timeout: timeout)
     }
 
     package func terminate() {
@@ -144,15 +166,24 @@ package final class ProcessBox: @unchecked Sendable {
 
     /// SIGTERM のあと、別スレッドで残っていれば SIGKILL。呼び出し側は待たない。
     private func stopProcess(_ process: Process) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            Self.finish(process, timeout: 0.5)
+        }
+    }
+
+    /// 呼び出し側のスレッドで SIGTERM を送り、期限までに残っていれば SIGKILL して止まるまで待つ。
+    private static func finish(_ process: Process, timeout: TimeInterval) {
         process.terminate()
         let pid = process.processIdentifier
-        DispatchQueue.global(qos: .userInitiated).async {
-            let deadline = Date().addingTimeInterval(0.5)
-            while process.isRunning && Date() < deadline {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            kill(pid, SIGKILL)
+            let killed = Date().addingTimeInterval(1)
+            while process.isRunning && Date() < killed {
                 Thread.sleep(forTimeInterval: 0.02)
-            }
-            if process.isRunning {
-                kill(pid, SIGKILL)
             }
         }
     }
@@ -171,8 +202,10 @@ package final class ProcessBox: @unchecked Sendable {
 
     package func resetStop() {
         lock.lock()
-        stopRequested = false
-        userStop = false
+        if !sealed {
+            stopRequested = false
+            userStop = false
+        }
         process = nil
         lock.unlock()
     }

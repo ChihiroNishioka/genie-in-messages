@@ -127,7 +127,7 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 9)
         XCTAssertEqual(result.reason, WatchEndReason.processExited)
         XCTAssertGreaterThanOrEqual(result.lines, 1)
-        XCTAssertEqual(result.stderrTail, "error [x] [x] [x] [x] [x] [x] [x]")
+        XCTAssertEqual(result.stderrTail, "error [x]")
         for leaked in ["alice", "example", "hidden", "keep-me-out", "earlier", "hello", "there", "bob", "Bearer", "abcDEF", "Authorization", "text", "sender"] {
             XCTAssertFalse(result.stderrTail.contains(leaked), leaked)
         }
@@ -155,23 +155,42 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertFalse(english.contains("hello"))
         XCTAssertFalse(english.contains("there"))
         XCTAssertFalse(english.contains("tomorrow"))
-        XCTAssertEqual(english, "[x] [x] [x] [x] [x]")
+        XCTAssertEqual(english, "[x]")
 
         let json = LogRedaction.tail("{\"text\":\"hello there\",\"sender\":\"bob\"}")
         XCTAssertFalse(json.contains("hello"))
         XCTAssertFalse(json.contains("bob"))
         XCTAssertFalse(json.contains("text"))
         XCTAssertFalse(json.contains("{"))
+        XCTAssertEqual(json, "[x]")
 
         let bearer = LogRedaction.tail("Authorization: Bearer abcDEFghiJKL")
         XCTAssertFalse(bearer.contains("Bearer"))
         XCTAssertFalse(bearer.contains("abcDEF"))
         XCTAssertFalse(bearer.contains("Authorization"))
-        XCTAssertEqual(bearer, "[x] [x] [x]")
+        XCTAssertEqual(bearer, "[x]")
 
         let diagnostic = LogRedaction.tail("Error: permission denied for chat.db")
         XCTAssertEqual(diagnostic, "error permission denied [x] chat.db")
         XCTAssertEqual(LogRedaction.tail("failed timeout\n   \n"), "failed timeout")
+        XCTAssertEqual(LogRedaction.tail("denied."), "denied")
+        XCTAssertEqual(LogRedaction.tail("Unable to open database file."), "unable to open database file")
+        XCTAssertEqual(LogRedaction.tail("Operation not permitted"), "operation not permitted")
+        XCTAssertEqual(LogRedaction.tail("database is locked"), "database is locked")
+        XCTAssertEqual(LogRedaction.tail("database is busy"), "database is busy")
+        XCTAssertEqual(LogRedaction.tail("attempt to write a readonly database"), "[x] to [x] readonly database")
+        XCTAssertEqual(LogRedaction.tail("fatal: sqlite invalid killed terminated"), "fatal sqlite invalid killed terminated")
+        XCTAssertEqual(LogRedaction.tail("--error--"), "[x]")
+        XCTAssertEqual(LogRedaction.tail("not/found"), "[x]")
+        XCTAssertEqual(LogRedaction.tail("chat.db"), "chat.db")
+        XCTAssertEqual(LogRedaction.tail("no such file or directory"), "no such file or directory")
+
+        let repeated = Array(repeating: "interrupted", count: 20).joined(separator: " ")
+        let capped = LogRedaction.tail(repeated, maxChars: 121)
+        XCTAssertTrue(capped.hasPrefix("interrupted"))
+        XCTAssertLessThanOrEqual(capped.count, 121)
+        XCTAssertFalse(capped.hasPrefix("rupted"))
+        XCTAssertEqual(LogRedaction.tail("interrupted", maxChars: 4), "pted")
     }
 
     func testSignalExitIsNotShownAsAStatusCode() {
@@ -227,24 +246,10 @@ final class WatchProcessTests: XCTestCase {
     }
 
     func testUserStopReturnsWithoutWaitingAndStaysMarked() throws {
-        let script = try writeScript("""
-        #!/usr/bin/env python3
-        import os, signal, threading, time
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        def die():
-            time.sleep(2)
-            os._exit(0)
-        threading.Thread(target=die, daemon=True).start()
-        time.sleep(30)
-        """)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: script)
-        process.standardOutput = Pipe()
-        process.standardError = Pipe()
-        process.standardInput = Pipe()
-        try process.run()
+        let process = try launchIgnoringTerm()
         let box = ProcessBox()
         box.begin(process)
+        try waitForReady(process)
         let started = Date()
         box.stopForUser()
         XCTAssertLessThan(Date().timeIntervalSince(started), 0.2)
@@ -255,8 +260,72 @@ final class WatchProcessTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.02)
         }
         XCTAssertFalse(process.isRunning)
+        assertKilled(process)
         box.resetStop()
         XCTAssertFalse(box.wasUserStop())
+    }
+
+    func testShutdownStopKillsAChildThatIgnoresSigterm() throws {
+        let process = try launchIgnoringTerm()
+        let box = ProcessBox()
+        box.begin(process)
+        try waitForReady(process)
+        let started = Date()
+        box.stopForUserAndWait()
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+        XCTAssertFalse(process.isRunning)
+        XCTAssertTrue(box.wasUserStop())
+        XCTAssertTrue(box.wasStopRequested())
+        assertKilled(process)
+        box.resetStop()
+        XCTAssertTrue(box.wasUserStop())
+        XCTAssertTrue(box.wasStopRequested())
+    }
+
+    /// SIGTERM を無視し、準備ができてから `ready` を出す。自分では 10 秒後まで終わらない。
+    private func launchIgnoringTerm() throws -> Process {
+        let script = try writeScript("""
+        #!/usr/bin/env python3
+        import os, signal, sys, time
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        sys.stdout.write("ready\\n")
+        sys.stdout.flush()
+        time.sleep(10)
+        os._exit(0)
+        """)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: script)
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        process.standardInput = Pipe()
+        try process.run()
+        return process
+    }
+
+    private func waitForReady(_ process: Process) throws {
+        let pipe = try XCTUnwrap(process.standardOutput as? Pipe)
+        let handle = pipe.fileHandleForReading
+        let deadline = Date().addingTimeInterval(2)
+        var buffer = Data()
+        while Date() < deadline {
+            let chunk = handle.availableData
+            if !chunk.isEmpty {
+                buffer.append(chunk)
+                if String(decoding: buffer, as: UTF8.self).contains("ready") { return }
+            } else {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+        XCTFail("ready が来なかった: \(String(decoding: buffer, as: UTF8.self))")
+    }
+
+    private func assertKilled(_ process: Process) {
+        #if canImport(Darwin)
+        XCTAssertEqual(process.terminationReason, .uncaughtSignal)
+        XCTAssertEqual(process.terminationStatus, 9)
+        #else
+        _ = process
+        #endif
     }
 
     private func writeScript(_ body: String) throws -> String {
