@@ -37,6 +37,7 @@ rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${BIN_DIR}/GenieMenuBar" "${APP}/Contents/MacOS/GenieMenuBar"
 cp "${ROOT}/AppBundle/Info.plist" "${APP}/Contents/Info.plist"
+cp "${ROOT}/AppBundle/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 chmod 755 "${APP}/Contents/MacOS/GenieMenuBar"
 
 codesign --force --options runtime --timestamp=none \

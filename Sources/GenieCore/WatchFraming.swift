@@ -45,6 +45,21 @@ package struct WatchSplitter {
         }
         return events
     }
+
+    /// 改行で終わらなかった末尾も1行として返す。
+    package mutating func finish() -> [WatchChunk] {
+        if discarding {
+            let rowID = finder.rowID
+            finder = RowIDFinder()
+            discarding = false
+            return [.tooLarge(rowID: rowID)]
+        }
+        guard !buffer.isEmpty else { return [] }
+        let line = String(data: buffer, encoding: .utf8)
+        buffer.removeAll(keepingCapacity: false)
+        if let line { return [.line(line)] }
+        return []
+    }
 }
 
 /// `"id"` の整数を、数字の次が数字以外になるまで確定しない。本文は持たない。

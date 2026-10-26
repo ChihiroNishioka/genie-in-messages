@@ -7,7 +7,13 @@ package enum LogLevel: String, Codable {
 }
 
 package protocol GenieLog: Sendable {
-    func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?)
+    func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?, detail: String?)
+}
+
+extension GenieLog {
+    package func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?) {
+        record(level: level, code: code, chatID: chatID, guid: guid, rowid: rowid, detail: nil)
+    }
 }
 
 struct LogRecord: Codable, Equatable {
@@ -17,10 +23,54 @@ struct LogRecord: Codable, Equatable {
     var chatID: Int64?
     var guid: String?
     var rowid: Int64?
+    var detail: String?
 
     enum CodingKeys: String, CodingKey {
-        case ts, level, code, guid, rowid
+        case ts, level, code, guid, rowid, detail
         case chatID = "chat_id"
+    }
+}
+
+package enum LogRedaction {
+    /// 電話番号と、4桁以上の数字の並びを残さない。短い id はそのまま。
+    package static func redact(_ text: String) -> String {
+        var out = ""
+        var digits = ""
+        var plus = false
+        func flush() {
+            if plus || digits.count >= 4 {
+                if plus || !digits.isEmpty { out += "[n]" }
+            } else {
+                if plus { out += "+" }
+                out += digits
+            }
+            digits = ""
+            plus = false
+        }
+        for character in text {
+            if character == "+" && digits.isEmpty && !plus {
+                plus = true
+                continue
+            }
+            if character.isNumber {
+                digits.append(character)
+                continue
+            }
+            flush()
+            if character.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) {
+                out.append(" ")
+            } else {
+                out.append(character)
+            }
+        }
+        flush()
+        return out
+    }
+
+    package static func tail(_ text: String, maxChars: Int = 180) -> String {
+        let collapsed = redact(text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if collapsed.count <= maxChars { return collapsed }
+        return String(collapsed.suffix(maxChars))
     }
 }
 
@@ -38,14 +88,15 @@ package final class FileGenieLog: GenieLog, @unchecked Sendable {
         self.clock = clock
     }
 
-    package func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?) {
+    package func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?, detail: String?) {
         let record = LogRecord(
             ts: ISO8601.string(from: clock.now()),
             level: level.rawValue,
             code: code,
             chatID: chatID,
             guid: guid,
-            rowid: rowid
+            rowid: rowid,
+            detail: detail
         )
         guard let line = try? StateCoding.encoder().encode(record) else { return }
         var data = line
@@ -102,14 +153,15 @@ final class MemoryLog: GenieLog, @unchecked Sendable {
     private let lock = NSLock()
     private(set) var records: [LogRecord] = []
 
-    func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?) {
+    func record(level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?, detail: String?) {
         let record = LogRecord(
             ts: "",
             level: level.rawValue,
             code: code,
             chatID: chatID,
             guid: guid,
-            rowid: rowid
+            rowid: rowid,
+            detail: detail
         )
         lock.lock()
         records.append(record)
