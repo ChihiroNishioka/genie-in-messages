@@ -120,7 +120,7 @@ package final class ProcessBox: @unchecked Sendable {
         let stop = stopRequested
         lock.unlock()
         if stop {
-            process.terminate()
+            stopProcess(process)
         }
     }
 
@@ -129,7 +129,20 @@ package final class ProcessBox: @unchecked Sendable {
         stopRequested = true
         let process = self.process
         lock.unlock()
-        process?.terminate()
+        guard let process else { return }
+        stopProcess(process)
+    }
+
+    /// SIGTERM のあと残っていれば SIGKILL。
+    private func stopProcess(_ process: Process) {
+        process.terminate()
+        let deadline = Date().addingTimeInterval(0.5)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
     }
 
     package func wasStopRequested() -> Bool {
@@ -166,8 +179,9 @@ package struct WatchRunResult: Equatable, Sendable {
     package var stderrTail: String
 
     package func logDetail(rowid: Int64) -> String {
+        let exitText = signal == nil ? String(exitCode) : "-"
         let signalText = signal.map(String.init) ?? "-"
-        return "exit=\(exitCode) signal=\(signalText) reason=\(reason) lines=\(lines) max_line=\(maxLineBytes) rowid=\(rowid) stderr=\(stderrTail)"
+        return "exit=\(exitText) signal=\(signalText) reason=\(reason) lines=\(lines) max_line=\(maxLineBytes) rowid=\(rowid) stderr=\(stderrTail)"
     }
 }
 
@@ -201,7 +215,7 @@ package enum WatchProcess {
     }
 
     /// 標準出力と標準エラーを別スレッドで読み切る。標準入力の書き込み側は、
-    /// 子が終わるまで閉じない。imsg 0.19.1 は自分の出力が 256 行たまると終了する。
+    /// 子が終わるまで閉じない。imsg が 256 行で終了する、というのは仮説で、実機では未確認。
     private static func blocking(
         box: ProcessBox,
         executable: String,
@@ -294,7 +308,7 @@ package enum WatchProcess {
         #if canImport(Darwin)
         if process.terminationReason == .uncaughtSignal {
             signal = process.terminationStatus
-            exitCode = process.terminationStatus
+            exitCode = -1
         }
         #endif
         let reason = box.wasStopRequested() ? WatchEndReason.stoppedByApp : WatchEndReason.processExited

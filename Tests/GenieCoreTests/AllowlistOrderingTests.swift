@@ -36,5 +36,27 @@ final class AllowlistOrderingTests: XCTestCase {
             query: "fam"
         )
         XCTAssertEqual(named.map(\.id), [8])
+
+        let outside = AllowlistOrdering.rows(chats: chats, enabledIDs: [21, 250], query: "")
+        XCTAssertEqual(outside.first?.id, 250)
+        XCTAssertEqual(outside.first?.title, "id:250（一覧外）")
+        XCTAssertEqual(outside.first?.kindLabel, "一覧外")
+        XCTAssertTrue(outside.first?.enabled == true)
+        XCTAssertEqual(outside.dropFirst().first?.id, 21)
+        let foundOutside = AllowlistOrdering.rows(chats: chats, enabledIDs: [250], query: "250")
+        XCTAssertEqual(foundOutside.map(\.id), [250])
+    }
+
+    func testTwoQuickTogglesReturnToOff() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        async let first: Void = engine.toggleChat(id: 21, guid: "g21")
+        async let second: Void = engine.toggleChat(id: 21, guid: "g21")
+        _ = await (first, second)
+        let snap = await engine.snapshot()
+        XCTAssertFalse(snap.enabledChatIDs.contains(21))
+        await engine.toggleChat(id: 21, guid: "g21")
+        let on = await engine.snapshot()
+        XCTAssertEqual(on.enabledChatIDs, [21])
     }
 }

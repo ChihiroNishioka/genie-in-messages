@@ -4,21 +4,21 @@ import XCTest
 final class WatchProcessTests: XCTestCase {
     func testAsyncStreamDeliversBeforeTheProducerFinishes() async {
         let (stream, continuation) = AsyncStream.makeStream(of: Int.self, bufferingPolicy: .unbounded)
-        async let done: Int = withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
+        let gate = DispatchSemaphore(value: 0)
+        async let deliveredInTime: Bool = withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             DispatchQueue.global().async {
                 continuation.yield(1)
-                Thread.sleep(forTimeInterval: 0.6)
+                let arrived = gate.wait(timeout: .now() + 2) == .success
                 continuation.finish()
-                cont.resume(returning: 0)
+                cont.resume(returning: arrived)
             }
         }
-        let started = Date()
-        var first: TimeInterval?
         for await _ in stream {
-            if first == nil { first = Date().timeIntervalSince(started) }
+            gate.signal()
+            break
         }
-        _ = await done
-        XCTAssertLessThan(first ?? 9, 0.3)
+        let arrived = await deliveredInTime
+        XCTAssertTrue(arrived)
     }
 
     func testStdinStaysOpenLongEnoughToEmit() async throws {
@@ -113,7 +113,8 @@ final class WatchProcessTests: XCTestCase {
         let script = try writeScript("""
         #!/bin/bash
         /usr/bin/printf '%s\\n' '{"id":1,"guid":"g","chat_id":1,"is_from_me":false,"text":"secret body","created_at":"t"}'
-        echo 'watch_boom +819012345678 id 12345' >&2
+        /usr/bin/printf '%s\\n' 'earlier alice@hidden.example keep-me-out' >&2
+        /usr/bin/printf '%s\\n' 'watch_boom alice@example.com any;-;+819012345678 ?token=s3cret 090-1234-5678 秘密の本文' >&2
         exit 9
         """)
         let box = ProcessBox()
@@ -121,11 +122,10 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 9)
         XCTAssertEqual(result.reason, WatchEndReason.processExited)
         XCTAssertGreaterThanOrEqual(result.lines, 1)
-        XCTAssertTrue(result.stderrTail.contains("watch_boom"))
-        XCTAssertFalse(result.stderrTail.contains("8190"))
-        XCTAssertFalse(result.stderrTail.contains("12345"))
-        XCTAssertFalse(result.stderrTail.contains("+"))
-        XCTAssertFalse(result.stderrTail.contains("secret"))
+        XCTAssertEqual(result.stderrTail, "watch_boom [x] [x] [x] [x] [x]")
+        for leaked in ["alice", "example", "hidden", "keep-me-out", "earlier", "8190", "s3cret", "090", "1234", "5678", "秘密", "本文", "@", "token"] {
+            XCTAssertFalse(result.stderrTail.contains(leaked), leaked)
+        }
         let harness = Harness()
         let engine = try harness.engine()
         await engine.noteWatchEnded(result)
@@ -140,22 +140,58 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertTrue(detail.contains("max_line="))
         XCTAssertTrue(detail.contains("rowid="))
         XCTAssertTrue(detail.contains("watch_boom"))
-        XCTAssertFalse(detail.contains("secret"))
-        XCTAssertFalse(detail.contains("8190"))
-        XCTAssertFalse(detail.contains("12345"))
+        for leaked in ["alice", "example", "8190", "s3cret", "090", "秘密", "本文", "secret"] {
+            XCTAssertFalse(detail.contains(leaked), leaked)
+        }
     }
 
-    func testStartFailureUsesItsOwnCode() async throws {
+    func testSignalExitIsNotShownAsAStatusCode() {
+        let detail = WatchRunResult(
+            exitCode: -1,
+            signal: 15,
+            reason: WatchEndReason.stoppedByApp,
+            lines: 1,
+            maxLineBytes: 3,
+            stderrTail: "watch_boom"
+        ).logDetail(rowid: 4)
+        XCTAssertTrue(detail.contains("exit=-"))
+        XCTAssertTrue(detail.contains("signal=15"))
+        XCTAssertFalse(detail.contains("exit=15"))
+        XCTAssertFalse(detail.contains("exit=-1"))
+    }
+
+    func testPausedStopIsLoggedWithoutChangingTheMenuError() async throws {
         let harness = Harness()
         let engine = try harness.engine()
         await engine.noteWatchEnded(WatchRunResult(
             exitCode: -1,
-            signal: nil,
-            reason: WatchEndReason.startFailed,
-            lines: 0,
-            maxLineBytes: 0,
-            stderrTail: ""
-        ))
+            signal: 15,
+            reason: WatchEndReason.stoppedByApp,
+            lines: 2,
+            maxLineBytes: 8,
+            stderrTail: "watch_boom"
+        ), updateMenu: false)
+        let snap = await engine.snapshot()
+        XCTAssertNil(snap.lastError)
+        let record = try XCTUnwrap(harness.log.records.last)
+        XCTAssertEqual(record.code, "watch_exited")
+        XCTAssertEqual(record.level, LogLevel.info.rawValue)
+        XCTAssertTrue(record.detail?.contains("reason=stopped_by_app") == true)
+    }
+
+    func testStartFailureUsesItsOwnCode() async throws {
+        let missing = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("genie-missing-\(UUID().uuidString)")
+            .path
+        let box = ProcessBox()
+        let result = await WatchProcess.run(box: box, executable: missing, arguments: []) { _ in .next }
+        XCTAssertEqual(result.reason, WatchEndReason.startFailed)
+        XCTAssertEqual(result.exitCode, -1)
+        XCTAssertNil(result.signal)
+        XCTAssertEqual(result.lines, 0)
+        let harness = Harness()
+        let engine = try harness.engine()
+        await engine.noteWatchEnded(result)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.lastError, "watch_start_failed")
         XCTAssertEqual(harness.log.records.last?.code, "watch_start_failed")

@@ -71,11 +71,14 @@ package actor GenieEngine {
     }
 
     /// メニューのコードは `watch_exited` / `watch_start_failed` のまま。内訳は detail に残す。
-    package func noteWatchEnded(_ result: WatchRunResult) {
+    /// 一時停止や終了で止めたときはログだけ残し、メニューの最後のエラーは変えない。
+    package func noteWatchEnded(_ result: WatchRunResult, updateMenu: Bool = true) {
         let code = result.reason == WatchEndReason.startFailed ? "watch_start_failed" : "watch_exited"
-        lastError = code
+        if updateMenu {
+            lastError = code
+        }
         log.record(
-            level: .error,
+            level: updateMenu ? .error : .info,
             code: code,
             chatID: nil,
             guid: nil,
@@ -96,6 +99,11 @@ package actor GenieEngine {
 
     package func refreshLock() async {
         noteLock(await lock.state())
+    }
+
+    /// いまの許可から反転する。連打はアクターの中で順に効く。
+    package func toggleChat(id: Int64, guid: String) {
+        setChatEnabled(id, guid: guid, enabled: !allowlist.contains(id))
     }
 
     package func setChatEnabled(_ id: Int64, guid: String = "", enabled: Bool) {
@@ -880,6 +888,8 @@ package actor GenieEngine {
         }
     }
 
+    /// 印を既定に戻しているあいだは、このプロセスで警告を1回だけ出す。
+    /// 設定を直したあとに再び戻す状態になったときは、もう1回出す。
     private func noteMarkerReplacement(_ loaded: GenieConfig) {
         if loaded.markerWasReplaced {
             if !loggedMarkerReplacement {

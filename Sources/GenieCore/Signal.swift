@@ -8,7 +8,7 @@ struct SignalScan: Equatable {
 }
 
 enum Signal {
-    /// NFCのあと、先頭の空白と VS16 を飛ばし、
+    /// NFCのあと、先頭の空白と不可視文字を飛ばし、
     /// U+1FA94（🪔）+ 任意の VS16 で始まるかを調べる。
     /// 🧞（U+1F9DE）とその性別の形は合図にしない。
     static func scan(_ text: String) -> SignalScan {
@@ -34,6 +34,6 @@ enum Signal {
     }
 
     private static func isSkippableLeading(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.value == 0xFE0F || CharacterSet.whitespacesAndNewlines.contains(scalar)
+        CharacterSet.whitespacesAndNewlines.contains(scalar) || TextNormalizer.isInvisible(scalar)
     }
 }

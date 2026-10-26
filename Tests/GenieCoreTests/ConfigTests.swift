@@ -15,6 +15,18 @@ final class ConfigTests: XCTestCase {
         let allow = try FileAllowlistStore(file: paths.allowlistFile).load()
         XCTAssertTrue(allow.isEmpty)
 
+        let seeded = """
+        {"enabled_chat_ids":[1],"enabled_chats":[{"guid":"g","id":1}],"note":"keep-me"}
+        """
+        try Data(seeded.utf8).write(to: paths.allowlistFile)
+        var loadedAllow = try FileAllowlistStore(file: paths.allowlistFile).load()
+        loadedAllow.entries.append(AllowedChat(id: 2, guid: "h"))
+        try FileAllowlistStore(file: paths.allowlistFile).save(loadedAllow)
+        let saved = try String(contentsOf: paths.allowlistFile, encoding: .utf8)
+        XCTAssertTrue(saved.contains("keep-me"))
+        let again = try FileAllowlistStore(file: paths.allowlistFile).load()
+        XCTAssertEqual(again.entries.map(\.id), [1, 2])
+
         try Data("  token \n".utf8).write(to: paths.secretFile)
         try FilePermissions.set(paths.secretFile, mode: 0o600)
         XCTAssertEqual(try SecretFile.readToken(at: paths.secretFile), "token")

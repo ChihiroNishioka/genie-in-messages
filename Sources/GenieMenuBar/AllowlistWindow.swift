@@ -19,7 +19,7 @@ enum AllowlistPanel {
             created.minSize = NSSize(width: 360, height: 320)
             created.isReleasedWhenClosed = false
             created.hidesOnDeactivate = false
-            created.level = .floating
+            created.level = .normal
             created.center()
             self.window = created
             window = created
@@ -53,12 +53,8 @@ struct AllowlistView: View {
                     Task { await model.refreshChats(reportError: true) }
                 }
             }
-            if model.chats.isEmpty {
-                Text("トークはまだありません")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if rows.isEmpty {
-                Text("一致するトークはありません")
+            if rows.isEmpty {
+                Text(model.chats.isEmpty ? "トークはまだありません" : "一致するトークはありません")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

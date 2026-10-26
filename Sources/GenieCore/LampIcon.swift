@@ -25,7 +25,16 @@ package enum LampIcon {
     }
 
     package static func appIconICNS() -> Data {
-        let entries: [(String, Int)] = [("ic07", 128), ("ic08", 256), ("ic09", 512)]
+        let entries: [(String, Int)] = [
+            ("icp4", 16),
+            ("icp5", 32),
+            ("ic11", 32),
+            ("ic12", 64),
+            ("ic07", 128),
+            ("ic08", 256),
+            ("ic09", 512),
+            ("ic10", 1024),
+        ]
         var body = Data()
         for (type, side) in entries {
             let png = appIconPNG(size: side)

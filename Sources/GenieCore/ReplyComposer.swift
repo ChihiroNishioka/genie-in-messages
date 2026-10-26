@@ -6,10 +6,10 @@ struct ResolvedMarker: Equatable {
 }
 
 enum ReplyComposer {
-    /// 空、空白だけ、合図で始まる印は製品既定に戻す。
+    /// 空、空白だけ、不可視文字だけ、合図で始まる印は製品既定に戻す。
     static func resolveMarker(_ marker: String) -> ResolvedMarker {
         let markerNFC = TextNormalizer.nfc(marker)
-        let blank = markerNFC.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let blank = TextNormalizer.isBlank(markerNFC)
         if blank || Signal.matches(markerNFC) {
             return ResolvedMarker(text: GenieConfig.productDefaults.marker, replaced: true)
         }

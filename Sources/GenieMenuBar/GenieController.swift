@@ -90,9 +90,11 @@ final class GenieController: @unchecked Sendable {
                         return WatchSession.shouldStopApplying(result) ? .stop : .next
                     }
                 }
-                if await engine.isPaused() || self.isStopped { continue }
+                let paused = await engine.isPaused()
+                let stopped = self.isStopped
+                await engine.noteWatchEnded(outcome, updateMenu: !paused && !stopped)
+                if paused || stopped { continue }
                 let ran = Date().timeIntervalSince(started)
-                await engine.noteWatchEnded(outcome)
                 if ran > 30 {
                     delay = 1
                 }

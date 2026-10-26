@@ -32,45 +32,25 @@ struct LogRecord: Codable, Equatable {
 }
 
 package enum LogRedaction {
-    /// 電話番号と、4桁以上の数字の並びを残さない。短い id はそのまま。
-    package static func redact(_ text: String) -> String {
-        var out = ""
-        var digits = ""
-        var plus = false
-        func flush() {
-            if plus || digits.count >= 4 {
-                if plus || !digits.isEmpty { out += "[n]" }
-            } else {
-                if plus { out += "+" }
-                out += digits
-            }
-            digits = ""
-            plus = false
-        }
-        for character in text {
-            if character == "+" && digits.isEmpty && !plus {
-                plus = true
-                continue
-            }
-            if character.isNumber {
-                digits.append(character)
-                continue
-            }
-            flush()
-            if character.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) {
-                out.append(" ")
-            } else {
-                out.append(character)
-            }
-        }
-        flush()
-        return out
-    }
-
-    package static func tail(_ text: String, maxChars: Int = 180) -> String {
-        let collapsed = redact(text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    /// 標準エラーは最後の1行だけ。空白で分けた単語のうち、宛先・トークン・数字・
+    /// ASCII 以外を含むものは単語ごと `[x]` にする。
+    package static func tail(_ text: String, maxChars: Int = 120) -> String {
+        guard let last = text.split(whereSeparator: \.isNewline).last else { return "" }
+        let collapsed = last.split(whereSeparator: \.isWhitespace).map { redactWord(String($0)) }.joined(separator: " ")
         if collapsed.count <= maxChars { return collapsed }
         return String(collapsed.suffix(maxChars))
+    }
+
+    static func redactWord(_ word: String) -> String {
+        if word.contains("@") || word.contains("://") || word.contains(";-;") || word.contains(";+;") {
+            return "[x]"
+        }
+        if let separator = word.firstIndex(of: "="), word.index(after: separator) != word.endIndex {
+            return "[x]"
+        }
+        if word.contains(where: \.isNumber) { return "[x]" }
+        if word.unicodeScalars.contains(where: { $0.value > 127 }) { return "[x]" }
+        return word
     }
 }
 

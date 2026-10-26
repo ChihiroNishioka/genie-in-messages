@@ -246,4 +246,44 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(warnings.count, 1)
         XCTAssertEqual(warnings.first?.level, LogLevel.warning.rawValue)
     }
+
+    func testMarkerWarningIsOnceWhileTheSettingStaysBroken() async throws {
+        let box = MutableMarkerConfig(marker: "\u{200B}\u{FE0F}")
+        let harness = Harness()
+        harness.config.marker = box.marker
+        let engine = try GenieEngine(
+            configProvider: box,
+            initialConfig: harness.config,
+            stateStore: harness.state,
+            allowlistStore: harness.allow,
+            replySource: harness.replies,
+            sender: harness.sender,
+            webhook: harness.webhook,
+            secrets: harness.secrets,
+            lock: harness.lock,
+            clock: harness.clock,
+            log: harness.log
+        )
+        func warnings() -> Int { harness.log.records.filter { $0.code == "marker_replaced" }.count }
+        XCTAssertEqual(warnings(), 1)
+        await engine.pollReplies()
+        await engine.pollReplies()
+        XCTAssertEqual(warnings(), 1)
+        box.marker = "OK"
+        await engine.pollReplies()
+        XCTAssertEqual(warnings(), 1)
+        box.marker = "\u{FEFF}"
+        await engine.pollReplies()
+        XCTAssertEqual(warnings(), 2)
+    }
+}
+
+private final class MutableMarkerConfig: ConfigProviding, @unchecked Sendable {
+    var marker: String
+    init(marker: String) { self.marker = marker }
+    func load() throws -> GenieConfig {
+        var config = GenieConfig.productDefaults
+        config.marker = marker
+        return config.sanitized()
+    }
 }
