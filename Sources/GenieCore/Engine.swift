@@ -493,7 +493,7 @@ package actor GenieEngine {
             return
         }
         let prepared = ReplyComposer.prepare(body: reply.text, marker: config.marker)
-        if !ReplyComposer.startsWithSpeechBubble(prepared) || Signal.matches(prepared) {
+        if Signal.matches(prepared) {
             markReplyHandled(reply.id)
             lastError = "reply_still_matches_signal"
             log.record(level: .error, code: "reply_still_matches_signal", chatID: chatID, guid: nil, rowid: nil)

@@ -15,7 +15,7 @@ final class EngineWatchTests: XCTestCase {
         let body = try decodedWebhookText(harness.webhook.bodies[0])
         XCTAssertEqual(
             Array(body.unicodeScalars.map(\.value)),
-            [0x1F9DE, 0x200D, 0x2642, 0xFE0F, 0x20, 0x3067]
+            [0x1FA94, 0x20, 0x3067]
         )
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.cursorRowID, 103)
@@ -30,10 +30,10 @@ final class EngineWatchTests: XCTestCase {
         let engine = try harness.engine()
         let created = "2026-10-26T01:00:00.000Z"
         _ = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "a", chat: 1, fromMe: true, text: "\u{1F9DE} one", created: created
+            id: 1, guid: "a", chat: 1, fromMe: true, text: "\u{1FA94} one", created: created
         ))
         _ = await engine.ingestWatchLine(watchLine(
-            id: 2, guid: "b", chat: 1, fromMe: true, text: "\u{1F9DE} two", created: created
+            id: 2, guid: "b", chat: 1, fromMe: true, text: "\u{1FA94} two", created: created
         ))
         XCTAssertEqual(harness.webhook.bodies.count, 2)
     }
@@ -42,7 +42,7 @@ final class EngineWatchTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [7]
         let engine = try harness.engine()
-        let text = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F} hi"
+        let text = "\u{1FA94}\u{FE0F} hi"
         let first = await engine.ingestWatchLine(watchLine(
             id: 10, guid: "in", chat: 7, fromMe: false, text: text, created: "2026-10-26T01:00:00.074Z"
         ))
@@ -63,7 +63,7 @@ final class EngineWatchTests: XCTestCase {
         _ = await engine.ingestWatchLine(watchLine(id: 50, guid: "n", chat: 1, fromMe: true, text: "plain"))
         _ = await engine.ingestWatchLine(watchLine(id: 40, guid: "older", chat: 1, fromMe: true, text: "older"))
         _ = await engine.ingestWatchLine(watchLine(
-            id: 90, guid: "edit", chat: 1, fromMe: true, text: "\u{1F9DE} later", type: "edited"
+            id: 90, guid: "edit", chat: 1, fromMe: true, text: "\u{1FA94} later", type: "edited"
         ))
         _ = await engine.ingestWatchLine(watchLine(
             id: 12, guid: "unsent", chat: 1, fromMe: true, text: "", type: "unsent"
@@ -76,7 +76,7 @@ final class EngineWatchTests: XCTestCase {
     func testGuidIdempotencyAndSentGuidAndFingerprint() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let text = "\u{1F9DE} ping"
+        let text = "\u{1FA94} ping"
         let hash = SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
         harness.state.state.sentGUIDs = ["echo-guid"]
         harness.state.state.fingerprints = [
@@ -103,7 +103,7 @@ final class EngineWatchTests: XCTestCase {
         let harness = Harness()
         let engine = try harness.engine()
         let result = await engine.ingestWatchLine(watchLine(
-            id: 8, guid: "g", chat: 3, fromMe: true, text: "\u{1F9DE} no"
+            id: 8, guid: "g", chat: 3, fromMe: true, text: "\u{1FA94} no"
         ))
         XCTAssertEqual(result, .ignoredNotAllowed)
         XCTAssertTrue(harness.webhook.bodies.isEmpty)
@@ -118,7 +118,7 @@ final class EngineWatchTests: XCTestCase {
         let engine = try harness.engine()
         await engine.setPaused(true)
         let result = await engine.ingestWatchLine(watchLine(
-            id: 4, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} wait"
+            id: 4, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} wait"
         ))
         XCTAssertEqual(result, .deferredPaused)
         let snap = await engine.snapshot()
@@ -131,12 +131,25 @@ final class EngineWatchTests: XCTestCase {
         harness.allow.ids = [1]
         let engine = try harness.engine()
         _ = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "tap", chat: 1, fromMe: true, text: "\u{1F9DE}", reaction: true
+            id: 1, guid: "tap", chat: 1, fromMe: true, text: "\u{1FA94}", reaction: true
         ))
-        _ = await engine.ingestWatchLine(#"{"id":2,"guid":"anon","chat_id":1,"text":"\uD83E\uDDDE hi"}"#)
+        _ = await engine.ingestWatchLine(#"{"id":2,"guid":"anon","chat_id":1,"text":"\uD83E\uDE94 hi"}"#)
         XCTAssertTrue(harness.webhook.bodies.isEmpty)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.cursorRowID, 2)
+    }
+
+    func testReplyPrefixDoesNotCallAgain() async throws {
+        let harness = Harness()
+        harness.allow.ids = [1]
+        let engine = try harness.engine()
+        let reply = GenieConfig.productDefaults.marker + " hi"
+        let result = await engine.ingestWatchLine(watchLine(
+            id: 1, guid: "echo", chat: 1, fromMe: true, text: reply
+        ))
+        XCTAssertEqual(result, .ignoredNoSignal)
+        XCTAssertTrue(harness.webhook.bodies.isEmpty)
+        XCTAssertFalse(Signal.matches(reply))
     }
 
     func testNotJSONDoesNotLogTheLine() async throws {

@@ -6,7 +6,7 @@ enum ReplyComposer {
         let scan = Signal.scan(body)
         let text = scan.matched ? trimLeadingWhitespace(scan.remainder) : scan.remainder
         let markerNFC = TextNormalizer.nfc(marker)
-        let chosen = startsWithSpeechBubble(markerNFC) ? markerNFC : GenieConfig.productDefaults.marker
+        let chosen = Signal.matches(markerNFC) ? GenieConfig.productDefaults.marker : markerNFC
         if text.hasPrefix(chosen) {
             return text
         }
@@ -23,13 +23,6 @@ enum ReplyComposer {
             return chosen + text
         }
         return chosen + " " + text
-    }
-
-    static func startsWithSpeechBubble(_ text: String) -> Bool {
-        let scalars = text.unicodeScalars.drop { scalar in
-            scalar.value == 0xFE0F || CharacterSet.whitespacesAndNewlines.contains(scalar)
-        }
-        return scalars.first?.value == 0x1F5E8
     }
 
     private static func trimLeadingWhitespace(_ text: String) -> String {

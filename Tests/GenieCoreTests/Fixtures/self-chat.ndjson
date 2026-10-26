@@ -1,5 +1,5 @@
-{"id":100,"guid":"guid-from-me","chat_id":7,"is_from_me":true,"text":"\uD83E\uDDDE\u200D\u2642\uFE0F \u3066\u3099","created_at":"2026-10-26T01:00:00.000Z"}
-{"id":101,"guid":"guid-not-from-me","chat_id":7,"is_from_me":false,"text":"\uD83E\uDDDE\u200D\u2642\uFE0F \u3066\u3099","created_at":"2026-10-26T01:00:00.074Z"}
-{"id":100,"guid":"guid-from-me","chat_id":7,"is_from_me":true,"text":"\uD83E\uDDDE\u200D\u2642\uFE0F edited","created_at":"2026-10-26T01:00:00.000Z","type":"edited"}
-{"id":102,"guid":"guid-other-chat","chat_id":8,"is_from_me":true,"text":"\uD83E\uDDDE hi","created_at":"2026-10-26T01:00:02.000Z"}
-{"id":103,"guid":"guid-marker","chat_id":7,"is_from_me":true,"text":"\uD83D\uDDE8\uFE0F\uD83E\uDDDE\u200D\u2642\uFE0F hi","created_at":"2026-10-26T01:00:03.000Z"}
+{"id":100,"guid":"guid-from-me","chat_id":7,"is_from_me":true,"text":"\uD83E\uDE94 \u3066\u3099","created_at":"2026-10-26T01:00:00.000Z"}
+{"id":101,"guid":"guid-not-from-me","chat_id":7,"is_from_me":false,"text":"\uD83E\uDE94 \u3066\u3099","created_at":"2026-10-26T01:00:00.074Z"}
+{"id":100,"guid":"guid-from-me","chat_id":7,"is_from_me":true,"text":"\uD83E\uDE94 edited","created_at":"2026-10-26T01:00:00.000Z","type":"edited"}
+{"id":102,"guid":"guid-other-chat","chat_id":8,"is_from_me":true,"text":"\uD83E\uDE94 hi","created_at":"2026-10-26T01:00:02.000Z"}
+{"id":103,"guid":"guid-marker","chat_id":7,"is_from_me":true,"text":"\uD83E\uDDDE\u200D\u2642\uFE0F hi","created_at":"2026-10-26T01:00:03.000Z"}

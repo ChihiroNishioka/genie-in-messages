@@ -9,8 +9,8 @@ struct SignalScan: Equatable {
 
 enum Signal {
     /// NFCのあと、先頭の空白と VS16 を飛ばし、
-    /// U+1F9DE + 任意の (ZWJ + U+2640/U+2642) + 任意の VS16
-    /// で始まるかを調べる。
+    /// U+1FA94（🪔）+ 任意の VS16 で始まるかを調べる。
+    /// 🧞（U+1F9DE）とその性別の形は合図にしない。
     static func scan(_ text: String) -> SignalScan {
         let normalized = TextNormalizer.nfc(text)
         let scalars = Array(normalized.unicodeScalars)
@@ -18,15 +18,10 @@ enum Signal {
         while index < scalars.count, isSkippableLeading(scalars[index]) {
             index += 1
         }
-        guard index < scalars.count, scalars[index].value == 0x1F9DE else {
+        guard index < scalars.count, scalars[index].value == 0x1FA94 else {
             return SignalScan(remainder: normalized, matched: false)
         }
         index += 1
-        if index + 1 < scalars.count,
-           scalars[index].value == 0x200D,
-           scalars[index + 1].value == 0x2640 || scalars[index + 1].value == 0x2642 {
-            index += 2
-        }
         if index < scalars.count, scalars[index].value == 0xFE0F {
             index += 1
         }

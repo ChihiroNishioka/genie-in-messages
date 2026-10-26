@@ -24,7 +24,7 @@ package struct GenieConfig: Equatable, Sendable {
     package static let productDefaults = GenieConfig(
         webhookURL: "",
         replyFetchURL: "",
-        marker: "\u{1F5E8}\u{FE0F}\u{1F9DE}\u{200D}\u{2642}\u{FE0F}",
+        marker: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}",
         imsgExecutable: "/opt/homebrew/opt/imsg/libexec/imsg",
         rateLimitCount: 5,
         rateLimitWindowSeconds: 60,
@@ -62,6 +62,9 @@ package struct GenieConfig: Equatable, Sendable {
         copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
         copy.replyPageLimit = max(1, copy.replyPageLimit)
         copy.notionDataSourceID = copy.notionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if Signal.matches(copy.marker) {
+            copy.marker = GenieConfig.productDefaults.marker
+        }
         return copy
     }
 }
