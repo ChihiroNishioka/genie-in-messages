@@ -6,55 +6,18 @@ package enum LampAppearance: String, Sendable {
     case warning
 }
 
-/// メニューバーと Finder 用の、丸い金色のランプ。CoreGraphics は使わない。
+/// メニューバー用の、丸い金色のランプ。CoreGraphics は使わない。
+/// Finder のアイコンは画像から切り抜く（`scripts/make-app-icon.py`）。
 package enum LampIcon {
     package static func rgba(size: Int, appearance: LampAppearance) -> [UInt8] {
-        render(size: size, kind: .menu(appearance))
+        render(size: size, appearance: appearance)
     }
 
     package static func png(size: Int, appearance: LampAppearance) -> Data {
         png(size: size, rgba: rgba(size: size, appearance: appearance))
     }
 
-    package static func appIconRGBA(size: Int) -> [UInt8] {
-        render(size: size, kind: .appIcon)
-    }
-
-    package static func appIconPNG(size: Int) -> Data {
-        png(size: size, rgba: appIconRGBA(size: size))
-    }
-
-    package static func appIconICNS() -> Data {
-        let entries: [(String, Int)] = [
-            ("icp4", 16),
-            ("icp5", 32),
-            ("ic11", 32),
-            ("ic12", 64),
-            ("ic07", 128),
-            ("ic08", 256),
-            ("ic09", 512),
-            ("ic10", 1024),
-        ]
-        var body = Data()
-        for (type, side) in entries {
-            let png = appIconPNG(size: side)
-            var chunk = Data(type.utf8)
-            chunk.append(be32(UInt32(8 + png.count)))
-            chunk.append(png)
-            body.append(chunk)
-        }
-        var file = Data("icns".utf8)
-        file.append(be32(UInt32(8 + body.count)))
-        file.append(body)
-        return file
-    }
-
-    private enum Kind {
-        case menu(LampAppearance)
-        case appIcon
-    }
-
-    private static func render(size: Int, kind: Kind) -> [UInt8] {
+    private static func render(size: Int, appearance: LampAppearance) -> [UInt8] {
         let samples = size >= 256 ? 2 : 3
         var pixels = [UInt8](repeating: 0, count: size * size * 4)
         let pixel = 1.0 / Double(size)
@@ -70,7 +33,7 @@ package enum LampIcon {
                     for sx in 0..<samples {
                         let u = (Double(x) + (Double(sx) + 0.5) / Double(samples)) / Double(size)
                         let v = (Double(y) + (Double(sy) + 0.5) / Double(samples)) / Double(size)
-                        let sample = shade(u: u, v: v, pixel: pixel, outline: outline, kind: kind)
+                        let sample = shade(u: u, v: v, pixel: pixel, outline: outline, appearance: appearance)
                         red += sample.0
                         green += sample.1
                         blue += sample.2
@@ -93,23 +56,14 @@ package enum LampIcon {
         v: Double,
         pixel: Double,
         outline: Double,
-        kind: Kind
+        appearance: LampAppearance
     ) -> (Double, Double, Double, Double) {
-        switch kind {
-        case .appIcon:
-            let bg = iconBackground(u: u, v: v, pixel: pixel)
-            let lu = (u - 0.50) / 0.62 + 0.43
-            let lv = (v - 0.48) / 0.62 + 0.52
-            let lamp = lampPixel(u: lu, v: lv, pixel: pixel / 0.62, outline: outline / 0.62, glow: true)
-            return over(lamp, bg)
-        case .menu(let appearance):
-            let glow = appearance != .paused
-            var lamp = lampPixel(u: u, v: v, pixel: pixel, outline: outline, glow: glow)
-            if appearance != .running {
-                lamp = over(badge(u: u, v: v, pixel: pixel, appearance: appearance), lamp)
-            }
-            return lamp
+        let glow = appearance != .paused
+        var lamp = lampPixel(u: u, v: v, pixel: pixel, outline: outline, glow: glow)
+        if appearance != .running {
+            lamp = over(badge(u: u, v: v, pixel: pixel, appearance: appearance), lamp)
         }
+        return lamp
     }
 
     private static func lampPixel(
@@ -180,21 +134,6 @@ package enum LampIcon {
             break
         }
         return pixelColor
-    }
-
-    private static func iconBackground(u: Double, v: Double, pixel: Double) -> (Double, Double, Double, Double) {
-        let dx = (u - 0.5) * 2
-        let dy = (v - 0.5) * 2
-        let radius = pow(pow(abs(dx), 4) + pow(abs(dy), 4), 0.25)
-        let inside = cover(radius - 0.94, pixel * 2)
-        let t = sat(v)
-        let glow = exp(-(pow(u - 0.62, 2) + pow(v - 0.40, 2)) / 0.08) * 0.22
-        return (
-            min(1, (46.0 * (1 - t) + 16.0 * t) / 255 + glow * 0.9),
-            min(1, (72.0 * (1 - t) + 32.0 * t) / 255 + glow * 0.55),
-            min(1, (128.0 * (1 - t) + 64.0 * t) / 255 + glow * 0.15),
-            inside
-        )
     }
 
     /// 負が内側。太い胴、右上への注ぎ口、左の持ち手。
