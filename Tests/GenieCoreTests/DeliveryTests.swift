@@ -9,7 +9,7 @@ final class DeliveryTests: XCTestCase {
         let engine = try harness.engine()
         let marker = "UNIQUE_BODY_MARKER"
         let result = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} \(marker)"
+            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} \(marker)"
         ))
         XCTAssertEqual(result, .deadLettered("webhook_http_503"))
         XCTAssertEqual(harness.webhook.bodies.count, 5)
@@ -29,7 +29,7 @@ final class DeliveryTests: XCTestCase {
         harness.webhook.results = [.success(WebhookHTTPResult(statusCode: 400))]
         let engine = try harness.engine()
         _ = await engine.ingestWatchLine(watchLine(
-            id: 3, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} hi"
+            id: 3, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
         XCTAssertEqual(harness.webhook.bodies.count, 1)
         XCTAssertTrue(harness.clock.slept.isEmpty)
@@ -48,7 +48,7 @@ final class DeliveryTests: XCTestCase {
         ]
         let engine = try harness.engine()
         let result = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} hi"
+            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
         XCTAssertEqual(result, .delivered)
         XCTAssertEqual(harness.clock.slept, [1, 2])
@@ -69,7 +69,7 @@ final class DeliveryTests: XCTestCase {
         let engine = try harness.engine()
         let marker = "body-marker-xyz"
         _ = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} \(marker)"
+            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} \(marker)"
         ))
         XCTAssertTrue(harness.webhook.secrets.isEmpty)
         XCTAssertEqual(harness.state.deadLetters.first?.error, "secret_mode")
@@ -88,10 +88,10 @@ final class DeliveryTests: XCTestCase {
         harness.allow.ids = [1]
         harness.secrets = FileSecretProvider(paths: paths)
         let engine = try harness.engine()
-        _ = await engine.ingestWatchLine(watchLine(id: 1, guid: "a", chat: 1, fromMe: true, text: "\u{1F9DE} a"))
+        _ = await engine.ingestWatchLine(watchLine(id: 1, guid: "a", chat: 1, fromMe: true, text: "\u{1FA94} a"))
         try Data("beta\n".utf8).write(to: secretURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretURL.path)
-        _ = await engine.ingestWatchLine(watchLine(id: 2, guid: "b", chat: 1, fromMe: true, text: "\u{1F9DE} b"))
+        _ = await engine.ingestWatchLine(watchLine(id: 2, guid: "b", chat: 1, fromMe: true, text: "\u{1FA94} b"))
         XCTAssertEqual(harness.webhook.secrets, ["alpha", "beta"])
     }
 
@@ -103,7 +103,7 @@ final class DeliveryTests: XCTestCase {
         harness.lock.locked = true
         harness.replies.pages = [
             ReplyPage(
-                replies: [routedReply("r1", chat: 7, text: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F} answer", guid: "origin")],
+                replies: [routedReply("r1", chat: 7, text: "\u{1FA94} answer", guid: "origin")],
                 nextCursor: "c1"
             ),
         ]
@@ -148,7 +148,7 @@ final class DeliveryTests: XCTestCase {
         await engine.retryHolds()
         XCTAssertEqual(harness.sender.sent.count, 2)
         let echo = await engine.ingestWatchLine(watchLine(
-            id: 20, guid: "out-guid", chat: 7, fromMe: true, text: "\u{1F9DE} echo"
+            id: 20, guid: "out-guid", chat: 7, fromMe: true, text: GenieConfig.productDefaults.marker + " echo"
         ))
         XCTAssertEqual(echo, .ignoredSentGUID)
         XCTAssertTrue(harness.webhook.bodies.isEmpty)
@@ -227,11 +227,11 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(snap.heldCount, 0)
     }
 
-    func testMarkerWithoutSpeechBubbleIsRewrittenBeforeSend() async throws {
+    func testLampMarkerIsRejectedBeforeSend() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
-        harness.config.marker = "\u{1F9DE}"
+        harness.config.marker = "\u{1FA94}"
         seedRoute(harness, guid: "g", chat: 1)
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r", chat: 1, text: "hello", guid: "g")], nextCursor: nil),
@@ -241,6 +241,6 @@ final class DeliveryTests: XCTestCase {
         let text = try XCTUnwrap(harness.sender.sent.first?.text)
         XCTAssertTrue(text.hasPrefix(GenieConfig.productDefaults.marker))
         XCTAssertFalse(Signal.matches(text))
-        XCTAssertTrue(ReplyComposer.startsWithSpeechBubble(text))
+        XCTAssertFalse(text.hasPrefix("\u{1FA94}"))
     }
 }

@@ -8,7 +8,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
         let engine = try harness.engine()
         let forwarded = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "origin", chat: 1, fromMe: true, text: "\u{1F9DE} ask"
+            id: 1, guid: "origin", chat: 1, fromMe: true, text: "\u{1FA94} ask"
         ))
         XCTAssertEqual(forwarded, .delivered)
         let body = try JSONDecoder().decode(IdempotencyBody.self, from: harness.webhook.bodies[0])
@@ -90,7 +90,7 @@ final class ReviewFixesTests: XCTestCase {
             await engine.setChatEnabled(1, enabled: false)
         }
         let disabled = await engine.ingestWatchLine(watchLine(
-            id: 4, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} hi"
+            id: 4, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
         XCTAssertEqual(disabled, .ignoredNotAllowed)
         XCTAssertEqual(harness.webhook.bodies.count, 1)
@@ -104,7 +104,7 @@ final class ReviewFixesTests: XCTestCase {
             .success(WebhookHTTPResult(statusCode: 200)),
         ]
         let paused = await engine.ingestWatchLine(watchLine(
-            id: 8, guid: "g2", chat: 1, fromMe: true, text: "\u{1F9DE} later"
+            id: 8, guid: "g2", chat: 1, fromMe: true, text: "\u{1FA94} later"
         ))
         XCTAssertEqual(paused, .deferredPaused)
         XCTAssertEqual(harness.webhook.bodies.count, 2)
@@ -193,8 +193,8 @@ final class ReviewFixesTests: XCTestCase {
         let engine = try harness.engine()
         var first = true
         let results = await WatchApply.apply(lines: [
-            watchLine(id: 10, guid: "a", chat: 1, fromMe: true, text: "\u{1F9DE} one"),
-            watchLine(id: 11, guid: "b", chat: 1, fromMe: true, text: "\u{1F9DE} two"),
+            watchLine(id: 10, guid: "a", chat: 1, fromMe: true, text: "\u{1FA94} one"),
+            watchLine(id: 11, guid: "b", chat: 1, fromMe: true, text: "\u{1FA94} two"),
         ]) { line in
             if first {
                 first = false
@@ -218,7 +218,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.webhook.results = [.success(WebhookHTTPResult(statusCode: 400))]
         let engine = try harness.engine()
         let result = await engine.ingestWatchLine(watchLine(
-            id: 3, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} hi"
+            id: 3, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
         XCTAssertEqual(result, .blocked)
         let snap = await engine.snapshot()
@@ -233,11 +233,11 @@ final class ReviewFixesTests: XCTestCase {
         let engine = try harness.engine()
         await engine.setChatEnabled(4, guid: "chat-a", enabled: true)
         let first = await engine.ingestWatchLine(watchLine(
-            id: 20, guid: "m", chat: 4, fromMe: true, text: "\u{1F9DE} hi", chatGUID: "chat-a"
+            id: 20, guid: "m", chat: 4, fromMe: true, text: "\u{1FA94} hi", chatGUID: "chat-a"
         ))
         XCTAssertEqual(first, .delivered)
         let swapped = await engine.ingestWatchLine(watchLine(
-            id: 21, guid: "n", chat: 4, fromMe: true, text: "\u{1F9DE} next", chatGUID: "chat-b"
+            id: 21, guid: "n", chat: 4, fromMe: true, text: "\u{1FA94} next", chatGUID: "chat-b"
         ))
         XCTAssertEqual(swapped, .ignoredDatabaseReset)
         XCTAssertEqual(harness.webhook.bodies.count, 1)
@@ -296,7 +296,7 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try harness.engine()
         let result = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1F9DE} hi"
+            id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
         XCTAssertEqual(result, .deadLettered("url_not_https"))
         XCTAssertTrue(harness.webhook.bodies.isEmpty)

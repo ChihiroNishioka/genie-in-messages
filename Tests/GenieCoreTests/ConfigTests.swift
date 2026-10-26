@@ -71,7 +71,7 @@ final class ConfigTests: XCTestCase {
         )
         let marker = "DISK_BODY_MARKER"
         _ = await engine.ingestWatchLine(watchLine(
-            id: 1, guid: "g-disk", chat: 1, fromMe: true, text: "\u{1F9DE} \(marker)"
+            id: 1, guid: "g-disk", chat: 1, fromMe: true, text: "\u{1FA94} \(marker)"
         ))
         let file = try String(contentsOf: paths.deadLetterFile, encoding: .utf8)
         XCTAssertFalse(file.contains(marker))

@@ -2,54 +2,42 @@ import XCTest
 @testable import GenieCore
 
 final class SignalTests: XCTestCase {
-    func testPlainWomanAndManForms() {
-        XCTAssertTrue(Signal.matches("\u{1F9DE}"))
-        XCTAssertTrue(Signal.matches("\u{1F9DE}\u{FE0F}"))
-        XCTAssertTrue(Signal.matches("\u{1F9DE}\u{200D}\u{2640}"))
-        XCTAssertTrue(Signal.matches("\u{1F9DE}\u{200D}\u{2640}\u{FE0F}"))
-        XCTAssertTrue(Signal.matches("\u{1F9DE}\u{200D}\u{2642}"))
-        XCTAssertTrue(Signal.matches("\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"))
-    }
-
-    func testLeadingWhitespaceAndVariationSelectorAreIgnored() {
-        XCTAssertTrue(Signal.matches(" \n\t\u{1F9DE} go"))
-        XCTAssertTrue(Signal.matches("\u{FE0F}\u{1F9DE}"))
-        XCTAssertFalse(Signal.matches("go \u{1F9DE}"))
-        XCTAssertFalse(Signal.matches("\u{1F916} hi"))
+    func testLampAloneAndWithVariationSelector() {
+        XCTAssertTrue(Signal.matches("\u{1FA94}"))
+        XCTAssertTrue(Signal.matches("\u{1FA94}\u{FE0F}"))
+        XCTAssertTrue(Signal.matches(" \n\t\u{1FA94} go"))
+        XCTAssertTrue(Signal.matches("\u{FE0F}\u{1FA94}"))
+        let scan = Signal.scan("\u{1FA94}\u{FE0F} hi")
+        XCTAssertTrue(scan.matched)
+        XCTAssertEqual(scan.remainder, " hi")
+        XCTAssertFalse(Signal.matches("go \u{1FA94}"))
         XCTAssertFalse(Signal.matches(""))
         XCTAssertFalse(Signal.matches("   "))
     }
 
-    func testSpeechBubbleMarkerIsNotASignal() {
-        let marker = "\u{1F5E8}\u{FE0F}\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
-        XCTAssertFalse(Signal.matches("\u{1F5E8}\u{FE0F}"))
-        XCTAssertFalse(Signal.matches(marker))
-        XCTAssertFalse(Signal.matches(marker + " hi"))
-        XCTAssertEqual(
-            Array(marker.unicodeScalars.map(\.value)),
-            [0x1F5E8, 0xFE0F, 0x1F9DE, 0x200D, 0x2642, 0xFE0F]
-        )
-    }
-
-    func testIPhoneManFormRemainderDropsTheSignal() {
-        let scan = Signal.scan("\u{1F9DE}\u{200D}\u{2642}\u{FE0F} hi")
-        XCTAssertTrue(scan.matched)
-        XCTAssertEqual(scan.remainder, " hi")
+    func testGenieFormsAreNotSignals() {
+        XCTAssertFalse(Signal.matches("\u{1F9DE}"))
+        XCTAssertFalse(Signal.matches("\u{1F9DE}\u{FE0F}"))
+        XCTAssertFalse(Signal.matches("\u{1F9DE}\u{200D}\u{2640}"))
+        XCTAssertFalse(Signal.matches("\u{1F9DE}\u{200D}\u{2640}\u{FE0F}"))
+        XCTAssertFalse(Signal.matches("\u{1F9DE}\u{200D}\u{2642}"))
+        XCTAssertFalse(Signal.matches("\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"))
+        XCTAssertFalse(Signal.matches("\u{1F9DE}\u{200D}\u{2642}\u{FE0F} hi"))
     }
 
     func testNFDTextStillMatchesThePrefix() {
-        let text = "\u{1F9DE} \u{3066}\u{3099}"
+        let text = "\u{1FA94} \u{3066}\u{3099}"
         XCTAssertTrue(Signal.matches(text))
         XCTAssertEqual(TextNormalizer.nfc(text).unicodeScalars.map(\.value).last, 0x3067)
     }
 
     func testComposerStripsSignalAndForcesMarker() {
         let marker = GenieConfig.productDefaults.marker
-        let prepared = ReplyComposer.prepare(body: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F} 返事", marker: marker)
+        let prepared = ReplyComposer.prepare(body: "\u{1FA94}\u{FE0F} 返事", marker: marker)
         XCTAssertFalse(Signal.matches(prepared))
         XCTAssertTrue(prepared.hasPrefix(marker))
         XCTAssertTrue(prepared.contains("返事"))
-        XCTAssertEqual(ReplyComposer.prepare(body: "\u{1F9DE}", marker: marker), marker)
+        XCTAssertEqual(ReplyComposer.prepare(body: "\u{1FA94}", marker: marker), marker)
         XCTAssertEqual(ReplyComposer.prepare(body: "hello", marker: marker), marker + " hello")
     }
 
@@ -60,18 +48,20 @@ final class SignalTests: XCTestCase {
         XCTAssertFalse(Signal.matches(prepared))
     }
 
-    func testComposerForcesASpeechBubbleWhenTheMarkerDoesNotStartWithOne() {
-        let prepared = ReplyComposer.prepare(body: "hello", marker: "\u{1F9DE}")
-        XCTAssertTrue(ReplyComposer.startsWithSpeechBubble(prepared))
+    func testLampMarkerIsReplacedWithTheDefault() {
+        let prepared = ReplyComposer.prepare(body: "hello", marker: "\u{1FA94}")
         XCTAssertFalse(Signal.matches(prepared))
         XCTAssertTrue(prepared.hasPrefix(GenieConfig.productDefaults.marker))
         XCTAssertTrue(prepared.contains("hello"))
+        var config = GenieConfig.productDefaults
+        config.marker = "\u{1FA94}\u{FE0F} hi"
+        XCTAssertEqual(config.sanitized().marker, GenieConfig.productDefaults.marker)
     }
 
     func testDefaultMarkerMatchesTheSpecScalars() {
         XCTAssertEqual(
             Array(GenieConfig.productDefaults.marker.unicodeScalars.map(\.value)),
-            [0x1F5E8, 0xFE0F, 0x1F9DE, 0x200D, 0x2642, 0xFE0F]
+            [0x1F9DE, 0x200D, 0x2642, 0xFE0F]
         )
         XCTAssertFalse(Signal.matches(GenieConfig.productDefaults.marker))
     }

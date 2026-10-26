@@ -355,6 +355,57 @@ final class NotionReplyTests: XCTestCase {
         XCTAssertEqual(snap.heldCount, 100)
     }
 
+    func testTwoHundredOneHoldsDoNotBlockAnotherChat() async throws {
+        let (harness, dataset, engine, origin) = try makeRateLimitedHolds(count: 202)
+        for _ in 0..<3 {
+            await engine.pollReplies()
+        }
+        var snap = await engine.snapshot()
+        XCTAssertEqual(snap.heldCount, 201)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
+        XCTAssertTrue(harness.sender.sent.filter { $0.chatID == 2 }.isEmpty)
+
+        let otherAt = ISO8601.string(from: origin.addingTimeInterval(400))
+        dataset.rows.append(row("other", at: otherAt, guid: "g-other", text: "other-chat", chat: 2))
+        await engine.pollReplies()
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.text.contains("other-chat") }.count, 1)
+        snap = await engine.snapshot()
+        XCTAssertEqual(snap.heldCount, 201)
+    }
+
+    func testRestartRebuildsHoldsWithoutResending() async throws {
+        let (harness, dataset, engine, origin) = try makeRateLimitedHolds(count: 202)
+        for _ in 0..<3 {
+            await engine.pollReplies()
+        }
+        let otherAt = ISO8601.string(from: origin.addingTimeInterval(400))
+        dataset.rows.append(row("other", at: otherAt, guid: "g-other", text: "other-chat", chat: 2))
+        await engine.pollReplies()
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
+        // チャット1の停止は残り、チャット2の回数だけ窓の外に出す。
+        harness.clock.current = harness.clock.now().addingTimeInterval(harness.config.rateLimitWindowSeconds + 1)
+
+        let againAt = ISO8601.string(from: origin.addingTimeInterval(500))
+        dataset.rows.append(row("again", at: againAt, guid: "g-again", text: "other-again", chat: 2))
+        let restarted = try makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
+        await restarted.pollReplies()
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
+        var snap = await restarted.snapshot()
+        XCTAssertEqual(snap.heldCount, 100)
+
+        await restarted.pollReplies()
+        await restarted.pollReplies()
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.text.contains("other-chat") }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.text.contains("other-again") }.count, 1)
+        snap = await restarted.snapshot()
+        XCTAssertEqual(snap.heldCount, 201)
+    }
+
     func testFetchKeepsTheMinuteItStartedIn() async throws {
         let clock = ManualClock(ISO8601.date(from: "2023-11-14T22:13:50.000Z") ?? Date(timeIntervalSince1970: 1_700_000_030))
         let script = ScriptedNotion(responses: [
@@ -439,6 +490,32 @@ final class NotionReplyTests: XCTestCase {
                 XCTAssertFalse(text.contains(id), file)
             }
         }
+    }
+
+    private func makeRateLimitedHolds(
+        count: Int
+    ) throws -> (Harness, DatasetNotion, GenieEngine, Date) {
+        let harness = Harness()
+        harness.allow.ids = [1, 2]
+        harness.config.notionDataSourceID = dataSource
+        harness.config.replyFetchURL = ""
+        harness.config.rateLimitCount = 1
+        harness.config.rateLimitWindowSeconds = 3600
+        let origin = ISO8601.date(from: NotionCursor.freshStart(now: harness.clock.now())) ?? harness.clock.now()
+        // 経路は起動時に読み込む。あとから足すと、エンジンが保存した状態で上書きされる。
+        seedRoute(harness, guid: "g-other", chat: 2)
+        seedRoute(harness, guid: "g-again", chat: 2)
+        var rows: [[String: Any]] = []
+        for index in 0..<count {
+            let id = String(format: "h%03d", index)
+            let guid = String(format: "g%03d", index)
+            let at = ISO8601.string(from: origin.addingTimeInterval(Double(index)))
+            seedRoute(harness, guid: guid, chat: 1)
+            rows.append(row(id, at: at, guid: guid, text: "held", chat: 1))
+        }
+        let dataset = DatasetNotion(rows: rows)
+        let engine = try makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
+        return (harness, dataset, engine, origin)
     }
 
     private func makeEngine(_ harness: Harness, source: NotionReplySource) throws -> GenieEngine {
