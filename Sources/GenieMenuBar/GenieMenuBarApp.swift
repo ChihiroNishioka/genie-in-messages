@@ -6,23 +6,25 @@ import SwiftUI
 @main
 struct GenieMenuBarApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var model = AppModel()
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuContent()
-                .environmentObject(model)
-        } label: {
-            Text(model.symbol)
-                .onAppear { model.begin() }
+        Settings {
+            Text("ジーニー")
         }
-        .menuBarExtraStyle(.menu)
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model = AppModel()
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        model.installStatusItem()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.shutdown()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -31,21 +33,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @MainActor
-final class AppModel: ObservableObject {
+final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     @Published var snapshot: EngineSnapshot?
     @Published var chats: [ChatSummary] = []
     @Published var phase = "起動しています"
     @Published var loginStatus = "確認中"
-    @Published var symbol = "🧞"
+    @Published var symbol = "ジーニー"
+    @Published var chatQuery = ""
     @Published var startupError: String?
 
     private let controller: GenieController?
     private let paths = ConfigPaths.default()
     private var refreshTask: Task<Void, Never>?
     private var lastChatRefresh = Date.distantPast
+    private var statusItem: NSStatusItem?
     @Published var notionTokenLabel = "未設定"
 
-    init() {
+    override init() {
         do {
             controller = try GenieController(paths: paths)
             startupError = nil
@@ -55,6 +59,7 @@ final class AppModel: ObservableObject {
             phase = "停止"
         }
         notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
+        super.init()
         begin()
     }
 
@@ -63,6 +68,24 @@ final class AppModel: ObservableObject {
         refreshTask = Task { [weak self] in
             await self?.loop()
         }
+    }
+
+    func installStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let menu = NSMenu()
+        menu.delegate = self
+        item.menu = menu
+        statusItem = item
+        applyStatusItem()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.removeAllItems()
+        populate(menu)
+    }
+
+    func shutdown() {
+        controller?.shutdown()
     }
 
     func onAppear() {
@@ -81,11 +104,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func toggleChat(_ chat: ChatSummary) {
+    func toggleChat(id: Int64, guid: String) {
         guard let controller, let snapshot else { return }
-        let enabled = !snapshot.enabledChatIDs.contains(chat.id)
+        let enabled = !snapshot.enabledChatIDs.contains(id)
         Task {
-            await controller.engine.setChatEnabled(chat.id, guid: chat.guid, enabled: enabled)
+            await controller.engine.setChatEnabled(id, guid: guid, enabled: enabled)
             await refresh()
         }
     }
@@ -172,6 +195,7 @@ final class AppModel: ObservableObject {
         notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
         phase = Self.phaseText(snap)
         symbol = Self.symbol(for: snap)
+        applyStatusItem()
         if Date().timeIntervalSince(lastChatRefresh) >= 30 {
             chats = await controller.loadChats(reportError: false)
             lastChatRefresh = Date()
@@ -184,14 +208,123 @@ final class AppModel: ObservableObject {
         return "監視中"
     }
 
-    private static func symbol(for snap: EngineSnapshot) -> String {
+    static func appearance(for snap: EngineSnapshot?) -> LampAppearance {
+        guard let snap else { return .running }
         let warning = snap.screenLock != .unlocked
             || snap.heldLockCount > 0
             || !snap.haltedChatIDs.isEmpty
             || snap.lastError == "watch_start_failed"
-        if warning { return "🧞⚠" }
-        if snap.paused { return "🧞⏸" }
-        return "🧞"
+        if warning { return .warning }
+        if snap.paused { return .paused }
+        return .running
+    }
+
+    private static func symbol(for snap: EngineSnapshot) -> String {
+        switch appearance(for: snap) {
+        case .warning: return "ジーニー 要確認"
+        case .paused: return "ジーニー 一時停止"
+        case .running: return "ジーニー 監視中"
+        }
+    }
+
+    private static let menuImages: [LampAppearance: NSImage] = {
+        var images: [LampAppearance: NSImage] = [:]
+        for appearance in [LampAppearance.running, .paused, .warning] {
+            let data = LampIcon.png(size: 36, appearance: appearance)
+            let image = NSImage(data: data) ?? NSImage(size: NSSize(width: 18, height: 18))
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = false
+            images[appearance] = image
+        }
+        return images
+    }()
+
+    private func applyStatusItem() {
+        guard let button = statusItem?.button else { return }
+        let appearance = Self.appearance(for: snapshot)
+        let image = Self.menuImages[appearance] ?? NSImage()
+        image.isTemplate = false
+        button.image = image
+        button.imagePosition = .imageOnly
+        button.toolTip = symbol
+        button.setAccessibilityLabel(symbol)
+    }
+
+    private func populate(_ menu: NSMenu) {
+        func label(_ title: String) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        label("ジーニー")
+        label(phase)
+        label("同じApple IDのほかのMacでは動かさない")
+        if let snap = snapshot, snap.screenLock == .locked || snap.heldLockCount > 0 {
+            label("画面ロック中は送信を保留しています（\(snap.heldLockCount)件）")
+        }
+        if let snap = snapshot, snap.screenLock == .unknown {
+            label("画面ロックを確認できていません")
+        }
+        if let snap = snapshot, !snap.webhookConfigured {
+            label("webhook の URL が未設定です")
+        }
+        if let snap = snapshot, !snap.replyFetchConfigured {
+            label("返事の取得先が未設定です")
+        }
+        menu.addItem(.separator())
+        let pause = NSMenuItem(
+            title: snapshot?.paused == true ? "再開" : "一時停止",
+            action: #selector(togglePauseAction),
+            keyEquivalent: ""
+        )
+        pause.target = self
+        pause.isEnabled = !controllerMissing
+        menu.addItem(pause)
+        let allow = NSMenuItem(title: "トークの許可…", action: #selector(showAllowlist), keyEquivalent: "")
+        allow.target = self
+        allow.isEnabled = !controllerMissing
+        menu.addItem(allow)
+        if let halted = snapshot?.haltedChatIDs, !halted.isEmpty {
+            let submenu = NSMenu()
+            for chatID in halted {
+                let item = NSMenuItem(title: "id:\(chatID) を再開", action: #selector(resumeRate(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = NSNumber(value: chatID)
+                submenu.addItem(item)
+            }
+            let parent = NSMenuItem(title: "レート停止を解除", action: nil, keyEquivalent: "")
+            parent.submenu = submenu
+            menu.addItem(parent)
+        }
+        menu.addItem(.separator())
+        label("Notion トークン: \(notionTokenLabel)")
+        let token = NSMenuItem(title: "Notion トークンを設定", action: #selector(promptNotionTokenAction), keyEquivalent: "")
+        token.target = self
+        menu.addItem(token)
+        menu.addItem(.separator())
+        label("最後のエラー: \(errorText)")
+        let log = NSMenuItem(title: "ログを開く", action: #selector(openLogAction), keyEquivalent: "")
+        log.target = self
+        menu.addItem(log)
+        let login = NSMenuItem(title: "ログイン時に起動: \(loginStatus)", action: #selector(toggleLoginAction), keyEquivalent: "")
+        login.target = self
+        menu.addItem(login)
+        menu.addItem(.separator())
+        let quitItem = NSMenuItem(title: "終了", action: #selector(quitAction), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+    }
+
+    @objc private func togglePauseAction() { togglePause() }
+    @objc private func showAllowlist() { AllowlistPanel.present(model: self) }
+    @objc private func promptNotionTokenAction() { promptNotionToken() }
+    @objc private func openLogAction() { openLog() }
+    @objc private func toggleLoginAction() { toggleLoginItem() }
+    @objc private func quitAction() { quit() }
+
+    @objc private func resumeRate(_ sender: NSMenuItem) {
+        guard let number = sender.representedObject as? NSNumber else { return }
+        resumeRateLimit(number.int64Value)
     }
 
     var errorText: String {
@@ -266,63 +399,6 @@ final class AppModel: ObservableObject {
         default:
             return code ?? "なし"
         }
-    }
-}
-
-struct MenuContent: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Text("ジーニー")
-        Text(model.phase)
-        Text("同じApple IDのほかのMacでは動かさない")
-            .font(.caption)
-        if let snap = model.snapshot, snap.screenLock == .locked || snap.heldLockCount > 0 {
-            Text("画面ロック中は送信を保留しています（\(snap.heldLockCount)件）")
-        }
-        if let snap = model.snapshot, snap.screenLock == .unknown {
-            Text("画面ロックを確認できていません")
-        }
-        if let snap = model.snapshot, !snap.webhookConfigured {
-            Text("webhook の URL が未設定です")
-        }
-        if let snap = model.snapshot, !snap.replyFetchConfigured {
-            Text("返事の取得先が未設定です")
-        }
-        Divider()
-        Button(model.snapshot?.paused == true ? "再開" : "一時停止") {
-            model.togglePause()
-        }
-        .disabled(model.controllerMissing)
-        Menu("トークの許可") {
-            Text("初期状態はすべてオフ")
-            Button("一覧を更新") { Task { await model.refreshChats(reportError: true) } }
-            if model.chats.isEmpty {
-                Text("トークはまだありません")
-            }
-            ForEach(model.chats) { chat in
-                let on = model.snapshot?.enabledChatIDs.contains(chat.id) == true
-                Button((on ? "オン  " : "オフ  ") + chat.title + (chat.isGroup ? "（グループ）" : "") + "  id:\(chat.id)") {
-                    model.toggleChat(chat)
-                }
-            }
-        }
-        if let halted = model.snapshot?.haltedChatIDs, !halted.isEmpty {
-            Menu("レート停止を解除") {
-                ForEach(halted, id: \.self) { chatID in
-                    Button("id:\(chatID) を再開") { model.resumeRateLimit(chatID) }
-                }
-            }
-        }
-        Divider()
-        Text("Notion トークン: \(model.notionTokenLabel)")
-        Button("Notion トークンを設定") { model.promptNotionToken() }
-        Divider()
-        Text("最後のエラー: \(model.errorText)")
-        Button("ログを開く") { model.openLog() }
-        Button("ログイン時に起動: \(model.loginStatus)") { model.toggleLoginItem() }
-        Divider()
-        Button("終了") { model.quit() }
     }
 }
 

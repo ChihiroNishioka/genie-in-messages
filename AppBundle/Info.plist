@@ -8,6 +8,8 @@
 	<string>Genie</string>
 	<key>CFBundleExecutable</key>
 	<string>GenieMenuBar</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.genie-in-messages.menu</string>
 	<key>CFBundleInfoDictionaryVersion</key>

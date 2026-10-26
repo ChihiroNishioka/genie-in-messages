@@ -70,6 +70,20 @@ package actor GenieEngine {
         }
     }
 
+    /// メニューのコードは `watch_exited` / `watch_start_failed` のまま。内訳は detail に残す。
+    package func noteWatchEnded(_ result: WatchRunResult) {
+        let code = result.reason == WatchEndReason.startFailed ? "watch_start_failed" : "watch_exited"
+        lastError = code
+        log.record(
+            level: .error,
+            code: code,
+            chatID: nil,
+            guid: nil,
+            rowid: persisted.cursorRowID,
+            detail: result.logDetail(rowid: persisted.cursorRowID)
+        )
+    }
+
     package func noteLock(_ state: ScreenLockState) {
         let becameUnlocked = screenLock != .unlocked && state == .unlocked
         screenLock = state

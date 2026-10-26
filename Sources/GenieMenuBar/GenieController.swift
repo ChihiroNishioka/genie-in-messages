@@ -76,7 +76,7 @@ final class GenieController: @unchecked Sendable {
                 let cursor = await engine.snapshot().cursorRowID
                 let loaded = (try? config.load()) ?? .productDefaults
                 let started = Date()
-                let code = await WatchProcess.run(
+                let outcome = await WatchProcess.run(
                     box: box,
                     executable: loaded.imsgExecutable,
                     arguments: ImsgCommand.watchArguments(sinceRowID: cursor)
@@ -92,11 +92,7 @@ final class GenieController: @unchecked Sendable {
                 }
                 if await engine.isPaused() || self.isStopped { continue }
                 let ran = Date().timeIntervalSince(started)
-                if code == -1 {
-                    await engine.setLastError("watch_start_failed")
-                } else {
-                    await engine.setLastError("watch_exited")
-                }
+                await engine.noteWatchEnded(outcome)
                 if ran > 30 {
                     delay = 1
                 }
