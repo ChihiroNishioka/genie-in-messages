@@ -105,10 +105,9 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     func toggleChat(id: Int64, guid: String) {
-        guard let controller, let snapshot else { return }
-        let enabled = !snapshot.enabledChatIDs.contains(id)
+        guard let controller else { return }
         Task {
-            await controller.engine.setChatEnabled(id, guid: guid, enabled: enabled)
+            await controller.engine.toggleChat(id: id, guid: guid)
             await refresh()
         }
     }

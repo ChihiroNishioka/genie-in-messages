@@ -36,5 +36,61 @@ final class AllowlistOrderingTests: XCTestCase {
             query: "fam"
         )
         XCTAssertEqual(named.map(\.id), [8])
+
+        let outside = AllowlistOrdering.rows(chats: chats, enabledIDs: [21, 250], query: "")
+        XCTAssertEqual(outside.first?.id, 250)
+        XCTAssertEqual(outside.first?.title, "id:250（一覧外）")
+        XCTAssertEqual(outside.first?.kindLabel, "一覧外")
+        XCTAssertTrue(outside.first?.enabled == true)
+        XCTAssertEqual(outside.dropFirst().first?.id, 21)
+        let foundOutside = AllowlistOrdering.rows(chats: chats, enabledIDs: [250], query: "250")
+        XCTAssertEqual(foundOutside.map(\.id), [250])
+    }
+
+    func testTwoQuickTogglesReturnToOff() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        async let first: Void = engine.toggleChat(id: 21, guid: "g21")
+        async let second: Void = engine.toggleChat(id: 21, guid: "g21")
+        _ = await (first, second)
+        let snap = await engine.snapshot()
+        XCTAssertFalse(snap.enabledChatIDs.contains(21))
+        await engine.toggleChat(id: 21, guid: "g21")
+        let on = await engine.snapshot()
+        XCTAssertEqual(on.enabledChatIDs, [21])
+    }
+
+    func testOutsideToggleKeepsTheKnownGuid() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        await engine.reconcileChats([
+            ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
+        ])
+        await engine.setChatEnabled(21, guid: "guid-21", enabled: true)
+        await engine.toggleChat(id: 21, guid: "")
+        await engine.toggleChat(id: 21, guid: "")
+        XCTAssertEqual(harness.allow.guids[21], "guid-21")
+        let snap = await engine.snapshot()
+        XCTAssertEqual(snap.enabledChatIDs, [21])
+        XCTAssertFalse(harness.log.records.contains { $0.code == "allowlist_guid_unknown" })
+    }
+
+    func testEnablingWithoutAKnownGuidIsLogged() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        await engine.toggleChat(id: 21, guid: "")
+        let unknown = harness.log.records.filter { $0.code == "allowlist_guid_unknown" }
+        XCTAssertEqual(unknown.count, 1)
+        XCTAssertEqual(unknown.first?.chatID, 21)
+        XCTAssertEqual(unknown.first?.level, LogLevel.warning.rawValue)
+        XCTAssertEqual(harness.allow.guids[21], "")
+
+        await engine.reconcileChats([
+            ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
+        ])
+        await engine.toggleChat(id: 21, guid: "")
+        await engine.toggleChat(id: 21, guid: "")
+        XCTAssertEqual(harness.allow.guids[21], "guid-21")
+        XCTAssertEqual(harness.log.records.filter { $0.code == "allowlist_guid_unknown" }.count, 1)
     }
 }

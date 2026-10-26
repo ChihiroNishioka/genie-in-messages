@@ -26,7 +26,7 @@ final class GenieController: @unchecked Sendable {
 
     func pause() async {
         await engine.setPaused(true)
-        box.terminate()
+        box.stopForUser()
     }
 
     func resume() async {
@@ -37,7 +37,7 @@ final class GenieController: @unchecked Sendable {
         stateLock.lock()
         stopped = true
         stateLock.unlock()
-        box.terminate()
+        box.stopForUserAndWait()
         supervisor?.cancel()
         poller?.cancel()
     }
@@ -72,6 +72,7 @@ final class GenieController: @unchecked Sendable {
                     continue
                 }
                 box.resetStop()
+                if self.isStopped { continue }
                 if await engine.isPaused() { continue }
                 let cursor = await engine.snapshot().cursorRowID
                 let loaded = (try? config.load()) ?? .productDefaults
@@ -90,9 +91,12 @@ final class GenieController: @unchecked Sendable {
                         return WatchSession.shouldStopApplying(result) ? .stop : .next
                     }
                 }
-                if await engine.isPaused() || self.isStopped { continue }
+                let pausedNow = await engine.isPaused()
+                let userStop = box.wasUserStop() || pausedNow
+                let quitting = self.isStopped
+                await engine.noteWatchEnded(outcome, updateMenu: !userStop && !quitting)
+                if userStop || quitting { continue }
                 let ran = Date().timeIntervalSince(started)
-                await engine.noteWatchEnded(outcome)
                 if ran > 30 {
                     delay = 1
                 }

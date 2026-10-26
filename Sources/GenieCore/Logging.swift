@@ -32,45 +32,59 @@ struct LogRecord: Codable, Equatable {
 }
 
 package enum LogRedaction {
-    /// 電話番号と、4桁以上の数字の並びを残さない。短い id はそのまま。
-    package static func redact(_ text: String) -> String {
-        var out = ""
-        var digits = ""
-        var plus = false
-        func flush() {
-            if plus || digits.count >= 4 {
-                if plus || !digits.isEmpty { out += "[n]" }
-            } else {
-                if plus { out += "+" }
-                out += digits
-            }
-            digits = ""
-            plus = false
+    /// 診断に出してよい、決まった語だけ。それ以外（本文、JSON、トークン）は出さない。
+    private static let allowed: Set<String> = [
+        "error", "failed", "failure", "permission", "denied", "locked", "not", "found",
+        "timeout", "timed", "out", "unable", "to", "open", "no", "such", "file", "or",
+        "directory", "operation", "interrupted", "disk", "access", "full", "database",
+        "imsg", "watch", "chat.db",
+        "permitted", "is", "busy", "readonly", "sqlite", "fatal", "invalid", "killed", "terminated",
+    ]
+
+    /// 標準エラーは最後の空でない行だけ。許可した語以外は単語ごと `[x]`。
+    /// 連続する `[x]` は1つにまとめる。120文字を超えるときは単語の境界で切る。
+    package static func tail(_ text: String, maxChars: Int = 120) -> String {
+        let lines = text.split(whereSeparator: \.isNewline).filter {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
         }
-        for character in text {
-            if character == "+" && digits.isEmpty && !plus {
-                plus = true
-                continue
-            }
-            if character.isNumber {
-                digits.append(character)
-                continue
-            }
-            flush()
-            if character.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) {
-                out.append(" ")
-            } else {
-                out.append(character)
-            }
+        guard let last = lines.last else { return "" }
+        var words: [String] = []
+        for word in last.split(whereSeparator: \.isWhitespace) {
+            let redacted = redactWord(String(word))
+            if redacted == "[x]", words.last == "[x]" { continue }
+            words.append(redacted)
         }
-        flush()
-        return out
+        return capped(words.joined(separator: " "), maxChars: maxChars)
     }
 
-    package static func tail(_ text: String, maxChars: Int = 180) -> String {
-        let collapsed = redact(text).split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        if collapsed.count <= maxChars { return collapsed }
-        return String(collapsed.suffix(maxChars))
+    /// 末尾から最大文字数。途中で切れた先頭の語は落とす。全体が1語ならそのまま残す。
+    private static func capped(_ text: String, maxChars: Int) -> String {
+        guard maxChars > 0, text.count > maxChars else { return text }
+        let start = text.index(text.endIndex, offsetBy: -maxChars)
+        let midWord = start > text.startIndex && text[text.index(before: start)] != " "
+        var suffix = String(text[start...])
+        if midWord, let space = suffix.firstIndex(of: " ") {
+            suffix = String(suffix[suffix.index(after: space)...])
+        }
+        return suffix
+    }
+
+    static func redactWord(_ word: String) -> String {
+        let key = normalized(word)
+        if allowed.contains(key) { return key }
+        return "[x]"
+    }
+
+    private static func normalized(_ word: String) -> String {
+        let scalars = word.lowercased().unicodeScalars
+        let trimmed = scalars.drop(while: { !isToken($0) }).reversed().drop(while: { !isToken($0) }).reversed()
+        let stripped = trimmed.drop(while: { $0 == "." }).reversed().drop(while: { $0 == "." }).reversed()
+        return String(String.UnicodeScalarView(stripped))
+    }
+
+    private static func isToken(_ scalar: Unicode.Scalar) -> Bool {
+        guard scalar.value < 128 else { return false }
+        return scalar.properties.isAlphabetic || scalar == "." || scalar == "_" || scalar == "-"
     }
 }
 

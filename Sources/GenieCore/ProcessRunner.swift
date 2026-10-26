@@ -111,17 +111,48 @@ package final class ProcessBox: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
     private var stopRequested = false
+    private var userStop = false
+    /// 終了で立てる。`resetStop` では消さない。
+    private var sealed = false
 
     package init() {}
 
     package func begin(_ process: Process) {
         lock.lock()
-        self.process = process
         let stop = stopRequested
+        let wait = sealed
+        if !stop {
+            self.process = process
+        }
         lock.unlock()
         if stop {
-            process.terminate()
+            if wait {
+                Self.finish(process, timeout: 0.5)
+            } else {
+                stopProcess(process)
+            }
         }
+    }
+
+    /// 一時停止。あとから再開しても、勝手に落ちたことにはしない。呼び出し側は待たない。
+    package func stopForUser() {
+        lock.lock()
+        userStop = true
+        lock.unlock()
+        terminate()
+    }
+
+    /// アプリ終了。SIGTERM のあと、残っていれば SIGKILL を送り、子が止まるまで待つ。
+    /// このあと `resetStop` されても、新しい子は起動しない。
+    package func stopForUserAndWait(timeout: TimeInterval = 0.5) {
+        lock.lock()
+        userStop = true
+        stopRequested = true
+        sealed = true
+        let process = self.process
+        lock.unlock()
+        guard let process else { return }
+        Self.finish(process, timeout: timeout)
     }
 
     package func terminate() {
@@ -129,7 +160,32 @@ package final class ProcessBox: @unchecked Sendable {
         stopRequested = true
         let process = self.process
         lock.unlock()
-        process?.terminate()
+        guard let process else { return }
+        stopProcess(process)
+    }
+
+    /// SIGTERM のあと、別スレッドで残っていれば SIGKILL。呼び出し側は待たない。
+    private func stopProcess(_ process: Process) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            Self.finish(process, timeout: 0.5)
+        }
+    }
+
+    /// 呼び出し側のスレッドで SIGTERM を送り、期限までに残っていれば SIGKILL して止まるまで待つ。
+    private static func finish(_ process: Process, timeout: TimeInterval) {
+        process.terminate()
+        let pid = process.processIdentifier
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            kill(pid, SIGKILL)
+            let killed = Date().addingTimeInterval(1)
+            while process.isRunning && Date() < killed {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+        }
     }
 
     package func wasStopRequested() -> Bool {
@@ -138,9 +194,18 @@ package final class ProcessBox: @unchecked Sendable {
         return stopRequested
     }
 
+    package func wasUserStop() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return userStop
+    }
+
     package func resetStop() {
         lock.lock()
-        stopRequested = false
+        if !sealed {
+            stopRequested = false
+            userStop = false
+        }
         process = nil
         lock.unlock()
     }
@@ -166,8 +231,9 @@ package struct WatchRunResult: Equatable, Sendable {
     package var stderrTail: String
 
     package func logDetail(rowid: Int64) -> String {
+        let exitText = signal == nil ? String(exitCode) : "-"
         let signalText = signal.map(String.init) ?? "-"
-        return "exit=\(exitCode) signal=\(signalText) reason=\(reason) lines=\(lines) max_line=\(maxLineBytes) rowid=\(rowid) stderr=\(stderrTail)"
+        return "exit=\(exitText) signal=\(signalText) reason=\(reason) lines=\(lines) max_line=\(maxLineBytes) rowid=\(rowid) stderr=\(stderrTail)"
     }
 }
 
@@ -201,7 +267,7 @@ package enum WatchProcess {
     }
 
     /// 標準出力と標準エラーを別スレッドで読み切る。標準入力の書き込み側は、
-    /// 子が終わるまで閉じない。imsg 0.19.1 は自分の出力が 256 行たまると終了する。
+    /// 子が終わるまで閉じない。imsg が 256 行で終了する、というのは仮説で、実機では未確認。
     private static func blocking(
         box: ProcessBox,
         executable: String,
@@ -294,7 +360,7 @@ package enum WatchProcess {
         #if canImport(Darwin)
         if process.terminationReason == .uncaughtSignal {
             signal = process.terminationStatus
-            exitCode = process.terminationStatus
+            exitCode = -1
         }
         #endif
         let reason = box.wasStopRequested() ? WatchEndReason.stoppedByApp : WatchEndReason.processExited

@@ -7,6 +7,12 @@ final class SignalTests: XCTestCase {
         XCTAssertTrue(Signal.matches("\u{1FA94}\u{FE0F}"))
         XCTAssertTrue(Signal.matches(" \n\t\u{1FA94} go"))
         XCTAssertTrue(Signal.matches("\u{FE0F}\u{1FA94}"))
+        XCTAssertTrue(Signal.matches("\u{200B}\u{200D}\u{1FA94} go"))
+        XCTAssertFalse(Signal.matches("\u{200B}\u{200D}\u{FE0F}"))
+        XCTAssertFalse(Signal.matches("\u{0601}\u{1FA94}"))
+        XCTAssertFalse(TextNormalizer.isBlank("\u{0601}"))
+        XCTAssertFalse(TextNormalizer.isBlank("\u{06DD}"))
+        XCTAssertFalse(TextNormalizer.isBlank("\u{110BD}"))
         let scan = Signal.scan("\u{1FA94}\u{FE0F} hi")
         XCTAssertTrue(scan.matched)
         XCTAssertEqual(scan.remainder, " hi")
@@ -60,6 +66,15 @@ final class SignalTests: XCTestCase {
         config.marker = " \n\t"
         XCTAssertEqual(config.sanitized().marker, marker)
         XCTAssertTrue(config.sanitized().markerWasReplaced)
+        config.marker = "\u{200B}\u{200D}\u{FE0F}\u{FEFF}"
+        XCTAssertEqual(config.sanitized().marker, marker)
+        XCTAssertTrue(config.sanitized().markerWasReplaced)
+        config.marker = "\u{200B}ok"
+        XCTAssertEqual(config.sanitized().marker, "\u{200B}ok")
+        XCTAssertFalse(config.sanitized().markerWasReplaced)
+        config.marker = "\u{0601}"
+        XCTAssertEqual(config.sanitized().marker, "\u{0601}")
+        XCTAssertFalse(config.sanitized().markerWasReplaced)
         let data = try JSONEncoder().encode(config.sanitized())
         let text = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(text.contains("markerWasReplaced"))

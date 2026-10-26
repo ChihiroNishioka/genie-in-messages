@@ -73,13 +73,14 @@ package struct FileAllowlistStore: AllowlistPersisting {
 
     package func save(_ state: AllowlistState) throws {
         let entries = state.entries.sorted { $0.id < $1.id }
-        let document = AllowlistDocument(
-            enabledChatIDs: entries.map(\.id),
-            enabledChats: entries
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(document)
+        var object: [String: Any] = [:]
+        if let existing = try? Data(contentsOf: file),
+           let json = try? JSONSerialization.jsonObject(with: existing) as? [String: Any] {
+            object = json
+        }
+        object["enabled_chat_ids"] = entries.map { Int($0.id) }
+        object["enabled_chats"] = entries.map { ["guid": $0.guid, "id": Int($0.id)] as [String: Any] }
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: file, options: .atomic)
         try FilePermissions.set(file, mode: 0o600)
     }

@@ -4,21 +4,21 @@ import XCTest
 final class WatchProcessTests: XCTestCase {
     func testAsyncStreamDeliversBeforeTheProducerFinishes() async {
         let (stream, continuation) = AsyncStream.makeStream(of: Int.self, bufferingPolicy: .unbounded)
-        async let done: Int = withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
+        let gate = DispatchSemaphore(value: 0)
+        async let deliveredInTime: Bool = withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             DispatchQueue.global().async {
                 continuation.yield(1)
-                Thread.sleep(forTimeInterval: 0.6)
+                let arrived = gate.wait(timeout: .now() + 2) == .success
                 continuation.finish()
-                cont.resume(returning: 0)
+                cont.resume(returning: arrived)
             }
         }
-        let started = Date()
-        var first: TimeInterval?
         for await _ in stream {
-            if first == nil { first = Date().timeIntervalSince(started) }
+            gate.signal()
+            break
         }
-        _ = await done
-        XCTAssertLessThan(first ?? 9, 0.3)
+        let arrived = await deliveredInTime
+        XCTAssertTrue(arrived)
     }
 
     func testStdinStaysOpenLongEnoughToEmit() async throws {
@@ -47,6 +47,11 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(result.lines, 1)
         XCTAssertFalse(result.stderrTail.contains("got_data"))
         XCTAssertEqual(result.reason, WatchEndReason.stoppedByApp)
+        #if canImport(Darwin)
+        XCTAssertEqual(result.signal, 15)
+        XCTAssertTrue(result.logDetail(rowid: 1).contains("exit=-"))
+        XCTAssertFalse(result.logDetail(rowid: 1).contains("exit=15"))
+        #endif
     }
 
     func testStderrFloodDoesNotBlockTheBacklogLine() async throws {
@@ -113,7 +118,8 @@ final class WatchProcessTests: XCTestCase {
         let script = try writeScript("""
         #!/bin/bash
         /usr/bin/printf '%s\\n' '{"id":1,"guid":"g","chat_id":1,"is_from_me":false,"text":"secret body","created_at":"t"}'
-        echo 'watch_boom +819012345678 id 12345' >&2
+        /usr/bin/printf '%s\\n' 'earlier alice@hidden.example keep-me-out' >&2
+        /usr/bin/printf '%s\\n' 'error hello there {"text":"hello there","sender":"bob"} Authorization: Bearer abcDEFghiJKL' >&2
         exit 9
         """)
         let box = ProcessBox()
@@ -121,11 +127,10 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 9)
         XCTAssertEqual(result.reason, WatchEndReason.processExited)
         XCTAssertGreaterThanOrEqual(result.lines, 1)
-        XCTAssertTrue(result.stderrTail.contains("watch_boom"))
-        XCTAssertFalse(result.stderrTail.contains("8190"))
-        XCTAssertFalse(result.stderrTail.contains("12345"))
-        XCTAssertFalse(result.stderrTail.contains("+"))
-        XCTAssertFalse(result.stderrTail.contains("secret"))
+        XCTAssertEqual(result.stderrTail, "error [x]")
+        for leaked in ["alice", "example", "hidden", "keep-me-out", "earlier", "hello", "there", "bob", "Bearer", "abcDEF", "Authorization", "text", "sender"] {
+            XCTAssertFalse(result.stderrTail.contains(leaked), leaked)
+        }
         let harness = Harness()
         let engine = try harness.engine()
         await engine.noteWatchEnded(result)
@@ -139,26 +144,188 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertTrue(detail.contains("lines="))
         XCTAssertTrue(detail.contains("max_line="))
         XCTAssertTrue(detail.contains("rowid="))
-        XCTAssertTrue(detail.contains("watch_boom"))
-        XCTAssertFalse(detail.contains("secret"))
-        XCTAssertFalse(detail.contains("8190"))
-        XCTAssertFalse(detail.contains("12345"))
+        XCTAssertTrue(detail.contains("stderr=error"))
+        for leaked in ["alice", "example", "hello", "there", "bob", "Bearer", "abcDEF", "secret"] {
+            XCTAssertFalse(detail.contains(leaked), leaked)
+        }
     }
 
-    func testStartFailureUsesItsOwnCode() async throws {
+    func testEnglishBodyJsonAndBearerStayOutOfTheLog() {
+        let english = LogRedaction.tail("hello there see you tomorrow")
+        XCTAssertFalse(english.contains("hello"))
+        XCTAssertFalse(english.contains("there"))
+        XCTAssertFalse(english.contains("tomorrow"))
+        XCTAssertEqual(english, "[x]")
+
+        let json = LogRedaction.tail("{\"text\":\"hello there\",\"sender\":\"bob\"}")
+        XCTAssertFalse(json.contains("hello"))
+        XCTAssertFalse(json.contains("bob"))
+        XCTAssertFalse(json.contains("text"))
+        XCTAssertFalse(json.contains("{"))
+        XCTAssertEqual(json, "[x]")
+
+        let bearer = LogRedaction.tail("Authorization: Bearer abcDEFghiJKL")
+        XCTAssertFalse(bearer.contains("Bearer"))
+        XCTAssertFalse(bearer.contains("abcDEF"))
+        XCTAssertFalse(bearer.contains("Authorization"))
+        XCTAssertEqual(bearer, "[x]")
+
+        let diagnostic = LogRedaction.tail("Error: permission denied for chat.db")
+        XCTAssertEqual(diagnostic, "error permission denied [x] chat.db")
+        XCTAssertEqual(LogRedaction.tail("failed timeout\n   \n"), "failed timeout")
+        XCTAssertEqual(LogRedaction.tail("denied."), "denied")
+        XCTAssertEqual(LogRedaction.tail("Unable to open database file."), "unable to open database file")
+        XCTAssertEqual(LogRedaction.tail("Operation not permitted"), "operation not permitted")
+        XCTAssertEqual(LogRedaction.tail("database is locked"), "database is locked")
+        XCTAssertEqual(LogRedaction.tail("database is busy"), "database is busy")
+        XCTAssertEqual(LogRedaction.tail("attempt to write a readonly database"), "[x] to [x] readonly database")
+        XCTAssertEqual(LogRedaction.tail("fatal: sqlite invalid killed terminated"), "fatal sqlite invalid killed terminated")
+        XCTAssertEqual(LogRedaction.tail("--error--"), "[x]")
+        XCTAssertEqual(LogRedaction.tail("not/found"), "[x]")
+        XCTAssertEqual(LogRedaction.tail("chat.db"), "chat.db")
+        XCTAssertEqual(LogRedaction.tail("no such file or directory"), "no such file or directory")
+
+        let repeated = Array(repeating: "interrupted", count: 20).joined(separator: " ")
+        let capped = LogRedaction.tail(repeated, maxChars: 121)
+        XCTAssertTrue(capped.hasPrefix("interrupted"))
+        XCTAssertLessThanOrEqual(capped.count, 121)
+        XCTAssertFalse(capped.hasPrefix("rupted"))
+        XCTAssertEqual(LogRedaction.tail("interrupted", maxChars: 4), "pted")
+    }
+
+    func testSignalExitIsNotShownAsAStatusCode() {
+        let detail = WatchRunResult(
+            exitCode: -1,
+            signal: 15,
+            reason: WatchEndReason.stoppedByApp,
+            lines: 1,
+            maxLineBytes: 3,
+            stderrTail: "watch_boom"
+        ).logDetail(rowid: 4)
+        XCTAssertTrue(detail.contains("exit=-"))
+        XCTAssertTrue(detail.contains("signal=15"))
+        XCTAssertFalse(detail.contains("exit=15"))
+        XCTAssertFalse(detail.contains("exit=-1"))
+    }
+
+    func testPausedStopIsLoggedWithoutChangingTheMenuError() async throws {
         let harness = Harness()
         let engine = try harness.engine()
         await engine.noteWatchEnded(WatchRunResult(
             exitCode: -1,
-            signal: nil,
-            reason: WatchEndReason.startFailed,
-            lines: 0,
-            maxLineBytes: 0,
-            stderrTail: ""
-        ))
+            signal: 15,
+            reason: WatchEndReason.stoppedByApp,
+            lines: 2,
+            maxLineBytes: 8,
+            stderrTail: "watch_boom"
+        ), updateMenu: false)
+        let snap = await engine.snapshot()
+        XCTAssertNil(snap.lastError)
+        let record = try XCTUnwrap(harness.log.records.last)
+        XCTAssertEqual(record.code, "watch_exited")
+        XCTAssertEqual(record.level, LogLevel.info.rawValue)
+        XCTAssertTrue(record.detail?.contains("reason=stopped_by_app") == true)
+    }
+
+    func testStartFailureUsesItsOwnCode() async throws {
+        let missing = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("genie-missing-\(UUID().uuidString)")
+            .path
+        let box = ProcessBox()
+        let result = await WatchProcess.run(box: box, executable: missing, arguments: []) { _ in .next }
+        XCTAssertEqual(result.reason, WatchEndReason.startFailed)
+        XCTAssertEqual(result.exitCode, -1)
+        XCTAssertNil(result.signal)
+        XCTAssertEqual(result.lines, 0)
+        let harness = Harness()
+        let engine = try harness.engine()
+        await engine.noteWatchEnded(result)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.lastError, "watch_start_failed")
         XCTAssertEqual(harness.log.records.last?.code, "watch_start_failed")
+    }
+
+    func testUserStopReturnsWithoutWaitingAndStaysMarked() throws {
+        let process = try launchIgnoringTerm()
+        let box = ProcessBox()
+        box.begin(process)
+        try waitForReady(process)
+        let started = Date()
+        box.stopForUser()
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.2)
+        XCTAssertTrue(box.wasUserStop())
+        XCTAssertTrue(box.wasStopRequested())
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        XCTAssertFalse(process.isRunning)
+        assertKilled(process)
+        box.resetStop()
+        XCTAssertFalse(box.wasUserStop())
+    }
+
+    func testShutdownStopKillsAChildThatIgnoresSigterm() throws {
+        let process = try launchIgnoringTerm()
+        let box = ProcessBox()
+        box.begin(process)
+        try waitForReady(process)
+        let started = Date()
+        box.stopForUserAndWait()
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2)
+        XCTAssertFalse(process.isRunning)
+        XCTAssertTrue(box.wasUserStop())
+        XCTAssertTrue(box.wasStopRequested())
+        assertKilled(process)
+        box.resetStop()
+        XCTAssertTrue(box.wasUserStop())
+        XCTAssertTrue(box.wasStopRequested())
+    }
+
+    /// SIGTERM を無視し、準備ができてから `ready` を出す。自分では 10 秒後まで終わらない。
+    private func launchIgnoringTerm() throws -> Process {
+        let script = try writeScript("""
+        #!/usr/bin/env python3
+        import os, signal, sys, time
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        sys.stdout.write("ready\\n")
+        sys.stdout.flush()
+        time.sleep(10)
+        os._exit(0)
+        """)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: script)
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        process.standardInput = Pipe()
+        try process.run()
+        return process
+    }
+
+    private func waitForReady(_ process: Process) throws {
+        let pipe = try XCTUnwrap(process.standardOutput as? Pipe)
+        let handle = pipe.fileHandleForReading
+        let deadline = Date().addingTimeInterval(2)
+        var buffer = Data()
+        while Date() < deadline {
+            let chunk = handle.availableData
+            if !chunk.isEmpty {
+                buffer.append(chunk)
+                if String(decoding: buffer, as: UTF8.self).contains("ready") { return }
+            } else {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+        XCTFail("ready が来なかった: \(String(decoding: buffer, as: UTF8.self))")
+    }
+
+    private func assertKilled(_ process: Process) {
+        #if canImport(Darwin)
+        XCTAssertEqual(process.terminationReason, .uncaughtSignal)
+        XCTAssertEqual(process.terminationStatus, 9)
+        #else
+        _ = process
+        #endif
     }
 
     private func writeScript(_ body: String) throws -> String {
