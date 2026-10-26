@@ -1,0 +1,20 @@
+{
+  "webhook_url": "",
+  "reply_fetch_url": "",
+  "marker": "\uD83D\uDDE8\uFE0F\uD83E\uDDDE\u200D\u2642\uFE0F",
+  "imsg_executable": "/opt/homebrew/opt/imsg/libexec/imsg",
+  "rate_limit_count": 5,
+  "rate_limit_window_seconds": 60,
+  "webhook_max_attempts": 5,
+  "webhook_initial_backoff_seconds": 1,
+  "webhook_max_backoff_seconds": 60,
+  "reply_poll_interval_seconds": 10,
+  "hold_retry_interval_seconds": 15,
+  "fingerprint_window_seconds": 120,
+  "chats_limit": 100,
+  "route_ttl_seconds": 604800,
+  "send_timeout_seconds": 150,
+  "chats_timeout_seconds": 30,
+  "reply_page_limit": 100,
+  "notion_data_source_id": ""
+}
