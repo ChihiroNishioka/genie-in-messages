@@ -227,7 +227,7 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(snap.heldCount, 0)
     }
 
-    func testLampMarkerIsRejectedBeforeSend() async throws {
+    func testLampMarkerIsReplacedWithTheDefaultBeforeSend() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
@@ -242,5 +242,8 @@ final class DeliveryTests: XCTestCase {
         XCTAssertTrue(text.hasPrefix(GenieConfig.productDefaults.marker))
         XCTAssertFalse(Signal.matches(text))
         XCTAssertFalse(text.hasPrefix("\u{1FA94}"))
+        let warnings = harness.log.records.filter { $0.code == "marker_replaced" }
+        XCTAssertEqual(warnings.count, 1)
+        XCTAssertEqual(warnings.first?.level, LogLevel.warning.rawValue)
     }
 }

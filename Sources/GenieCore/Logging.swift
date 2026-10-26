@@ -2,6 +2,7 @@ import Foundation
 
 package enum LogLevel: String, Codable {
     case info
+    case warning
     case error
 }
 

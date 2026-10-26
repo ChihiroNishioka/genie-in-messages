@@ -48,6 +48,24 @@ final class SignalTests: XCTestCase {
         XCTAssertFalse(Signal.matches(prepared))
     }
 
+    func testBlankMarkerFallsBackToTheDefault() throws {
+        let marker = GenieConfig.productDefaults.marker
+        XCTAssertEqual(ReplyComposer.prepare(body: "hello", marker: ""), marker + " hello")
+        XCTAssertEqual(ReplyComposer.prepare(body: "hello", marker: " \n\t"), marker + " hello")
+        XCTAssertFalse(Signal.matches(ReplyComposer.prepare(body: "hello", marker: "")))
+        var config = GenieConfig.productDefaults
+        config.marker = ""
+        XCTAssertEqual(config.sanitized().marker, marker)
+        XCTAssertTrue(config.sanitized().markerWasReplaced)
+        config.marker = " \n\t"
+        XCTAssertEqual(config.sanitized().marker, marker)
+        XCTAssertTrue(config.sanitized().markerWasReplaced)
+        let data = try JSONEncoder().encode(config.sanitized())
+        let text = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(text.contains("markerWasReplaced"))
+        XCTAssertFalse(text.contains("marker_was_replaced"))
+    }
+
     func testLampMarkerIsReplacedWithTheDefault() {
         let prepared = ReplyComposer.prepare(body: "hello", marker: "\u{1FA94}")
         XCTAssertFalse(Signal.matches(prepared))
