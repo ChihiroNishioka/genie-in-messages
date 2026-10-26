@@ -6,103 +6,90 @@ package enum LampAppearance: String, Sendable {
     case warning
 }
 
-/// メニューバー用の、丸い金色のランプ。CoreGraphics は使わない。
-/// Finder のアイコンは画像から切り抜く（`scripts/make-app-icon.py`）。
+/// メニューバー用のランプ。原本は `scripts/make-menu-icon.py` が抜いた透過 PNG。
+/// 高さは 18pt。幅は絵の比率。一時停止と要対応の印だけ、この画像の上に重ねる。
+/// template 画像にはしない。
 package enum LampIcon {
-    package static func rgba(size: Int, appearance: LampAppearance) -> [UInt8] {
-        render(size: size, appearance: appearance)
-    }
+    package static let menuPointSize = 18
+    package static let menuScales = [1, 2, 3]
+    package static let menuImageIsTemplate = false
 
-    package static func png(size: Int, appearance: LampAppearance) -> Data {
-        png(size: size, rgba: rgba(size: size, appearance: appearance))
-    }
-
-    private static func render(size: Int, appearance: LampAppearance) -> [UInt8] {
-        let samples = size >= 256 ? 2 : 3
-        var pixels = [UInt8](repeating: 0, count: size * size * 4)
-        let pixel = 1.0 / Double(size)
-        let outline = max(1.8 / Double(size), 0.01)
-        for y in 0..<size {
-            for x in 0..<size {
-                var red = 0.0
-                var green = 0.0
-                var blue = 0.0
-                var alpha = 0.0
-                let n = samples * samples
-                for sy in 0..<samples {
-                    for sx in 0..<samples {
-                        let u = (Double(x) + (Double(sx) + 0.5) / Double(samples)) / Double(size)
-                        let v = (Double(y) + (Double(sy) + 0.5) / Double(samples)) / Double(size)
-                        let sample = shade(u: u, v: v, pixel: pixel, outline: outline, appearance: appearance)
-                        red += sample.0
-                        green += sample.1
-                        blue += sample.2
-                        alpha += sample.3
-                    }
-                }
-                let i = (y * size + x) * 4
-                pixels[i] = byte(red / Double(n))
-                pixels[i + 1] = byte(green / Double(n))
-                pixels[i + 2] = byte(blue / Double(n))
-                pixels[i + 3] = byte(alpha / Double(n))
+    package static func rgba(pixelHeight: Int, appearance: LampAppearance) -> (width: Int, height: Int, pixels: [UInt8]) {
+        let base = baseRaster(pixelHeight: pixelHeight)
+        guard appearance != .running else { return base }
+        let width = base.width
+        let height = base.height
+        var pixels = base.pixels
+        let pixel = 1.0 / Double(max(height, 1))
+        for y in 0..<height {
+            for x in 0..<width {
+                let u = (Double(x) + 0.5) / Double(width)
+                let v = (Double(y) + 0.5) / Double(height)
+                let mark = badge(u: u, v: v, pixel: pixel, appearance: appearance)
+                let index = (y * width + x) * 4
+                let under = (
+                    Double(pixels[index]) / 255,
+                    Double(pixels[index + 1]) / 255,
+                    Double(pixels[index + 2]) / 255,
+                    Double(pixels[index + 3]) / 255
+                )
+                let mixed = over(mark, under)
+                pixels[index] = byte(mixed.0)
+                pixels[index + 1] = byte(mixed.1)
+                pixels[index + 2] = byte(mixed.2)
+                pixels[index + 3] = byte(mixed.3)
             }
         }
-        return pixels
+        return (width, height, pixels)
     }
 
-    /// Straight-alpha RGBA in 0...1. y は下が正。
-    private static func shade(
-        u: Double,
-        v: Double,
-        pixel: Double,
-        outline: Double,
-        appearance: LampAppearance
-    ) -> (Double, Double, Double, Double) {
-        let glow = appearance != .paused
-        var lamp = lampPixel(u: u, v: v, pixel: pixel, outline: outline, glow: glow)
-        if appearance != .running {
-            lamp = over(badge(u: u, v: v, pixel: pixel, appearance: appearance), lamp)
-        }
-        return lamp
+    package static func png(pixelHeight: Int, appearance: LampAppearance) -> Data {
+        let raster = rgba(pixelHeight: pixelHeight, appearance: appearance)
+        return encodePNG(width: raster.width, height: raster.height, rgba: raster.pixels)
     }
 
-    private static func lampPixel(
-        u: Double,
-        v: Double,
-        pixel: Double,
-        outline: Double,
-        glow: Bool
-    ) -> (Double, Double, Double, Double) {
-        let d = lampDistance(u, v)
-        let fill = cover(d + outline * 0.25, pixel)
-        let body = cover(d - outline * 0.85, pixel)
-        let edge = max(0, body - fill)
-        let light = sat(0.35 + (0.34 - u) * 0.9 + (0.48 - v) * 1.5)
-        var r = 148.0 + light * 107.0
-        var g = 86.0 + light * 128.0
-        var b = 16.0 + light * 64.0
-        let sheen = sat(1 - hypot(u - 0.34, v - 0.50) / 0.08)
-        r = min(255, r + sheen * 40)
-        g = min(255, g + sheen * 30)
-        b = min(255, b + sheen * 18)
-        let flame = cover(ellipse(u, v, 0.86, 0.27, 0.035, 0.05), pixel * 0.8)
-        r = r * (1 - flame) + 255 * flame
-        g = g * (1 - flame) + 214 * flame
-        b = b * (1 - flame) + 86 * flame
-        let weight = fill + edge
-        var lamp: (Double, Double, Double, Double) = (0, 0, 0, 0)
-        if weight > 0 {
-            lamp = (
-                ((r / 255) * fill + (32.0 / 255) * edge) / weight,
-                ((g / 255) * fill + (20.0 / 255) * edge) / weight,
-                ((b / 255) * fill + (8.0 / 255) * edge) / weight,
-                min(1, weight)
-            )
+    /// メニューバー風の下地の上に載せ、必要なら最近傍で拡大する。
+    package static func flattenedPNG(
+        pixelHeight: Int,
+        appearance: LampAppearance,
+        background: (UInt8, UInt8, UInt8),
+        magnification: Int = 1
+    ) -> Data {
+        let source = rgba(pixelHeight: pixelHeight, appearance: appearance)
+        let flat = flatten(source.pixels, background: background)
+        let scale = max(1, magnification)
+        let sized = scale == 1 ? flat : nearest(flat, width: source.width, height: source.height, scale: scale)
+        return encodePNG(width: source.width * scale, height: source.height * scale, rgba: sized)
+    }
+
+    package static func menuLampURL(pixelHeight: Int) -> URL {
+        let name = "lamp@\(pixelHeight / menuPointSize)x"
+        if let bundled = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "MenuLamp"),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
         }
-        guard glow else { return lamp }
-        let gd = hypot(u - 0.87, v - 0.24)
-        let halo = exp(-(gd * gd) / 0.0045) * 0.72
-        return over(lamp, (1.0, 0.82, 0.28, halo))
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("AppBundle/MenuLamp/\(name).png")
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cache: [Int: (width: Int, height: Int, pixels: [UInt8])] = [:]
+
+    private static func baseRaster(pixelHeight: Int) -> (width: Int, height: Int, pixels: [UInt8]) {
+        cacheLock.lock()
+        if let hit = cache[pixelHeight] {
+            cacheLock.unlock()
+            return hit
+        }
+        cacheLock.unlock()
+        let loaded = decodeStoredPNG(menuLampURL(pixelHeight: pixelHeight))
+        cacheLock.lock()
+        cache[pixelHeight] = loaded
+        cacheLock.unlock()
+        return loaded
     }
 
     private static func badge(
@@ -136,63 +123,24 @@ package enum LampIcon {
         return pixelColor
     }
 
-    /// 負が内側。太い胴、右上への注ぎ口、左の持ち手。
-    private static func lampDistance(_ x: Double, _ y: Double) -> Double {
-        let body = ellipse(x, y, 0.40, 0.58, 0.23, 0.145)
-        let belly = ellipse(x, y, 0.34, 0.60, 0.15, 0.125)
-        let spoutA = capsule(x, y, 0.50, 0.52, 0.68, 0.40, 0.075)
-        let spoutB = capsule(x, y, 0.64, 0.42, 0.82, 0.32, 0.058)
-        let flare = ellipse(x, y, 0.85, 0.30, 0.055, 0.04)
-        let lid = ellipse(x, y, 0.38, 0.45, 0.10, 0.042)
-        let knob = circle(x, y, 0.38, 0.40, 0.03)
-        let ring = abs(circle(x, y, 0.20, 0.58, 0.09)) - 0.038
-        let handle = x < 0.26 ? ring : 4
-        let foot = capsule(x, y, 0.28, 0.72, 0.52, 0.725, 0.026)
-        return min(body, belly, spoutA, spoutB, flare, lid, knob, handle, foot)
-    }
-
     private static func over(
         _ src: (Double, Double, Double, Double),
         _ dst: (Double, Double, Double, Double)
     ) -> (Double, Double, Double, Double) {
-        let sa = src.3
-        let da = dst.3
-        let outA = sa + da * (1 - sa)
-        guard outA > 0 else { return (0, 0, 0, 0) }
-        let r = (src.0 * sa + dst.0 * da * (1 - sa)) / outA
-        let g = (src.1 * sa + dst.1 * da * (1 - sa)) / outA
-        let b = (src.2 * sa + dst.2 * da * (1 - sa)) / outA
-        return (r, g, b, outA)
-    }
-
-    private static func ellipse(_ x: Double, _ y: Double, _ cx: Double, _ cy: Double, _ rx: Double, _ ry: Double) -> Double {
-        let dx = (x - cx) / rx
-        let dy = (y - cy) / ry
-        return (hypot(dx, dy) - 1) * min(rx, ry)
+        let sourceAlpha = src.3
+        let destAlpha = dst.3
+        let outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha)
+        guard outAlpha > 0 else { return (0, 0, 0, 0) }
+        return (
+            (src.0 * sourceAlpha + dst.0 * destAlpha * (1 - sourceAlpha)) / outAlpha,
+            (src.1 * sourceAlpha + dst.1 * destAlpha * (1 - sourceAlpha)) / outAlpha,
+            (src.2 * sourceAlpha + dst.2 * destAlpha * (1 - sourceAlpha)) / outAlpha,
+            outAlpha
+        )
     }
 
     private static func circle(_ x: Double, _ y: Double, _ cx: Double, _ cy: Double, _ r: Double) -> Double {
         hypot(x - cx, y - cy) - r
-    }
-
-    private static func capsule(
-        _ x: Double,
-        _ y: Double,
-        _ ax: Double,
-        _ ay: Double,
-        _ bx: Double,
-        _ by: Double,
-        _ r: Double
-    ) -> Double {
-        let abx = bx - ax
-        let aby = by - ay
-        let ab2 = abx * abx + aby * aby
-        var t = 0.0
-        if ab2 > 0 {
-            t = ((x - ax) * abx + (y - ay) * aby) / ab2
-            t = min(1, max(0, t))
-        }
-        return hypot(ax + t * abx - x, ay + t * aby - y) - r
     }
 
     private static func rounded(
@@ -206,9 +154,7 @@ package enum LampIcon {
     ) -> Double {
         let dx = abs(x - cx) - hx
         let dy = abs(y - cy) - hy
-        let ax = max(dx, 0)
-        let ay = max(dy, 0)
-        return hypot(ax, ay) + min(max(dx, dy), 0) - radius
+        return hypot(max(dx, 0), max(dy, 0)) + min(max(dx, dy), 0) - radius
     }
 
     private static func cover(_ distance: Double, _ pixel: Double) -> Double {
@@ -223,23 +169,111 @@ package enum LampIcon {
         UInt8(min(255, max(0, Int((value * 255).rounded()))))
     }
 
-    private static func png(size: Int, rgba: [UInt8]) -> Data {
+    private static func flatten(_ pixels: [UInt8], background: (UInt8, UInt8, UInt8)) -> [UInt8] {
+        var out = [UInt8](repeating: 255, count: pixels.count)
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = Int(pixels[index + 3])
+            out[index] = UInt8((Int(pixels[index]) * alpha + Int(background.0) * (255 - alpha)) / 255)
+            out[index + 1] = UInt8((Int(pixels[index + 1]) * alpha + Int(background.1) * (255 - alpha)) / 255)
+            out[index + 2] = UInt8((Int(pixels[index + 2]) * alpha + Int(background.2) * (255 - alpha)) / 255)
+        }
+        return out
+    }
+
+    private static func nearest(_ pixels: [UInt8], width: Int, height: Int, scale: Int) -> [UInt8] {
+        let outWidth = width * scale
+        let outHeight = height * scale
+        var out = [UInt8](repeating: 0, count: outWidth * outHeight * 4)
+        for y in 0..<outHeight {
+            for x in 0..<outWidth {
+                let from = ((y / scale) * width + (x / scale)) * 4
+                let to = (y * outWidth + x) * 4
+                out[to] = pixels[from]
+                out[to + 1] = pixels[from + 1]
+                out[to + 2] = pixels[from + 2]
+                out[to + 3] = pixels[from + 3]
+            }
+        }
+        return out
+    }
+
+    private static func encodePNG(width: Int, height: Int, rgba: [UInt8]) -> Data {
         var raw = Data()
-        raw.reserveCapacity(size * (1 + size * 4))
-        for y in 0..<size {
+        raw.reserveCapacity(height * (1 + width * 4))
+        for y in 0..<height {
             raw.append(0)
-            let start = y * size * 4
-            raw.append(contentsOf: rgba[start..<(start + size * 4)])
+            let start = y * width * 4
+            raw.append(contentsOf: rgba[start..<(start + width * 4)])
         }
         var data = Data([137, 80, 78, 71, 13, 10, 26, 10])
         var ihdr = Data()
-        ihdr.append(be32(UInt32(size)))
-        ihdr.append(be32(UInt32(size)))
+        ihdr.append(be32(UInt32(width)))
+        ihdr.append(be32(UInt32(height)))
         ihdr.append(contentsOf: [8, 6, 0, 0, 0])
         data.append(chunk("IHDR", ihdr))
         data.append(chunk("IDAT", zlibStore(raw)))
         data.append(chunk("IEND", Data()))
         return data
+    }
+
+    private static func decodeStoredPNG(_ url: URL) -> (width: Int, height: Int, pixels: [UInt8]) {
+        guard let data = FileManager.default.contents(atPath: url.path) else {
+            return (0, 0, [])
+        }
+        guard data.count > 8, data.prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]) else { return (0, 0, []) }
+        var offset = 8
+        var width = 0
+        var height = 0
+        var idat = Data()
+        while offset + 8 <= data.count {
+            let length = Int(be32(data, offset))
+            let kind = String(data: data.subdata(in: (offset + 4)..<(offset + 8)), encoding: .ascii) ?? ""
+            let start = offset + 8
+            let end = start + length
+            guard end + 4 <= data.count else { return (0, 0, []) }
+            let payload = data.subdata(in: start..<end)
+            if kind == "IHDR", payload.count >= 10 {
+                width = Int(be32(payload, 0))
+                height = Int(be32(payload, 4))
+            } else if kind == "IDAT" {
+                idat.append(payload)
+            } else if kind == "IEND" {
+                break
+            }
+            offset = end + 4
+        }
+        guard width > 0, height > 0, let inflated = inflateStored(idat) else { return (0, 0, []) }
+        let stride = width * 4
+        guard inflated.count >= height * (1 + stride) else { return (0, 0, []) }
+        var pixels = [UInt8]()
+        pixels.reserveCapacity(width * height * 4)
+        var cursor = 0
+        for _ in 0..<height {
+            guard inflated[cursor] == 0 else { return (0, 0, []) }
+            cursor += 1
+            pixels.append(contentsOf: inflated[cursor..<(cursor + stride)])
+            cursor += stride
+        }
+        return (width, height, pixels)
+    }
+
+    /// zlib の非圧縮ブロック。`make-menu-icon.py` が同じ形で書く。
+    private static func inflateStored(_ data: Data) -> Data? {
+        guard data.count >= 2, data[data.startIndex] == 0x78 else { return nil }
+        var index = 2
+        var out = Data()
+        while index < data.count {
+            let last = data[data.startIndex + index] == 1
+            index += 1
+            guard index + 4 <= data.count else { return nil }
+            let len = Int(data[data.startIndex + index]) | (Int(data[data.startIndex + index + 1]) << 8)
+            index += 4
+            guard index + len <= data.count else { return nil }
+            out.append(data.subdata(in: (data.startIndex + index)..<(data.startIndex + index + len)))
+            index += len
+            if last { break }
+        }
+        return out
     }
 
     private static func chunk(_ type: String, _ payload: Data) -> Data {
@@ -278,8 +312,7 @@ package enum LampIcon {
             a = (a + UInt32(byte)) % 65_521
             b = (b + a) % 65_521
         }
-        let adler = (b << 16) | a
-        out.append(be32(adler))
+        out.append(be32((b << 16) | a))
         return out
     }
 
@@ -290,6 +323,11 @@ package enum LampIcon {
             UInt8((value >> 8) & 0xff),
             UInt8(value & 0xff),
         ])
+    }
+
+    private static func be32(_ data: Data, _ offset: Int) -> UInt32 {
+        let start = data.startIndex + offset
+        return data[start..<(start + 4)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
     }
 
     private static func crc32(_ data: Data) -> UInt32 {

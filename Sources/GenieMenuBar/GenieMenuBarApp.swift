@@ -71,7 +71,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     func installStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
@@ -228,11 +228,18 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
 
     private static let menuImages: [LampAppearance: NSImage] = {
         var images: [LampAppearance: NSImage] = [:]
+        let point = CGFloat(LampIcon.menuPointSize)
         for appearance in [LampAppearance.running, .paused, .warning] {
-            let data = LampIcon.png(size: 36, appearance: appearance)
-            let image = NSImage(data: data) ?? NSImage(size: NSSize(width: 18, height: 18))
-            image.size = NSSize(width: 18, height: 18)
-            image.isTemplate = false
+            let image = NSImage(size: NSSize(width: point, height: point))
+            for scale in LampIcon.menuScales {
+                let data = LampIcon.png(pixelHeight: LampIcon.menuPointSize * scale, appearance: appearance)
+                guard let rep = NSBitmapImageRep(data: data), rep.pixelsHigh > 0 else { continue }
+                let width = point * CGFloat(rep.pixelsWide) / CGFloat(rep.pixelsHigh)
+                rep.size = NSSize(width: width, height: point)
+                image.addRepresentation(rep)
+                image.size = rep.size
+            }
+            image.isTemplate = LampIcon.menuImageIsTemplate
             images[appearance] = image
         }
         return images
@@ -242,8 +249,9 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let appearance = Self.appearance(for: snapshot)
         let image = Self.menuImages[appearance] ?? NSImage()
-        image.isTemplate = false
+        image.isTemplate = LampIcon.menuImageIsTemplate
         button.image = image
+        statusItem?.length = image.size.width > 0 ? image.size.width : NSStatusItem.squareLength
         button.imagePosition = .imageOnly
         button.toolTip = symbol
         button.setAccessibilityLabel(symbol)
