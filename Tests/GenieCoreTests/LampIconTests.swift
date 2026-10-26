@@ -1,33 +1,104 @@
 import XCTest
 @testable import GenieCore
+#if canImport(AppKit)
+import AppKit
+#endif
 
 final class LampIconTests: XCTestCase {
+    func testMenuLampFilesAreTransparentAndNotTemplates() throws {
+        XCTAssertFalse(LampIcon.menuImageIsTemplate)
+        XCTAssertEqual(LampIcon.menuPointSize, 18)
+        XCTAssertEqual(LampIcon.menuScales, [1, 2, 3])
+        let root = repoRoot()
+        let assemble = try String(contentsOf: root.appendingPathComponent("scripts/assemble-app.sh"), encoding: .utf8)
+        XCTAssertTrue(assemble.contains("Contents/Resources/MenuLamp"))
+        let app = try String(contentsOf: root.appendingPathComponent("Sources/GenieMenuBar/GenieMenuBarApp.swift"), encoding: .utf8)
+        XCTAssertTrue(app.contains("isTemplate = LampIcon.menuImageIsTemplate"))
+        XCTAssertTrue(app.contains("LampIcon.menuPointSize"))
+        for scale in LampIcon.menuScales {
+            let side = LampIcon.menuPointSize * scale
+            let name = "lamp@\(scale)x.png"
+            XCTAssertTrue(assemble.contains(name))
+            let url = LampIcon.menuLampURL(pixelSize: side)
+            XCTAssertTrue(url.path.hasSuffix("AppBundle/MenuLamp/\(name)"))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+            let sample = try samplePNG(url)
+            XCTAssertEqual(sample.side, side, name)
+            XCTAssertEqual(sample.corners, [0, 0, 0, 0], "\(name) corners")
+            let pixels = LampIcon.rgba(pixelSize: side, appearance: .running)
+            XCTAssertEqual(pixels.count, side * side * 4, name)
+            XCTAssertEqual(cornerAlphas(pixels, size: side), [0, 0, 0, 0], name)
+            XCTAssertEqual(navyFringe(pixels), 0, name)
+            XCTAssertGreaterThan(smokeCount(pixels), scale == 1 ? 20 : 80, name)
+            XCTAssertGreaterThan(goldCount(pixels), scale == 1 ? 8 : 40, name)
+        }
+    }
+
     func testStatesDifferAndReadOnLightAndDark() {
-        let running = LampIcon.rgba(size: 48, appearance: .running)
-        let paused = LampIcon.rgba(size: 48, appearance: .paused)
-        let warning = LampIcon.rgba(size: 48, appearance: .warning)
+        let side = 54
+        let running = LampIcon.rgba(pixelSize: side, appearance: .running)
+        let paused = LampIcon.rgba(pixelSize: side, appearance: .paused)
+        let warning = LampIcon.rgba(pixelSize: side, appearance: .warning)
         XCTAssertNotEqual(running, paused)
         XCTAssertNotEqual(running, warning)
         XCTAssertNotEqual(paused, warning)
         XCTAssertGreaterThan(goldCount(running), 40)
-        XCTAssertGreaterThan(darkCount(running), 20)
-        XCTAssertEqual(whiteCount(running), 0)
-        XCTAssertGreaterThan(whiteCount(paused), 8)
+        XCTAssertGreaterThan(smokeCount(running), 80)
+        XCTAssertGreaterThan(whiteCount(paused), whiteCount(running))
+        XCTAssertGreaterThan(redCount(warning), redCount(running))
         XCTAssertGreaterThan(redCount(warning), 8)
-        XCTAssertEqual(redCount(running), 0)
-        XCTAssertGreaterThan(semiTransparentGold(running), 5)
         for pixels in [running, paused, warning] {
+            XCTAssertEqual(cornerAlphas(pixels, size: side), [0, 0, 0, 0])
             XCTAssertGreaterThan(contrast(pixels, background: (244, 244, 246)), 30)
             XCTAssertGreaterThan(contrast(pixels, background: (28, 28, 30)), 30)
         }
-        let bounds = opaqueBounds(running, size: 48)
-        XCTAssertGreaterThan(bounds.width, bounds.height)
+        let bounds = opaqueBounds(running, size: side)
+        XCTAssertGreaterThan(bounds.width, side / 2)
+        XCTAssertGreaterThan(bounds.height, side / 2)
     }
 
     func testMenuPngHeader() {
-        let png = LampIcon.png(size: 16, appearance: .running)
+        let png = LampIcon.png(pixelSize: 18, appearance: .running)
         XCTAssertEqual(Array(png.prefix(8)), [137, 80, 78, 71, 13, 10, 26, 10])
     }
+
+    /// 同梱 PNG はスクリプトを再実行しても変わらない。
+    func testMenuLampMatchesTheScript() throws {
+        let root = repoRoot()
+        let files = LampIcon.menuScales.map {
+            root.appendingPathComponent("AppBundle/MenuLamp/lamp@\($0)x.png")
+        }
+        let before = try files.map { try Data(contentsOf: $0) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [root.appendingPathComponent("scripts/make-menu-icon.py").path]
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardOutput = output
+        process.standardError = errors
+        try process.run()
+        process.waitUntilExit()
+        let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let err = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTAssertEqual(process.terminationStatus, 0, err + text)
+        let after = try files.map { try Data(contentsOf: $0) }
+        XCTAssertEqual(after, before)
+    }
+
+    #if canImport(AppKit)
+    func testMenuImageIsNotATemplate() {
+        let point = CGFloat(LampIcon.menuPointSize)
+        let image = NSImage(size: NSSize(width: point, height: point))
+        let data = LampIcon.png(pixelSize: LampIcon.menuPointSize, appearance: .running)
+        let rep = NSBitmapImageRep(data: data)
+        XCTAssertNotNil(rep)
+        rep?.size = NSSize(width: point, height: point)
+        if let rep { image.addRepresentation(rep) }
+        image.isTemplate = LampIcon.menuImageIsTemplate
+        XCTAssertFalse(image.isTemplate)
+        XCTAssertEqual(image.size, NSSize(width: point, height: point))
+    }
+    #endif
 
     /// 同梱 icns は、切り抜いた PNG をこの順で束ねたものとバイト一致する。
     func testFinderIconMatchesMaskedArtwork() throws {
@@ -104,9 +175,33 @@ final class LampIconTests: XCTestCase {
     func testWriteIconArtifacts() throws {
         let dir = URL(fileURLWithPath: "/opt/cursor/artifacts")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }
-        try LampIcon.png(size: 160, appearance: .running).write(to: dir.appendingPathComponent("lamp-running.png"))
-        try LampIcon.png(size: 160, appearance: .paused).write(to: dir.appendingPathComponent("lamp-paused.png"))
-        try LampIcon.png(size: 160, appearance: .warning).write(to: dir.appendingPathComponent("lamp-warning.png"))
+        let backgrounds: [(String, (UInt8, UInt8, UInt8))] = [
+            ("light", (244, 244, 246)),
+            ("dark", (28, 28, 30)),
+        ]
+        let states: [(String, LampAppearance)] = [
+            ("running", .running),
+            ("paused", .paused),
+            ("warning", .warning),
+        ]
+        for (backName, background) in backgrounds {
+            for (stateName, appearance) in states {
+                let shown = LampIcon.flattenedPNG(
+                    pixelSize: 18,
+                    appearance: appearance,
+                    background: background,
+                    magnification: 8
+                )
+                try shown.write(to: dir.appendingPathComponent("menu-\(backName)-\(stateName).png"))
+                let large = LampIcon.flattenedPNG(
+                    pixelSize: 54,
+                    appearance: appearance,
+                    background: background,
+                    magnification: 4
+                )
+                try large.write(to: dir.appendingPathComponent("menu-\(backName)-\(stateName)-large.png"))
+            }
+        }
         let iconset = repoRoot().appendingPathComponent("AppBundle/AppIcon.iconset")
         try Data(contentsOf: iconset.appendingPathComponent("icon_512x512.png"))
             .write(to: dir.appendingPathComponent("finder-icon-512.png"))
@@ -114,12 +209,32 @@ final class LampIconTests: XCTestCase {
             .write(to: dir.appendingPathComponent("finder-icon-32.png"))
     }
 
-    private func goldCount(_ pixels: [UInt8]) -> Int { count(pixels) { $0.r > 180 && $0.g > 120 && $0.b < 110 && $0.a > 200 } }
-    private func darkCount(_ pixels: [UInt8]) -> Int { count(pixels) { $0.r < 50 && $0.g < 40 && $0.b < 30 && $0.a > 180 } }
+    private func goldCount(_ pixels: [UInt8]) -> Int {
+        count(pixels) {
+            let r = Int($0.r), g = Int($0.g), b = Int($0.b)
+            return r > 190 && g > 150 && g > b && r > b && $0.a > 200
+        }
+    }
+    private func smokeCount(_ pixels: [UInt8]) -> Int {
+        count(pixels) {
+            let r = Int($0.r), g = Int($0.g), b = Int($0.b)
+            return $0.a > 80 && b > g + 10 && b > 90 && r > 40 && r < b + 30
+        }
+    }
+    /// 背景の紺（縁の色）が、見える濃さで残っていないこと。
+    private func navyFringe(_ pixels: [UInt8]) -> Int {
+        count(pixels) {
+            let r = Int($0.r), g = Int($0.g), b = Int($0.b)
+            let nearBackground = abs(r - 11) + abs(g - 3) + abs(b - 45) < 48
+            return $0.a > 24 && nearBackground && b > r && b > g
+        }
+    }
     private func whiteCount(_ pixels: [UInt8]) -> Int { count(pixels) { $0.r > 240 && $0.g > 240 && $0.b > 240 && $0.a > 200 } }
     private func redCount(_ pixels: [UInt8]) -> Int { count(pixels) { $0.r > 170 && $0.g < 80 && $0.b < 80 && $0.a > 200 } }
-    private func semiTransparentGold(_ pixels: [UInt8]) -> Int {
-        count(pixels) { $0.r > 200 && $0.g > 140 && $0.b < 140 && $0.a > 25 && $0.a < 230 }
+
+    private func cornerAlphas(_ pixels: [UInt8], size: Int) -> [Int] {
+        let points = [(0, 0), (size - 1, 0), (0, size - 1), (size - 1, size - 1)]
+        return points.map { pixels[($0.1 * size + $0.0) * 4 + 3] }.map(Int.init)
     }
 
     private func contrast(_ pixels: [UInt8], background: (Int, Int, Int)) -> Int {

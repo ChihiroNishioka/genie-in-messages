@@ -228,11 +228,16 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
 
     private static let menuImages: [LampAppearance: NSImage] = {
         var images: [LampAppearance: NSImage] = [:]
+        let point = CGFloat(LampIcon.menuPointSize)
         for appearance in [LampAppearance.running, .paused, .warning] {
-            let data = LampIcon.png(size: 36, appearance: appearance)
-            let image = NSImage(data: data) ?? NSImage(size: NSSize(width: 18, height: 18))
-            image.size = NSSize(width: 18, height: 18)
-            image.isTemplate = false
+            let image = NSImage(size: NSSize(width: point, height: point))
+            for scale in LampIcon.menuScales {
+                let data = LampIcon.png(pixelSize: LampIcon.menuPointSize * scale, appearance: appearance)
+                guard let rep = NSBitmapImageRep(data: data) else { continue }
+                rep.size = NSSize(width: point, height: point)
+                image.addRepresentation(rep)
+            }
+            image.isTemplate = LampIcon.menuImageIsTemplate
             images[appearance] = image
         }
         return images
@@ -242,7 +247,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
         let appearance = Self.appearance(for: snapshot)
         let image = Self.menuImages[appearance] ?? NSImage()
-        image.isTemplate = false
+        image.isTemplate = LampIcon.menuImageIsTemplate
         button.image = image
         button.imagePosition = .imageOnly
         button.toolTip = symbol
