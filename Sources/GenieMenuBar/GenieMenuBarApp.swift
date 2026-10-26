@@ -14,6 +14,7 @@ struct GenieMenuBarApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
 
@@ -48,7 +49,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     @Published var notionTokenLabel = "未設定"
 
-    init() {
+    override init() {
         do {
             controller = try GenieController(paths: paths)
             startupError = nil
@@ -58,6 +59,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
             phase = "停止"
         }
         notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
+        super.init()
         begin()
     }
 
@@ -102,11 +104,11 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
-    func toggleChat(_ chat: ChatSummary) {
+    func toggleChat(id: Int64, guid: String) {
         guard let controller, let snapshot else { return }
-        let enabled = !snapshot.enabledChatIDs.contains(chat.id)
+        let enabled = !snapshot.enabledChatIDs.contains(id)
         Task {
-            await controller.engine.setChatEnabled(chat.id, guid: chat.guid, enabled: enabled)
+            await controller.engine.setChatEnabled(id, guid: guid, enabled: enabled)
             await refresh()
         }
     }

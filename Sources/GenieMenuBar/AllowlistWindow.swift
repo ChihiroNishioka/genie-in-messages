@@ -66,12 +66,7 @@ struct AllowlistView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(rows) { row in
                             Button {
-                                model.toggleChat(ChatSummary(
-                                    id: row.id,
-                                    title: row.title,
-                                    isGroup: row.isGroup,
-                                    guid: row.guid
-                                ))
+                                model.toggleChat(id: row.id, guid: row.guid)
                             } label: {
                                 HStack(alignment: .center, spacing: 12) {
                                     VStack(alignment: .leading, spacing: 2) {
