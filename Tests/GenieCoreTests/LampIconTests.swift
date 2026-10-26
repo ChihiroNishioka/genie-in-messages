@@ -35,6 +35,15 @@ final class LampIconTests: XCTestCase {
         XCTAssertTrue(icns.range(of: Data("ic08".utf8)) != nil)
         XCTAssertTrue(icns.range(of: Data("ic10".utf8)) != nil)
         XCTAssertTrue(icns.range(of: Data([137, 80, 78, 71])) != nil)
+        let sizes = pngSizes(in: icns)
+        XCTAssertEqual(sizes["icp4"], 16)
+        XCTAssertEqual(sizes["icp5"], 32)
+        XCTAssertEqual(sizes["ic11"], 32)
+        XCTAssertEqual(sizes["ic12"], 64)
+        XCTAssertEqual(sizes["ic07"], 128)
+        XCTAssertEqual(sizes["ic08"], 256)
+        XCTAssertEqual(sizes["ic09"], 512)
+        XCTAssertEqual(sizes["ic10"], 1024)
         let icon = LampIcon.appIconRGBA(size: 32)
         XCTAssertEqual(icon[3], 0, "squircle corner stays clear")
         let mid = (16 * 32 + 16) * 4
@@ -109,5 +118,37 @@ final class LampIconTests: XCTestCase {
         var g: UInt8
         var b: UInt8
         var a: UInt8
+    }
+
+    private func pngSizes(in icns: Data) -> [String: Int] {
+        var sizes: [String: Int] = [:]
+        var offset = 8
+        while offset + 8 <= icns.count {
+            let typeEnd = offset + 4
+            let type = String(data: icns.subdata(in: offset..<typeEnd), encoding: .ascii) ?? ""
+            let length = Int(be32(icns, offset + 4))
+            guard length >= 8, offset + length <= icns.count else { break }
+            let payload = icns.subdata(in: (offset + 8)..<(offset + length))
+            if let side = pngSide(payload) {
+                sizes[type] = side
+            }
+            offset += length
+        }
+        return sizes
+    }
+
+    private func pngSide(_ png: Data) -> Int? {
+        let magic = Data([137, 80, 78, 71, 13, 10, 26, 10])
+        guard png.count >= 24, png.prefix(8) == magic else { return nil }
+        guard String(data: png.subdata(in: 12..<16), encoding: .ascii) == "IHDR" else { return nil }
+        let width = Int(be32(png, 16))
+        let height = Int(be32(png, 20))
+        guard width == height else { return nil }
+        return width
+    }
+
+    private func be32(_ data: Data, _ offset: Int) -> UInt32 {
+        let start = data.startIndex + offset
+        return data[start..<(start + 4)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
     }
 }

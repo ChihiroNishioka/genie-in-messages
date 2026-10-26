@@ -32,25 +32,40 @@ struct LogRecord: Codable, Equatable {
 }
 
 package enum LogRedaction {
-    /// 標準エラーは最後の1行だけ。空白で分けた単語のうち、宛先・トークン・数字・
-    /// ASCII 以外を含むものは単語ごと `[x]` にする。
+    /// 診断に出してよい、決まった語だけ。それ以外（本文、JSON、トークン）は出さない。
+    private static let allowed: Set<String> = [
+        "error", "failed", "failure", "permission", "denied", "locked", "not", "found",
+        "timeout", "timed", "out", "unable", "to", "open", "no", "such", "file", "or",
+        "directory", "operation", "interrupted", "disk", "access", "full", "database",
+        "imsg", "watch", "chat.db",
+    ]
+
+    /// 標準エラーは最後の空でない行だけ。許可した語以外は単語ごと `[x]`。
     package static func tail(_ text: String, maxChars: Int = 120) -> String {
-        guard let last = text.split(whereSeparator: \.isNewline).last else { return "" }
+        let lines = text.split(whereSeparator: \.isNewline).filter {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        guard let last = lines.last else { return "" }
         let collapsed = last.split(whereSeparator: \.isWhitespace).map { redactWord(String($0)) }.joined(separator: " ")
         if collapsed.count <= maxChars { return collapsed }
         return String(collapsed.suffix(maxChars))
     }
 
     static func redactWord(_ word: String) -> String {
-        if word.contains("@") || word.contains("://") || word.contains(";-;") || word.contains(";+;") {
-            return "[x]"
-        }
-        if let separator = word.firstIndex(of: "="), word.index(after: separator) != word.endIndex {
-            return "[x]"
-        }
-        if word.contains(where: \.isNumber) { return "[x]" }
-        if word.unicodeScalars.contains(where: { $0.value > 127 }) { return "[x]" }
-        return word
+        let key = normalized(word)
+        if allowed.contains(key) { return key }
+        return "[x]"
+    }
+
+    private static func normalized(_ word: String) -> String {
+        let scalars = word.lowercased().unicodeScalars
+        let trimmed = scalars.drop(while: { !isToken($0) }).reversed().drop(while: { !isToken($0) }).reversed()
+        return String(String.UnicodeScalarView(trimmed))
+    }
+
+    private static func isToken(_ scalar: Unicode.Scalar) -> Bool {
+        guard scalar.value < 128 else { return false }
+        return scalar.properties.isAlphabetic || scalar == "." || scalar == "_" || scalar == "-"
     }
 }
 

@@ -59,4 +59,18 @@ final class AllowlistOrderingTests: XCTestCase {
         let on = await engine.snapshot()
         XCTAssertEqual(on.enabledChatIDs, [21])
     }
+
+    func testOutsideToggleKeepsTheKnownGuid() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        await engine.reconcileChats([
+            ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
+        ])
+        await engine.setChatEnabled(21, guid: "guid-21", enabled: true)
+        await engine.toggleChat(id: 21, guid: "")
+        await engine.toggleChat(id: 21, guid: "")
+        XCTAssertEqual(harness.allow.guids[21], "guid-21")
+        let snap = await engine.snapshot()
+        XCTAssertEqual(snap.enabledChatIDs, [21])
+    }
 }

@@ -6,11 +6,11 @@ enum TextNormalizer {
         text.precomposedStringWithCanonicalMapping
     }
 
-    /// ゼロ幅、制御文字、VS16 など、画面に出ない文字。
+    /// 画面に出ない文字。ゼロ幅や制御文字。U+0601 のような目に見える書式文字は含めない。
     static func isInvisible(_ scalar: Unicode.Scalar) -> Bool {
         if scalar.properties.isDefaultIgnorableCodePoint { return true }
         switch scalar.properties.generalCategory {
-        case .format, .control, .surrogate:
+        case .control, .surrogate:
             return true
         default:
             return false

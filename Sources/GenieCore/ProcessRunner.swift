@@ -111,6 +111,7 @@ package final class ProcessBox: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
     private var stopRequested = false
+    private var userStop = false
 
     package init() {}
 
@@ -124,6 +125,14 @@ package final class ProcessBox: @unchecked Sendable {
         }
     }
 
+    /// 一時停止か終了。あとから再開しても、勝手に落ちたことにはしない。
+    package func stopForUser() {
+        lock.lock()
+        userStop = true
+        lock.unlock()
+        terminate()
+    }
+
     package func terminate() {
         lock.lock()
         stopRequested = true
@@ -133,15 +142,18 @@ package final class ProcessBox: @unchecked Sendable {
         stopProcess(process)
     }
 
-    /// SIGTERM のあと残っていれば SIGKILL。
+    /// SIGTERM のあと、別スレッドで残っていれば SIGKILL。呼び出し側は待たない。
     private func stopProcess(_ process: Process) {
         process.terminate()
-        let deadline = Date().addingTimeInterval(0.5)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.02)
-        }
-        if process.isRunning {
-            kill(process.processIdentifier, SIGKILL)
+        let pid = process.processIdentifier
+        DispatchQueue.global(qos: .userInitiated).async {
+            let deadline = Date().addingTimeInterval(0.5)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            if process.isRunning {
+                kill(pid, SIGKILL)
+            }
         }
     }
 
@@ -151,9 +163,16 @@ package final class ProcessBox: @unchecked Sendable {
         return stopRequested
     }
 
+    package func wasUserStop() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return userStop
+    }
+
     package func resetStop() {
         lock.lock()
         stopRequested = false
+        userStop = false
         process = nil
         lock.unlock()
     }

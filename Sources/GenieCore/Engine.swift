@@ -102,8 +102,16 @@ package actor GenieEngine {
     }
 
     /// いまの許可から反転する。連打はアクターの中で順に効く。
+    /// 一覧外の行は guid を持たないので、オンに戻すときは知っている guid を使う。
     package func toggleChat(id: Int64, guid: String) {
-        setChatEnabled(id, guid: guid, enabled: !allowlist.contains(id))
+        let enabled = !allowlist.contains(id)
+        let resolved: String
+        if enabled && guid.isEmpty {
+            resolved = persisted.knownChats.first { $0.id == id }?.guid ?? ""
+        } else {
+            resolved = guid
+        }
+        setChatEnabled(id, guid: resolved, enabled: enabled)
     }
 
     package func setChatEnabled(_ id: Int64, guid: String = "", enabled: Bool) {
