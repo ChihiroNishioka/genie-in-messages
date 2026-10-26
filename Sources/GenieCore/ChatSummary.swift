@@ -4,6 +4,7 @@ package struct ChatSummary: Equatable, Identifiable {
     package var id: Int64
     package var title: String
     package var isGroup: Bool
+    package var guid: String
 }
 
 package enum ChatListParser {
@@ -24,7 +25,7 @@ package enum ChatListParser {
         let title = [raw.name, raw.displayName, raw.contactName]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty } ?? "トーク \(raw.id)"
-        return ChatSummary(id: raw.id, title: title, isGroup: raw.isGroup ?? false)
+        return ChatSummary(id: raw.id, title: title, isGroup: raw.isGroup ?? false, guid: raw.guid ?? "")
     }
 }
 
@@ -34,9 +35,10 @@ private struct RawChat: Decodable {
     var displayName: String?
     var contactName: String?
     var isGroup: Bool?
+    var guid: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name
+        case id, name, guid
         case displayName = "display_name"
         case contactName = "contact_name"
         case isGroup = "is_group"

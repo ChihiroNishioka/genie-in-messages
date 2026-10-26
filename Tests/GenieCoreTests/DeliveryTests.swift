@@ -98,11 +98,12 @@ final class DeliveryTests: XCTestCase {
     func testReplyIsSanitizedHeldWhileLockedAndRetried() async throws {
         let harness = Harness()
         harness.allow.ids = [7]
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        seedRoute(harness, guid: "origin", chat: 7)
         harness.lock.locked = true
         harness.replies.pages = [
             ReplyPage(
-                replies: [FetchedReply(id: "r1", chatID: 7, text: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F} answer")],
+                replies: [routedReply("r1", chat: 7, text: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F} answer", guid: "origin")],
                 nextCursor: "c1"
             ),
         ]
@@ -128,13 +129,14 @@ final class DeliveryTests: XCTestCase {
     func testAppleEvent1712GoesBackToTheHoldQueue() async throws {
         let harness = Harness()
         harness.allow.ids = [7]
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        seedRoute(harness, guid: "origin", chat: 7)
         harness.sender.script = [
             .failure(.notStarted),
             .success(SendReceipt(id: 4, guid: "out-guid", status: "sent")),
         ]
         harness.replies.pages = [
-            ReplyPage(replies: [FetchedReply(id: "r1", chatID: 7, text: "hello")], nextCursor: "c1"),
+            ReplyPage(replies: [routedReply("r1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
         ]
         let engine = try harness.engine()
         await engine.pollReplies()
@@ -157,11 +159,12 @@ final class DeliveryTests: XCTestCase {
     func testUncertainSendIsNotRetried() async throws {
         let harness = Harness()
         harness.allow.ids = [7]
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        seedRoute(harness, guid: "origin", chat: 7)
         harness.sender.script = [.failure(.uncertain)]
         harness.replies.pages = [
-            ReplyPage(replies: [FetchedReply(id: "r1", chatID: 7, text: "hello")], nextCursor: "c1"),
-            ReplyPage(replies: [FetchedReply(id: "r1", chatID: 7, text: "hello")], nextCursor: "c1"),
+            ReplyPage(replies: [routedReply("r1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
+            ReplyPage(replies: [routedReply("r1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
         ]
         let engine = try harness.engine()
         await engine.pollReplies()
@@ -172,18 +175,23 @@ final class DeliveryTests: XCTestCase {
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.lastError, "send_uncertain")
         XCTAssertEqual(snap.heldCount, 0)
+        XCTAssertEqual(harness.state.deadLetters.first?.error, "send_uncertain")
+        XCTAssertEqual(harness.state.state.rateEvents.filter { $0.chatID == 7 }.count, 1)
+        assertNoBody(harness, "hello")
     }
 
     func testRateLimitStopsOneChatUntilResumed() async throws {
         let harness = Harness()
         harness.allow.ids = [1, 2]
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
         harness.config.rateLimitCount = 5
         harness.config.rateLimitWindowSeconds = 60
-        var replies: [FetchedReply] = (1...6).map {
-            FetchedReply(id: "a\($0)", chatID: 1, text: "answer \($0)")
+        var replies: [FetchedReply] = (1...6).map { index in
+            seedRoute(harness, guid: "g\(index)", chat: 1)
+            return routedReply("a\(index)", chat: 1, text: "answer \(index)", guid: "g\(index)")
         }
-        replies.append(FetchedReply(id: "b1", chatID: 2, text: "other"))
+        seedRoute(harness, guid: "gb", chat: 2)
+        replies.append(routedReply("b1", chat: 2, text: "other", guid: "gb"))
         harness.replies.pages = [ReplyPage(replies: replies, nextCursor: "c")]
         let engine = try harness.engine()
         await engine.pollReplies()
@@ -207,9 +215,10 @@ final class DeliveryTests: XCTestCase {
 
     func testDisabledChatReplyIsNotSent() async throws {
         let harness = Harness()
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        seedRoute(harness, guid: "g9", chat: 9)
         harness.replies.pages = [
-            ReplyPage(replies: [FetchedReply(id: "r", chatID: 9, text: "nope")], nextCursor: "c"),
+            ReplyPage(replies: [routedReply("r", chat: 9, text: "nope", guid: "g9")], nextCursor: "c"),
         ]
         let engine = try harness.engine()
         await engine.pollReplies()
@@ -218,18 +227,20 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(snap.heldCount, 0)
     }
 
-    func testMarkerThatStillMatchesSignalIsNotSent() async throws {
+    func testMarkerWithoutSpeechBubbleIsRewrittenBeforeSend() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
         harness.config.marker = "\u{1F9DE}"
+        seedRoute(harness, guid: "g", chat: 1)
         harness.replies.pages = [
-            ReplyPage(replies: [FetchedReply(id: "r", chatID: 1, text: "hello")], nextCursor: nil),
+            ReplyPage(replies: [routedReply("r", chat: 1, text: "hello", guid: "g")], nextCursor: nil),
         ]
         let engine = try harness.engine()
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
-        let snap = await engine.snapshot()
-        XCTAssertEqual(snap.lastError, "reply_still_matches_signal")
+        let text = try XCTUnwrap(harness.sender.sent.first?.text)
+        XCTAssertTrue(text.hasPrefix(GenieConfig.productDefaults.marker))
+        XCTAssertFalse(Signal.matches(text))
+        XCTAssertTrue(ReplyComposer.startsWithSpeechBubble(text))
     }
 }

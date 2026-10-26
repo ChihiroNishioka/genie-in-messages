@@ -11,5 +11,9 @@
   "reply_poll_interval_seconds": 10,
   "hold_retry_interval_seconds": 15,
   "fingerprint_window_seconds": 120,
-  "chats_limit": 100
+  "chats_limit": 100,
+  "route_ttl_seconds": 604800,
+  "send_timeout_seconds": 150,
+  "chats_timeout_seconds": 30,
+  "reply_page_limit": 100
 }

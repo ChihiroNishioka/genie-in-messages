@@ -1,21 +1,22 @@
 import Foundation
 
-enum ProcessRunner {
-    struct Output {
-        var stdout: String
-        var stderr: String
-        var exitCode: Int32
+package enum ProcessRunner {
+    package struct Output {
+        package var stdout: String
+        package var stderr: String
+        package var exitCode: Int32
+        package var timedOut: Bool
     }
 
-    static func run(executable: String, arguments: [String]) async -> Output {
+    package static func run(executable: String, arguments: [String], timeout: TimeInterval) async -> Output {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: blocking(executable: executable, arguments: arguments))
+                continuation.resume(returning: blocking(executable: executable, arguments: arguments, timeout: timeout))
             }
         }
     }
 
-    private static func blocking(executable: String, arguments: [String]) -> Output {
+    private static func blocking(executable: String, arguments: [String], timeout: TimeInterval) -> Output {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -42,11 +43,25 @@ enum ProcessRunner {
             try? out.fileHandleForWriting.close()
             try? err.fileHandleForWriting.close()
             group.wait()
-            return Output(stdout: "", stderr: "", exitCode: -1)
+            return Output(stdout: "", stderr: "", exitCode: -1, timedOut: false)
+        }
+        let deadline = Date().addingTimeInterval(max(0.1, timeout))
+        var timedOut = false
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            timedOut = true
+            process.terminate()
         }
         process.waitUntilExit()
         group.wait()
-        return Output(stdout: box.stdout, stderr: box.stderr, exitCode: process.terminationStatus)
+        return Output(
+            stdout: box.stdout,
+            stderr: box.stderr,
+            exitCode: process.terminationStatus,
+            timedOut: timedOut
+        )
     }
 }
 
@@ -80,25 +95,69 @@ private final class CollectedOutput: @unchecked Sendable {
     }
 }
 
-enum WatchProcess {
-    static func run(
+package final class ProcessBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var stopRequested = false
+
+    package init() {}
+
+    package func begin(_ process: Process) {
+        lock.lock()
+        self.process = process
+        let stop = stopRequested
+        lock.unlock()
+        if stop {
+            process.terminate()
+        }
+    }
+
+    package func terminate() {
+        lock.lock()
+        stopRequested = true
+        let process = self.process
+        lock.unlock()
+        process?.terminate()
+    }
+
+    package func resetStop() {
+        lock.lock()
+        stopRequested = false
+        process = nil
+        lock.unlock()
+    }
+}
+
+package enum WatchDirective {
+    case next
+    case stop
+}
+
+package enum WatchProcess {
+    package static func run(
         box: ProcessBox,
         executable: String,
         arguments: [String],
-        onLine: @escaping @Sendable (String) async -> Void
+        onChunk: @escaping @Sendable (WatchChunk) async -> WatchDirective
     ) async -> Int32 {
-        let (stream, continuation) = AsyncStream.makeStream(of: String.self, bufferingPolicy: .unbounded)
+        let (stream, continuation) = AsyncStream.makeStream(of: WatchChunk.self, bufferingPolicy: .unbounded)
         async let exitCode: Int32 = withCheckedContinuation { (cont: CheckedContinuation<Int32, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                let code = blocking(box: box, executable: executable, arguments: arguments) { line in
-                    continuation.yield(line)
+                let code = blocking(box: box, executable: executable, arguments: arguments) { chunk in
+                    continuation.yield(chunk)
                 }
                 continuation.finish()
                 cont.resume(returning: code)
             }
         }
-        for await line in stream {
-            await onLine(line)
+        var stop = false
+        for await chunk in stream {
+            if stop { continue }
+            let directive = await onChunk(chunk)
+            if directive == .stop {
+                stop = true
+                box.terminate()
+            }
         }
         return await exitCode
     }
@@ -107,7 +166,7 @@ enum WatchProcess {
         box: ProcessBox,
         executable: String,
         arguments: [String],
-        yield: (String) -> Void
+        yield: (WatchChunk) -> Void
     ) -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -126,26 +185,29 @@ enum WatchProcess {
             return -1
         }
         box.begin(process)
-        var pending = Data()
+        var splitter = WatchSplitter()
         let handle = out.fileHandleForReading
         while true {
             let chunk = handle.availableData
             if chunk.isEmpty { break }
-            pending.append(chunk)
-            if pending.count > 1_000_000 {
-                pending.removeAll(keepingCapacity: false)
-                continue
-            }
-            while let newline = pending.firstIndex(of: 0x0A) {
-                let lineData = pending.subdata(in: 0..<newline)
-                pending.removeSubrange(0...newline)
-                if let line = String(data: lineData, encoding: .utf8) {
-                    yield(line)
-                }
+            for event in splitter.append(chunk) {
+                yield(event)
             }
         }
         process.waitUntilExit()
         err.fileHandleForReading.readabilityHandler = nil
         return process.terminationStatus
+    }
+}
+
+package enum SendLaunch {
+    package static func interpret(stdout: String, stderr: String, exitCode: Int32, timedOut: Bool) -> Result<SendReceipt, SendFailure> {
+        if timedOut {
+            return .failure(.uncertain)
+        }
+        if exitCode == -1 && stdout.isEmpty && stderr.isEmpty {
+            return .failure(.notStarted)
+        }
+        return SendResultParser.parse(stdout: stdout, stderr: stderr, exitCode: exitCode)
     }
 }

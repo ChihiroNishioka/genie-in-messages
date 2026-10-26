@@ -48,12 +48,14 @@ package struct ImsgMessageSender: MessageSending {
         let loaded = try config.load()
         let result = await ProcessRunner.run(
             executable: loaded.imsgExecutable,
-            arguments: ImsgCommand.sendArguments(chatID: chatID, text: text)
+            arguments: ImsgCommand.sendArguments(chatID: chatID, text: text),
+            timeout: loaded.sendTimeoutSeconds
         )
-        return try SendResultParser.parse(
+        return try SendLaunch.interpret(
             stdout: result.stdout,
             stderr: result.stderr,
-            exitCode: result.exitCode
+            exitCode: result.exitCode,
+            timedOut: result.timedOut
         ).get()
     }
 }

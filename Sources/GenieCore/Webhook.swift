@@ -50,11 +50,32 @@ struct WebhookPayload: Encodable {
     }
 }
 
+enum EndpointURL {
+    static func https(_ text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
+        guard url.scheme?.lowercased() == "https", url.host != nil else { return nil }
+        return url
+    }
+}
+
+enum GenieHTTP {
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        return URLSession(configuration: configuration)
+    }
+}
+
 enum HTTPRequestBuilder {
     static func webhook(url: URL, secret: String, body: Data, idempotencyKey: String) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 30
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
@@ -86,7 +107,7 @@ enum HTTPRequestBuilder {
 package struct URLSessionWebhook: WebhookPosting {
     package var session: URLSession
 
-    package init(session: URLSession = .shared) {
+    package init(session: URLSession = GenieHTTP.session()) {
         self.session = session
     }
 

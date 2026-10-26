@@ -10,6 +10,7 @@ struct WatchEvent: Equatable {
     /// `edited` / `unsent` など。新規行では nil。
     var type: String?
     var isReaction: Bool
+    var chatGUID: String?
 
     var isMutation: Bool { type != nil }
 
@@ -26,7 +27,8 @@ struct WatchEvent: Equatable {
             isFromMe: raw.isFromMe ?? false,
             createdAt: raw.createdAt,
             type: raw.type,
-            isReaction: raw.isReaction ?? false
+            isReaction: raw.isReaction ?? false,
+            chatGUID: raw.chatGUID
         )
     }
 }
@@ -40,6 +42,7 @@ private struct Raw: Decodable {
     var createdAt: String?
     var type: String?
     var isReaction: Bool?
+    var chatGUID: String?
 
     enum CodingKeys: String, CodingKey {
         case id, guid, text, type
@@ -47,5 +50,6 @@ private struct Raw: Decodable {
         case isFromMe = "is_from_me"
         case createdAt = "created_at"
         case isReaction = "is_reaction"
+        case chatGUID = "chat_guid"
     }
 }

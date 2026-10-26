@@ -9,9 +9,11 @@ final class ManualClock: GenieClock, @unchecked Sendable {
         current = date
     }
     func now() -> Date { current }
+    var onSleep: (() async -> Void)?
     func sleep(seconds: Double) async throws {
         slept.append(seconds)
         current = current.addingTimeInterval(seconds)
+        await onSleep?()
     }
 }
 
@@ -32,8 +34,10 @@ final class FakeWebhook: WebhookPosting, @unchecked Sendable {
 final class FakeSender: MessageSending, @unchecked Sendable {
     var script: [Result<SendReceipt, SendFailure>] = []
     var sent: [(chatID: Int64, text: String)] = []
+    var onSend: (() async -> Void)?
     func send(chatID: Int64, text: String) async throws -> SendReceipt {
         sent.append((chatID, text))
+        await onSend?()
         if script.isEmpty {
             return SendReceipt(id: Int64(sent.count), guid: "sent-\(sent.count)", status: "sent")
         }
@@ -43,7 +47,11 @@ final class FakeSender: MessageSending, @unchecked Sendable {
 
 final class FakeLock: ScreenLockChecking, @unchecked Sendable {
     var locked = false
-    func isLocked() async -> Bool { locked }
+    var forced: ScreenLockState?
+    func state() async -> ScreenLockState {
+        if let forced { return forced }
+        return locked ? .locked : .unlocked
+    }
 }
 
 final class ScriptedReplies: ReplySource, @unchecked Sendable {
@@ -71,7 +79,7 @@ final class Harness {
     func engine() throws -> GenieEngine {
         var cfg = config
         if cfg.webhookURL.isEmpty {
-            cfg.webhookURL = "http://127.0.0.1/webhook"
+            cfg.webhookURL = "https://127.0.0.1/webhook"
         }
         return try GenieEngine(
             configProvider: StaticConfig(config: cfg),
@@ -97,7 +105,8 @@ func watchLine(
     text: String,
     created: String = "2026-10-26T01:00:00Z",
     type: String? = nil,
-    reaction: Bool = false
+    reaction: Bool = false,
+    chatGUID: String? = nil
 ) -> String {
     var object: [String: Any] = [
         "id": id,
@@ -107,6 +116,7 @@ func watchLine(
         "text": text,
         "created_at": created,
     ]
+    if let chatGUID { object["chat_guid"] = chatGUID }
     if let type { object["type"] = type }
     if reaction { object["is_reaction"] = true }
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
@@ -126,6 +136,20 @@ func assertNoBody(_ harness: Harness, _ body: String, file: StaticString = #file
     let letters = harness.state.deadLetters.map { "\($0.error) \($0.guid ?? "") \($0.kind)" }.joined(separator: "\n")
     XCTAssertFalse(codes.contains(body), file: file, line: line)
     XCTAssertFalse(letters.contains(body), file: file, line: line)
+}
+
+func seedRoute(_ harness: Harness, guid: String, chat: Int64) {
+    harness.state.state.routes.append(MessageRoute(guid: guid, chatID: chat, at: harness.clock.current))
+}
+
+func routedReply(
+    _ id: String,
+    chat: Int64,
+    text: String,
+    guid: String,
+    created: String = "2023-11-14T22:13:20Z"
+) -> FetchedReply {
+    FetchedReply(id: id, chatID: chat, text: text, inReplyToGUID: guid, createdAt: created)
 }
 
 func repoRoot() -> URL {

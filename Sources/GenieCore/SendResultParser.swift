@@ -42,8 +42,14 @@ package enum SendResultParser {
         if blob.contains("may_have_completed") || blob.contains("still_in_flight") {
             return .failure(.uncertain)
         }
-        if blob.contains("-1712") || blob.contains("not_started") {
+        if exitCode == -1 {
             return .failure(.notStarted)
+        }
+        if blob.contains("not_started") {
+            return .failure(.notStarted)
+        }
+        if blob.contains("-1712") {
+            return .failure(.uncertain)
         }
         if exitCode == 0, let guid = payload?["guid"] as? String, !guid.isEmpty {
             return .success(SendReceipt(id: int64(payload?["id"]), guid: guid, status: "sent"))

@@ -1,37 +1,6 @@
 import Foundation
 import GenieCore
 
-final class ProcessBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var process: Process?
-    private var stopRequested = false
-
-    func begin(_ process: Process) {
-        lock.lock()
-        self.process = process
-        let stop = stopRequested
-        lock.unlock()
-        if stop {
-            process.terminate()
-        }
-    }
-
-    func terminate() {
-        lock.lock()
-        stopRequested = true
-        let process = self.process
-        lock.unlock()
-        process?.terminate()
-    }
-
-    func resetStop() {
-        lock.lock()
-        stopRequested = false
-        process = nil
-        lock.unlock()
-    }
-}
-
 final class GenieController: @unchecked Sendable {
     let engine: GenieEngine
     let logURL: URL
@@ -64,19 +33,31 @@ final class GenieController: @unchecked Sendable {
         await engine.setPaused(false)
     }
 
+    func shutdown() {
+        stateLock.lock()
+        stopped = true
+        stateLock.unlock()
+        box.terminate()
+        supervisor?.cancel()
+        poller?.cancel()
+    }
+
     func loadChats(reportError: Bool) async -> [ChatSummary] {
         let loaded = (try? config.load()) ?? .productDefaults
         let result = await ProcessRunner.run(
             executable: loaded.imsgExecutable,
-            arguments: ImsgCommand.chatsArguments(limit: loaded.chatsLimit)
+            arguments: ImsgCommand.chatsArguments(limit: loaded.chatsLimit),
+            timeout: loaded.chatsTimeoutSeconds
         )
-        if result.exitCode != 0 {
+        if result.exitCode != 0 || result.timedOut {
             if reportError {
                 await engine.setLastError("chats_failed")
             }
             return []
         }
-        return ChatListParser.parse(ndjson: result.stdout)
+        let chats = ChatListParser.parse(ndjson: result.stdout)
+        await engine.reconcileChats(chats)
+        return chats
     }
 
     private func start() {
@@ -99,8 +80,15 @@ final class GenieController: @unchecked Sendable {
                     box: box,
                     executable: loaded.imsgExecutable,
                     arguments: ImsgCommand.watchArguments(sinceRowID: cursor)
-                ) { line in
-                    _ = await engine.ingestWatchLine(line)
+                ) { chunk in
+                    switch chunk {
+                    case .line(let line):
+                        let result = await engine.ingestWatchLine(line)
+                        return WatchSession.shouldStopApplying(result) ? .stop : .next
+                    case .tooLarge(let rowID):
+                        let result = await engine.noteOversizedWatchLine(rowID: rowID)
+                        return WatchSession.shouldStopApplying(result) ? .stop : .next
+                    }
                 }
                 if await engine.isPaused() || self.isStopped { continue }
                 let ran = Date().timeIntervalSince(started)
@@ -214,7 +202,8 @@ enum RuntimeBuilder {
     ) throws -> GenieEngine {
         let loaded = try config.load()
         let secrets = FileSecretProvider(paths: paths)
-        return try GenieEngine(
+        let probe = ScreenLockProbe()
+        let engine = try GenieEngine(
             configProvider: config,
             initialConfig: loaded,
             stateStore: FileStateStore(paths: paths),
@@ -223,8 +212,17 @@ enum RuntimeBuilder {
             sender: ImsgMessageSender(config: config),
             webhook: URLSessionWebhook(),
             secrets: secrets,
-            lock: ScreenLockProbe(),
+            lock: probe,
             log: log
         )
+        probe.observe { state in
+            Task {
+                await engine.noteLock(state)
+                if state == .unlocked {
+                    await engine.retryHolds()
+                }
+            }
+        }
+        return engine
     }
 }

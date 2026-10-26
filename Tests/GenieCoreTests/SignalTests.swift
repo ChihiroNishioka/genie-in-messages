@@ -60,6 +60,14 @@ final class SignalTests: XCTestCase {
         XCTAssertFalse(Signal.matches(prepared))
     }
 
+    func testComposerForcesASpeechBubbleWhenTheMarkerDoesNotStartWithOne() {
+        let prepared = ReplyComposer.prepare(body: "hello", marker: "\u{1F9DE}")
+        XCTAssertTrue(ReplyComposer.startsWithSpeechBubble(prepared))
+        XCTAssertFalse(Signal.matches(prepared))
+        XCTAssertTrue(prepared.hasPrefix(GenieConfig.productDefaults.marker))
+        XCTAssertTrue(prepared.contains("hello"))
+    }
+
     func testDefaultMarkerMatchesTheSpecScalars() {
         XCTAssertEqual(
             Array(GenieConfig.productDefaults.marker.unicodeScalars.map(\.value)),
@@ -131,6 +139,18 @@ final class HashAndCommandTests: XCTestCase {
             SendResultParser.parse(stdout: "nope", stderr: "", exitCode: 1),
             .failure(.failed)
         )
+        XCTAssertEqual(
+            SendResultParser.parse(stdout: "", stderr: "error -1712", exitCode: 1),
+            .failure(.uncertain)
+        )
+        XCTAssertEqual(
+            SendLaunch.interpret(stdout: "", stderr: "", exitCode: -1, timedOut: false),
+            .failure(.notStarted)
+        )
+        XCTAssertEqual(
+            SendLaunch.interpret(stdout: "", stderr: "", exitCode: 1, timedOut: true),
+            .failure(.uncertain)
+        )
     }
 
     func testChatParserIgnoresHandles() {
@@ -159,10 +179,13 @@ final class HashAndCommandTests: XCTestCase {
     }
 
     func testReplyPageDecoder() throws {
-        let json = #"{"cursor":"c2","replies":[{"id":"r1","chat_id":7,"text":"hi","in_reply_to_guid":"g"}]}"#
+        let json = #"{"v":1,"cursor":"c2","replies":[{"id":"r1","chat_id":7,"text":"hi","in_reply_to_guid":"g","created_at":"2026-10-26T01:00:00Z"},{"text":"broken"}]}"#
         let page = try ReplyPageDecoder.decode(Data(json.utf8))
         XCTAssertEqual(page.nextCursor, "c2")
         XCTAssertEqual(page.replies.first?.chatID, 7)
         XCTAssertEqual(page.replies.first?.inReplyToGUID, "g")
+        XCTAssertEqual(page.replies.first?.createdAt, "2026-10-26T01:00:00Z")
+        XCTAssertEqual(page.skipped, 1)
+        XCTAssertEqual(page.replies.count, 1)
     }
 }

@@ -19,12 +19,18 @@ package protocol MessageSending: Sendable {
     func send(chatID: Int64, text: String) async throws -> SendReceipt
 }
 
+package enum ScreenLockState: String, Equatable, Sendable {
+    case locked
+    case unlocked
+    case unknown
+}
+
 package protocol ScreenLockChecking: Sendable {
-    func isLocked() async -> Bool
+    func state() async -> ScreenLockState
 }
 
 struct UnlockedScreen: ScreenLockChecking {
-    func isLocked() async -> Bool { false }
+    func state() async -> ScreenLockState { .unlocked }
 }
 
 package struct EngineSnapshot: Equatable {
@@ -36,6 +42,7 @@ package struct EngineSnapshot: Equatable {
     package var heldLockCount: Int
     package var lastError: String?
     package var screenLocked: Bool
+    package var screenLock: ScreenLockState
     package var replyFetchConfigured: Bool
     package var webhookConfigured: Bool
 }
@@ -54,4 +61,7 @@ package enum IngestResult: Equatable {
     case ignoredReaction
     case deferredPaused
     case notJSON
+    /// この watch プロセスの続きは適用しない。カーソルは進めていない。
+    case blocked
+    case ignoredDatabaseReset
 }

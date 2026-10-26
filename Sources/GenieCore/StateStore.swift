@@ -15,6 +15,66 @@ struct RateEvent: Codable, Equatable {
     }
 }
 
+struct MessageRoute: Codable, Equatable {
+    var guid: String
+    var chatID: Int64
+    var at: Date
+
+    enum CodingKeys: String, CodingKey {
+        case guid
+        case chatID = "chat_id"
+        case at
+    }
+}
+
+struct PendingSend: Codable, Equatable {
+    var replyID: String
+    var chatID: Int64
+    var hash: String
+    var at: Date
+    /// 結果不明の送信を、すでにレートへ数えたあとに残すとき true。再起動時に二重に数えない。
+    var rateCounted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case replyID = "reply_id"
+        case chatID = "chat_id"
+        case hash
+        case at
+        case rateCounted = "rate_counted"
+    }
+
+    init(replyID: String, chatID: Int64, hash: String, at: Date, rateCounted: Bool = false) {
+        self.replyID = replyID
+        self.chatID = chatID
+        self.hash = hash
+        self.at = at
+        self.rateCounted = rateCounted
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        replyID = try container.decode(String.self, forKey: .replyID)
+        chatID = try container.decode(Int64.self, forKey: .chatID)
+        hash = try container.decode(String.self, forKey: .hash)
+        at = try container.decode(Date.self, forKey: .at)
+        rateCounted = try container.decodeIfPresent(Bool.self, forKey: .rateCounted) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(replyID, forKey: .replyID)
+        try container.encode(chatID, forKey: .chatID)
+        try container.encode(hash, forKey: .hash)
+        try container.encode(at, forKey: .at)
+        try container.encode(rateCounted, forKey: .rateCounted)
+    }
+}
+
+struct ChatIdentity: Codable, Equatable {
+    var id: Int64
+    var guid: String
+}
+
 package struct PersistedState: Codable, Equatable {
     var v: Int
     var cursorRowID: Int64
@@ -25,6 +85,9 @@ package struct PersistedState: Codable, Equatable {
     var replyCursor: String?
     var haltedChatIDs: [Int64]
     var rateEvents: [RateEvent]
+    var routes: [MessageRoute]
+    var pendingSends: [PendingSend]
+    var knownChats: [ChatIdentity]
 
     static let empty = PersistedState(
         v: 1,
@@ -35,7 +98,10 @@ package struct PersistedState: Codable, Equatable {
         handledReplyIDs: [],
         replyCursor: nil,
         haltedChatIDs: [],
-        rateEvents: []
+        rateEvents: [],
+        routes: [],
+        pendingSends: [],
+        knownChats: []
     )
 
     enum CodingKeys: String, CodingKey {
@@ -48,6 +114,53 @@ package struct PersistedState: Codable, Equatable {
         case replyCursor = "reply_cursor"
         case haltedChatIDs = "halted_chat_ids"
         case rateEvents = "rate_events"
+        case routes
+        case pendingSends = "pending_sends"
+        case knownChats = "known_chats"
+    }
+
+    init(
+        v: Int,
+        cursorRowID: Int64,
+        seenGUIDs: [String],
+        sentGUIDs: [String],
+        fingerprints: [SentFingerprint],
+        handledReplyIDs: [String],
+        replyCursor: String?,
+        haltedChatIDs: [Int64],
+        rateEvents: [RateEvent],
+        routes: [MessageRoute],
+        pendingSends: [PendingSend],
+        knownChats: [ChatIdentity]
+    ) {
+        self.v = v
+        self.cursorRowID = cursorRowID
+        self.seenGUIDs = seenGUIDs
+        self.sentGUIDs = sentGUIDs
+        self.fingerprints = fingerprints
+        self.handledReplyIDs = handledReplyIDs
+        self.replyCursor = replyCursor
+        self.haltedChatIDs = haltedChatIDs
+        self.rateEvents = rateEvents
+        self.routes = routes
+        self.pendingSends = pendingSends
+        self.knownChats = knownChats
+    }
+
+    package init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        v = try container.decodeIfPresent(Int.self, forKey: .v) ?? 1
+        cursorRowID = try container.decodeIfPresent(Int64.self, forKey: .cursorRowID) ?? 0
+        seenGUIDs = try container.decodeIfPresent([String].self, forKey: .seenGUIDs) ?? []
+        sentGUIDs = try container.decodeIfPresent([String].self, forKey: .sentGUIDs) ?? []
+        fingerprints = try container.decodeIfPresent([SentFingerprint].self, forKey: .fingerprints) ?? []
+        handledReplyIDs = try container.decodeIfPresent([String].self, forKey: .handledReplyIDs) ?? []
+        replyCursor = try container.decodeIfPresent(String.self, forKey: .replyCursor)
+        haltedChatIDs = try container.decodeIfPresent([Int64].self, forKey: .haltedChatIDs) ?? []
+        rateEvents = try container.decodeIfPresent([RateEvent].self, forKey: .rateEvents) ?? []
+        routes = try container.decodeIfPresent([MessageRoute].self, forKey: .routes) ?? []
+        pendingSends = try container.decodeIfPresent([PendingSend].self, forKey: .pendingSends) ?? []
+        knownChats = try container.decodeIfPresent([ChatIdentity].self, forKey: .knownChats) ?? []
     }
 }
 
@@ -149,6 +262,7 @@ final class MemoryStateStore: StatePersisting, @unchecked Sendable {
     var state: PersistedState
     var deadLetters: [DeadLetterEntry] = []
     var shouldFailSave = false
+    var shouldFailDeadLetter = false
 
     init(state: PersistedState = .empty) {
         self.state = state
@@ -162,6 +276,7 @@ final class MemoryStateStore: StatePersisting, @unchecked Sendable {
     }
 
     func appendDeadLetter(_ entry: DeadLetterEntry) throws {
+        if shouldFailDeadLetter { throw StateError.corrupt }
         deadLetters.append(entry)
     }
 }

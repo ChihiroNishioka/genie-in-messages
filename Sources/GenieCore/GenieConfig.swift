@@ -15,6 +15,10 @@ package struct GenieConfig: Equatable, Sendable {
     package var fingerprintWindowSeconds: Double
     package var chatsLimit: Int
     package var logFile: String?
+    package var routeTTLSeconds: Double
+    package var sendTimeoutSeconds: Double
+    package var chatsTimeoutSeconds: Double
+    package var replyPageLimit: Int
 
     package static let productDefaults = GenieConfig(
         webhookURL: "",
@@ -30,7 +34,11 @@ package struct GenieConfig: Equatable, Sendable {
         holdRetryIntervalSeconds: 15,
         fingerprintWindowSeconds: 120,
         chatsLimit: 100,
-        logFile: nil
+        logFile: nil,
+        routeTTLSeconds: 604_800,
+        sendTimeoutSeconds: 150,
+        chatsTimeoutSeconds: 30,
+        replyPageLimit: 100
     )
 
     func sanitized() -> GenieConfig {
@@ -47,6 +55,10 @@ package struct GenieConfig: Equatable, Sendable {
         copy.holdRetryIntervalSeconds = max(1, copy.holdRetryIntervalSeconds)
         copy.fingerprintWindowSeconds = max(1, copy.fingerprintWindowSeconds)
         copy.chatsLimit = max(1, copy.chatsLimit)
+        copy.routeTTLSeconds = max(60, copy.routeTTLSeconds)
+        copy.sendTimeoutSeconds = max(1, copy.sendTimeoutSeconds)
+        copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
+        copy.replyPageLimit = max(1, copy.replyPageLimit)
         return copy
     }
 }
@@ -67,6 +79,10 @@ extension GenieConfig: Codable {
         case fingerprintWindowSeconds = "fingerprint_window_seconds"
         case chatsLimit = "chats_limit"
         case logFile = "log_file"
+        case routeTTLSeconds = "route_ttl_seconds"
+        case sendTimeoutSeconds = "send_timeout_seconds"
+        case chatsTimeoutSeconds = "chats_timeout_seconds"
+        case replyPageLimit = "reply_page_limit"
     }
 
     package init(from decoder: Decoder) throws {
@@ -86,6 +102,10 @@ extension GenieConfig: Codable {
         fingerprintWindowSeconds = try c.decodeIfPresent(Double.self, forKey: .fingerprintWindowSeconds) ?? defaults.fingerprintWindowSeconds
         chatsLimit = try c.decodeIfPresent(Int.self, forKey: .chatsLimit) ?? defaults.chatsLimit
         logFile = try c.decodeIfPresent(String.self, forKey: .logFile)
+        routeTTLSeconds = try c.decodeIfPresent(Double.self, forKey: .routeTTLSeconds) ?? defaults.routeTTLSeconds
+        sendTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .sendTimeoutSeconds) ?? defaults.sendTimeoutSeconds
+        chatsTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .chatsTimeoutSeconds) ?? defaults.chatsTimeoutSeconds
+        replyPageLimit = try c.decodeIfPresent(Int.self, forKey: .replyPageLimit) ?? defaults.replyPageLimit
         self = sanitized()
     }
 }

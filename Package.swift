@@ -18,7 +18,10 @@ products.append(.executable(name: "GenieMenuBar", targets: ["GenieMenuBar"]))
 targets.append(
     .executableTarget(
         name: "GenieMenuBar",
-        dependencies: ["GenieCore"]
+        dependencies: ["GenieCore"],
+        linkerSettings: [
+            .linkedFramework("CoreGraphics"),
+        ]
     )
 )
 let packagePlatforms: [SupportedPlatform]? = [.macOS(.v14)]

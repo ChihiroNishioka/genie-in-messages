@@ -83,7 +83,7 @@ final class AppModel: ObservableObject {
         guard let controller, let snapshot else { return }
         let enabled = !snapshot.enabledChatIDs.contains(chat.id)
         Task {
-            await controller.engine.setChatEnabled(chat.id, enabled: enabled)
+            await controller.engine.setChatEnabled(chat.id, guid: chat.guid, enabled: enabled)
             await refresh()
         }
     }
@@ -128,6 +128,7 @@ final class AppModel: ObservableObject {
     }
 
     func quit() {
+        controller?.shutdown()
         NSApp.terminate(nil)
     }
 
@@ -158,7 +159,7 @@ final class AppModel: ObservableObject {
     }
 
     private static func symbol(for snap: EngineSnapshot) -> String {
-        let warning = snap.screenLocked
+        let warning = snap.screenLock != .unlocked
             || snap.heldLockCount > 0
             || !snap.haltedChatIDs.isEmpty
             || snap.lastError == "watch_start_failed"
@@ -178,6 +179,22 @@ final class AppModel: ObservableObject {
             return "なし"
         case "screen_locked":
             return "画面ロック中のため送信を保留しています"
+        case "screen_lock_unknown":
+            return "画面ロックを確認できていません"
+        case "url_not_https":
+            return "webhook と返事の URL は https だけ使えます"
+        case "messages_db_reset":
+            return "メッセージのデータベースが変わったため、許可とカーソルを捨てました"
+        case "reply_unrouted":
+            return "対応する転送が無い返事は送っていません"
+        case "reply_chat_mismatch":
+            return "返事のトークが転送先と違うため送っていません"
+        case "watch_line_too_large":
+            return "大きすぎる watch の行を処理できませんでした"
+        case "deadletter_write_failed":
+            return "失敗の記録を書けませんでした"
+        case "send_interrupted":
+            return "送信の途中で止まったため、再送していません"
         case "apple_event_1712":
             return "送信が始まらなかったため保留しています"
         case "rate_limited":
@@ -226,8 +243,11 @@ struct MenuContent: View {
         Text(model.phase)
         Text("同じApple IDのほかのMacでは動かさない")
             .font(.caption)
-        if let snap = model.snapshot, snap.screenLocked || snap.heldLockCount > 0 {
+        if let snap = model.snapshot, snap.screenLock == .locked || snap.heldLockCount > 0 {
             Text("画面ロック中は送信を保留しています（\(snap.heldLockCount)件）")
+        }
+        if let snap = model.snapshot, snap.screenLock == .unknown {
+            Text("画面ロックを確認できていません")
         }
         if let snap = model.snapshot, !snap.webhookConfigured {
             Text("webhook の URL が未設定です")
