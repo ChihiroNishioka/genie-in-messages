@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """メニューバー用の透過ランプを、Finder と同じ原本から作る。
 
-入力は AppBundle/GenieLampV2-1024.png。背景の紺を抜き、ランプと紫の雲だけを残す。
-縁の紺が残らないよう、画素を背景色との差で抜き、混ざった色からは紺を引く。
-出力は高さ 18pt の @1x/@2x/@3x（18/36/54px）。template 画像にはしない。
+入力は AppBundle/GenieLampV2-1024.png。残すのは金色のランプ本体と、
+注ぎ口より上かつ右寄りの明るい雲だけ。ランプの左・下・周囲の紫は透過にする。
+透過の余白は詰め、高さ 18pt いっぱいに縮める。template 画像にはしない。
 
 使い方: scripts/make-menu-icon.py
 """
@@ -132,64 +132,204 @@ def write_png(path: Path, width: int, height: int, pixels: bytes) -> None:
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", payload) + chunk(b"IEND", b""))
 
 
-def background(rgb: bytes, side: int, x: int, y: int) -> tuple[float, float, float]:
-    # 左右の縁は紺だけなので、その行の左右を混ぜて下地にする。
-    left = (y * side + 2) * 3
-    right = (y * side + (side - 3)) * 3
-    tx = x / (side - 1)
-    return tuple((1 - tx) * rgb[left + c] + tx * rgb[right + c] for c in range(3))
+# 注ぎ口から、ランプ幅のこの割合だけ左までを雲の範囲にする。それより左は残さない。
+SMOKE_LEFT_OF_SPOUT = 0.30
+# この明度より明るい画素だけを雲にする。紺のグラデーションはここまで明るくない。
+SMOKE_VALUE = 0.48
+# 18pt でも筋が残るよう、原本画素で少し広げる。
+SMOKE_DILATE = 22
 
 
-def smooth(distance: float) -> float:
-    t = (distance - 32) / (78 - 32)
-    if t <= 0:
-        return 0.0
-    if t >= 1:
-        return 1.0
-    return t * t * (3 - 2 * t)
-
-
-def key_pixel(color: tuple[int, int, int], bg: tuple[float, float, float]) -> tuple[int, int, int, int]:
-    distance = sum(abs(color[i] - bg[i]) for i in range(3))
-    alpha = smooth(distance)
-    if alpha <= 0.02:
-        return (0, 0, 0, 0)
-    if alpha >= 0.985:
-        fg = [float(channel) for channel in color]
+def hsv(red: int, green: int, blue: int) -> tuple[float, float, float]:
+    rf, gf, bf = red / 255, green / 255, blue / 255
+    peak = max(rf, gf, bf)
+    floor = min(rf, gf, bf)
+    delta = peak - floor
+    if delta == 0:
+        hue = 0.0
+    elif peak == rf:
+        hue = ((gf - bf) / delta) % 6
+    elif peak == gf:
+        hue = (bf - rf) / delta + 2
     else:
-        fg = []
-        for i in range(3):
-            value = (color[i] - bg[i] * (1 - alpha)) / alpha
-            fg.append(min(255.0, max(0.0, value)))
-    red, green, blue = fg
-    luma = 0.30 * red + 0.59 * green + 0.11 * blue
-    blueish = blue >= red - 5 and blue >= green - 5 and red < 120 and green < 100
-    if blueish and luma < 42:
-        return (0, 0, 0, 0)
-    # 小さいサイズでも雲が残るよう、紫を少し濃くする。
-    if blue > green and blue > 80 and 35 < red < blue + 50 and green < blue and luma < 210:
-        alpha = min(1.0, alpha * 1.35 + 0.25)
-        fg = [
-            min(255.0, red * 0.72 + 62),
-            min(255.0, green * 0.62 + 42),
-            min(255.0, blue * 0.80 + 55),
-        ]
-    out_alpha = 255 if alpha >= 0.99 else int(round(alpha * 255))
-    return tuple(int(round(channel)) for channel in fg) + (out_alpha,)
+        hue = (rf - gf) / delta + 4
+    saturation = 0.0 if peak == 0 else delta / peak
+    return hue * 60, saturation, peak
 
 
-def cut_out(rgb: bytes, side: int) -> bytes:
-    pixels = bytearray(side * side * 4)
+def is_gold(red: int, green: int, blue: int) -> bool:
+    """ランプ本体。金色は色相と彩度で見る。ハイライトは彩度が低くても残す。"""
+    hue, saturation, value = hsv(red, green, blue)
+    if not (8 <= hue <= 72 and red > blue + 8 and red >= 48):
+        return False
+    if saturation >= 0.18 and value >= 0.15:
+        return True
+    return saturation >= 0.06 and value >= 0.70
+
+
+def is_blue(red: int, green: int, blue: int) -> bool:
+    return blue > red and blue > green
+
+
+def lamp_mask(rgb: bytes, side: int) -> bytearray:
+    """金色と、その内側のハイライト。外につながる紺の穴（取っ手の中）は入れない。"""
+    gold = bytearray(side * side)
+    for index in range(side * side):
+        offset = index * 3
+        if is_gold(rgb[offset], rgb[offset + 1], rgb[offset + 2]):
+            gold[index] = 1
+    seen = bytearray(side * side)
+    queue = [x for x in range(side)]
+    queue += [(side - 1) * side + x for x in range(side)]
+    queue += [y * side for y in range(side)]
+    queue += [y * side + side - 1 for y in range(side)]
+    head = 0
+    while head < len(queue):
+        index = queue[head]
+        head += 1
+        if index < 0 or index >= side * side or seen[index] or gold[index]:
+            continue
+        seen[index] = 1
+        x = index % side
+        if x + 1 < side:
+            queue.append(index + 1)
+        if x > 0:
+            queue.append(index - 1)
+        if index + side < side * side:
+            queue.append(index + side)
+        if index - side >= 0:
+            queue.append(index - side)
+    mask = bytearray(gold)
+    for index in range(side * side):
+        if gold[index] or seen[index]:
+            continue
+        offset = index * 3
+        if is_blue(rgb[offset], rgb[offset + 1], rgb[offset + 2]):
+            continue
+        mask[index] = 1
+    return mask
+
+
+def spout_and_bounds(mask: bytearray, side: int) -> tuple[int, int, int, int, int, int]:
+    min_x, min_y = side, side
+    max_x = max_y = -1
     for y in range(side):
+        row = y * side
         for x in range(side):
-            i = (y * side + x) * 3
-            color = (rgb[i], rgb[i + 1], rgb[i + 2])
-            pixels[(y * side + x) * 4 : (y * side + x) * 4 + 4] = bytes(key_pixel(color, background(rgb, side, x, y)))
-    return bytes(pixels)
+            if not mask[row + x]:
+                continue
+            min_x = min(min_x, x)
+            min_y = min(min_y, y)
+            max_x = max(max_x, x)
+            max_y = max(max_y, y)
+    spout_x = spout_y = -1
+    for y in range(side):
+        row = y * side
+        for x in range(side - 1, -1, -1):
+            if mask[row + x]:
+                if x > spout_x or (x == spout_x and (spout_y < 0 or y < spout_y)):
+                    spout_x, spout_y = x, y
+                break
+    if spout_x < 0:
+        raise SystemExit("ランプが見つかりません")
+    return min_x, min_y, max_x, max_y, spout_x, spout_y
 
 
-def box_down(pixels: bytes, src: int, dst: int) -> bytes:
-    """前乗算してから平均し、縁が紺で濁らないようにする。"""
+def smoke_color(red: int, green: int, blue: int, fringe: bool) -> tuple[int, int, int, int]:
+    """小さいサイズでも筋が見えるよう、明るい紫に寄せる。"""
+    out_red = min(255, int(red * 0.40 + 168))
+    out_green = min(255, int(green * 0.30 + 112))
+    out_blue = min(255, int(blue * 0.35 + 196))
+    if out_blue < out_green + 24:
+        out_blue = min(255, out_green + 36)
+    return out_red, out_green, out_blue, 200 if fringe else 255
+
+
+def cut_out(rgb: bytes, side: int) -> tuple[bytes, int, int]:
+    mask = lamp_mask(rgb, side)
+    min_x, min_y, max_x, max_y, spout_x, spout_y = spout_and_bounds(mask, side)
+    window_left = spout_x - int(round((spout_x - min_x) * SMOKE_LEFT_OF_SPOUT))
+    seeds: list[int] = []
+    for y in range(spout_y + 1):
+        row = y * side
+        for x in range(window_left, side):
+            index = row + x
+            if mask[index]:
+                continue
+            offset = index * 3
+            red, green, blue = rgb[offset], rgb[offset + 1], rgb[offset + 2]
+            _hue, _saturation, value = hsv(red, green, blue)
+            if value >= SMOKE_VALUE and blue >= green:
+                seeds.append(index)
+    smoke = bytearray(side * side)
+    distance = bytearray(side * side)
+    queue = list(seeds)
+    for index in seeds:
+        smoke[index] = 1
+    head = 0
+    while head < len(queue):
+        index = queue[head]
+        head += 1
+        current = distance[index]
+        if current >= SMOKE_DILATE:
+            continue
+        x = index % side
+        y = index // side
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if nx < window_left or ny < 0 or ny > spout_y or nx >= side:
+                continue
+            neighbor = ny * side + nx
+            if smoke[neighbor] or mask[neighbor]:
+                continue
+            smoke[neighbor] = 1
+            distance[neighbor] = current + 1
+            queue.append(neighbor)
+    pixels = bytearray(side * side * 4)
+    for index in range(side * side):
+        offset = index * 3
+        red, green, blue = rgb[offset], rgb[offset + 1], rgb[offset + 2]
+        if mask[index]:
+            pixels[index * 4 : index * 4 + 4] = bytes((red, green, blue, 255))
+        elif smoke[index]:
+            pixels[index * 4 : index * 4 + 4] = bytes(smoke_color(red, green, blue, distance[index] > 0))
+    print(
+        f"lamp=({min_x},{min_y})-({max_x},{max_y}) spout=({spout_x},{spout_y}) "
+        f"smoke_x>={window_left} seeds={len(seeds)}"
+    )
+    return bytes(pixels), side, side
+
+
+def opaque_bounds(pixels: bytes, width: int, height: int) -> tuple[int, int, int, int]:
+    min_x, min_y = width, height
+    max_x = max_y = -1
+    for y in range(height):
+        row = y * width * 4
+        for x in range(width):
+            if pixels[row + x * 4 + 3] == 0:
+                continue
+            min_x = min(min_x, x)
+            min_y = min(min_y, y)
+            max_x = max(max_x, x)
+            max_y = max(max_y, y)
+    if max_x < 0:
+        raise SystemExit("透過にした結果、絵が残りません")
+    return min_x, min_y, max_x, max_y
+
+
+def crop(pixels: bytes, width: int, height: int) -> tuple[bytes, int, int]:
+    min_x, min_y, max_x, max_y = opaque_bounds(pixels, width, height)
+    out_w = max_x - min_x + 1
+    out_h = max_y - min_y + 1
+    out = bytearray(out_w * out_h * 4)
+    for y in range(out_h):
+        src = ((min_y + y) * width + min_x) * 4
+        dst = y * out_w * 4
+        out[dst : dst + out_w * 4] = pixels[src : src + out_w * 4]
+    return bytes(out), out_w, out_h
+
+
+def box_down(pixels: bytes, src_w: int, src_h: int, dst_w: int, dst_h: int) -> bytes:
+    """前乗算してから平均し、縁が背景色で濁らないようにする。"""
     premul = bytearray(len(pixels))
     for i in range(0, len(pixels), 4):
         alpha = pixels[i + 3]
@@ -199,55 +339,59 @@ def box_down(pixels: bytes, src: int, dst: int) -> bytes:
         premul[i + 1] = pixels[i + 1] * alpha // 255
         premul[i + 2] = pixels[i + 2] * alpha // 255
         premul[i + 3] = alpha
-    out = bytearray(dst * dst * 4)
-    scale = src / dst
-    for y in range(dst):
-        y0 = y * scale
-        y1 = (y + 1) * scale
+    out = bytearray(dst_w * dst_h * 4)
+    scale_x = src_w / dst_w
+    scale_y = src_h / dst_h
+    for y in range(dst_h):
+        y0 = y * scale_y
+        y1 = (y + 1) * scale_y
         iy0 = int(y0)
-        iy1 = min(src - 1, int(y1 - 1e-9))
-        for x in range(dst):
-            x0 = x * scale
-            x1 = (x + 1) * scale
+        iy1 = min(src_h - 1, int(y1 - 1e-9))
+        for x in range(dst_w):
+            x0 = x * scale_x
+            x1 = (x + 1) * scale_x
             ix0 = int(x0)
-            ix1 = min(src - 1, int(x1 - 1e-9))
+            ix1 = min(src_w - 1, int(x1 - 1e-9))
             acc = [0.0, 0.0, 0.0, 0.0]
             weight = 0.0
             for iy in range(iy0, iy1 + 1):
                 wy = min(iy + 1, y1) - max(iy, y0)
                 for ix in range(ix0, ix1 + 1):
                     wx = min(ix + 1, x1) - max(ix, x0)
-                    w = wx * wy
-                    s = (iy * src + ix) * 4
+                    area = wx * wy
+                    source = (iy * src_w + ix) * 4
                     for channel in range(4):
-                        acc[channel] += premul[s + channel] * w
-                    weight += w
+                        acc[channel] += premul[source + channel] * area
+                    weight += area
             alpha = acc[3] / weight
-            j = (y * dst + x) * 4
+            dest = (y * dst_w + x) * 4
             if alpha < 1:
                 continue
             if alpha >= 254.5:
                 for channel in range(3):
-                    out[j + channel] = int(round(acc[channel] / weight))
-                out[j + 3] = 255
+                    out[dest + channel] = int(round(acc[channel] / weight))
+                out[dest + 3] = 255
                 continue
             for channel in range(3):
-                out[j + channel] = int(round(acc[channel] / weight * 255 / alpha))
-            out[j + 3] = int(round(alpha))
+                out[dest + channel] = int(round(acc[channel] / weight * 255 / alpha))
+            out[dest + 3] = int(round(alpha))
     return bytes(out)
 
 
 def main() -> None:
-    side, _, rgb = read_rgb(SOURCE)
-    if side != 1024:
-        raise SystemExit(f"1024px の原本が必要です（実際は {side}）")
-    cut = cut_out(rgb, side)
+    side, height, rgb = read_rgb(SOURCE)
+    if side != 1024 or height != 1024:
+        raise SystemExit(f"1024px の原本が必要です（実際は {side}x{height}）")
+    cut, cut_w, cut_h = cut_out(rgb, side)
+    cropped, src_w, src_h = crop(cut, cut_w, cut_h)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for scale in SCALES:
-        pixels = box_down(cut, side, POINT * scale)
+        dst_h = POINT * scale
+        dst_w = max(1, int(round(src_w * dst_h / src_h)))
+        pixels = box_down(cropped, src_w, src_h, dst_w, dst_h)
         path = OUT_DIR / f"lamp@{scale}x.png"
-        write_png(path, POINT * scale, POINT * scale, pixels)
-        print(f"wrote {path}")
+        write_png(path, dst_w, dst_h, pixels)
+        print(f"wrote {path} {dst_w}x{dst_h} from {src_w}x{src_h}")
 
 
 if __name__ == "__main__":

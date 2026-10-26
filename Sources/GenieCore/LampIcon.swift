@@ -7,58 +7,63 @@ package enum LampAppearance: String, Sendable {
 }
 
 /// メニューバー用のランプ。原本は `scripts/make-menu-icon.py` が抜いた透過 PNG。
-/// 一時停止と要対応の印だけ、この画像の上に重ねる。template 画像にはしない。
+/// 高さは 18pt。幅は絵の比率。一時停止と要対応の印だけ、この画像の上に重ねる。
+/// template 画像にはしない。
 package enum LampIcon {
     package static let menuPointSize = 18
     package static let menuScales = [1, 2, 3]
     package static let menuImageIsTemplate = false
 
-    package static func rgba(pixelSize: Int, appearance: LampAppearance) -> [UInt8] {
-        var pixels = basePixels(pixelSize: pixelSize)
-        guard appearance != .running else { return pixels }
-        let pixel = 1.0 / Double(pixelSize)
-        for y in 0..<pixelSize {
-            for x in 0..<pixelSize {
-                let u = (Double(x) + 0.5) / Double(pixelSize)
-                let v = (Double(y) + 0.5) / Double(pixelSize)
+    package static func rgba(pixelHeight: Int, appearance: LampAppearance) -> (width: Int, height: Int, pixels: [UInt8]) {
+        let base = baseRaster(pixelHeight: pixelHeight)
+        guard appearance != .running else { return base }
+        let width = base.width
+        let height = base.height
+        var pixels = base.pixels
+        let pixel = 1.0 / Double(max(height, 1))
+        for y in 0..<height {
+            for x in 0..<width {
+                let u = (Double(x) + 0.5) / Double(width)
+                let v = (Double(y) + 0.5) / Double(height)
                 let mark = badge(u: u, v: v, pixel: pixel, appearance: appearance)
-                let index = (y * pixelSize + x) * 4
+                let index = (y * width + x) * 4
                 let under = (
                     Double(pixels[index]) / 255,
                     Double(pixels[index + 1]) / 255,
                     Double(pixels[index + 2]) / 255,
                     Double(pixels[index + 3]) / 255
                 )
-                let over = over(mark, under)
-                pixels[index] = byte(over.0)
-                pixels[index + 1] = byte(over.1)
-                pixels[index + 2] = byte(over.2)
-                pixels[index + 3] = byte(over.3)
+                let mixed = over(mark, under)
+                pixels[index] = byte(mixed.0)
+                pixels[index + 1] = byte(mixed.1)
+                pixels[index + 2] = byte(mixed.2)
+                pixels[index + 3] = byte(mixed.3)
             }
         }
-        return pixels
+        return (width, height, pixels)
     }
 
-    package static func png(pixelSize: Int, appearance: LampAppearance) -> Data {
-        encodePNG(size: pixelSize, rgba: rgba(pixelSize: pixelSize, appearance: appearance))
+    package static func png(pixelHeight: Int, appearance: LampAppearance) -> Data {
+        let raster = rgba(pixelHeight: pixelHeight, appearance: appearance)
+        return encodePNG(width: raster.width, height: raster.height, rgba: raster.pixels)
     }
 
     /// メニューバー風の下地の上に載せ、必要なら最近傍で拡大する。
     package static func flattenedPNG(
-        pixelSize: Int,
+        pixelHeight: Int,
         appearance: LampAppearance,
         background: (UInt8, UInt8, UInt8),
         magnification: Int = 1
     ) -> Data {
-        let source = rgba(pixelSize: pixelSize, appearance: appearance)
-        let flat = flatten(source, size: pixelSize, background: background)
+        let source = rgba(pixelHeight: pixelHeight, appearance: appearance)
+        let flat = flatten(source.pixels, background: background)
         let scale = max(1, magnification)
-        let sized = scale == 1 ? flat : nearest(flat, size: pixelSize, scale: scale)
-        return encodePNG(size: pixelSize * scale, rgba: sized)
+        let sized = scale == 1 ? flat : nearest(flat, width: source.width, height: source.height, scale: scale)
+        return encodePNG(width: source.width * scale, height: source.height * scale, rgba: sized)
     }
 
-    package static func menuLampURL(pixelSize: Int) -> URL {
-        let name = "lamp@\(pixelSize / menuPointSize)x"
+    package static func menuLampURL(pixelHeight: Int) -> URL {
+        let name = "lamp@\(pixelHeight / menuPointSize)x"
         if let bundled = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "MenuLamp"),
            FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
@@ -71,18 +76,18 @@ package enum LampIcon {
     }
 
     private static let cacheLock = NSLock()
-    private static var cache: [Int: [UInt8]] = [:]
+    private static var cache: [Int: (width: Int, height: Int, pixels: [UInt8])] = [:]
 
-    private static func basePixels(pixelSize: Int) -> [UInt8] {
+    private static func baseRaster(pixelHeight: Int) -> (width: Int, height: Int, pixels: [UInt8]) {
         cacheLock.lock()
-        if let hit = cache[pixelSize] {
+        if let hit = cache[pixelHeight] {
             cacheLock.unlock()
             return hit
         }
         cacheLock.unlock()
-        let loaded = decodeStoredPNG(menuLampURL(pixelSize: pixelSize))
+        let loaded = decodeStoredPNG(menuLampURL(pixelHeight: pixelHeight))
         cacheLock.lock()
-        cache[pixelSize] = loaded
+        cache[pixelHeight] = loaded
         cacheLock.unlock()
         return loaded
     }
@@ -164,7 +169,7 @@ package enum LampIcon {
         UInt8(min(255, max(0, Int((value * 255).rounded()))))
     }
 
-    private static func flatten(_ pixels: [UInt8], size: Int, background: (UInt8, UInt8, UInt8)) -> [UInt8] {
+    private static func flatten(_ pixels: [UInt8], background: (UInt8, UInt8, UInt8)) -> [UInt8] {
         var out = [UInt8](repeating: 255, count: pixels.count)
         for index in stride(from: 0, to: pixels.count, by: 4) {
             let alpha = Int(pixels[index + 3])
@@ -172,17 +177,17 @@ package enum LampIcon {
             out[index + 1] = UInt8((Int(pixels[index + 1]) * alpha + Int(background.1) * (255 - alpha)) / 255)
             out[index + 2] = UInt8((Int(pixels[index + 2]) * alpha + Int(background.2) * (255 - alpha)) / 255)
         }
-        _ = size
         return out
     }
 
-    private static func nearest(_ pixels: [UInt8], size: Int, scale: Int) -> [UInt8] {
-        let side = size * scale
-        var out = [UInt8](repeating: 0, count: side * side * 4)
-        for y in 0..<side {
-            for x in 0..<side {
-                let from = ((y / scale) * size + (x / scale)) * 4
-                let to = (y * side + x) * 4
+    private static func nearest(_ pixels: [UInt8], width: Int, height: Int, scale: Int) -> [UInt8] {
+        let outWidth = width * scale
+        let outHeight = height * scale
+        var out = [UInt8](repeating: 0, count: outWidth * outHeight * 4)
+        for y in 0..<outHeight {
+            for x in 0..<outWidth {
+                let from = ((y / scale) * width + (x / scale)) * 4
+                let to = (y * outWidth + x) * 4
                 out[to] = pixels[from]
                 out[to + 1] = pixels[from + 1]
                 out[to + 2] = pixels[from + 2]
@@ -192,18 +197,18 @@ package enum LampIcon {
         return out
     }
 
-    private static func encodePNG(size: Int, rgba: [UInt8]) -> Data {
+    private static func encodePNG(width: Int, height: Int, rgba: [UInt8]) -> Data {
         var raw = Data()
-        raw.reserveCapacity(size * (1 + size * 4))
-        for y in 0..<size {
+        raw.reserveCapacity(height * (1 + width * 4))
+        for y in 0..<height {
             raw.append(0)
-            let start = y * size * 4
-            raw.append(contentsOf: rgba[start..<(start + size * 4)])
+            let start = y * width * 4
+            raw.append(contentsOf: rgba[start..<(start + width * 4)])
         }
         var data = Data([137, 80, 78, 71, 13, 10, 26, 10])
         var ihdr = Data()
-        ihdr.append(be32(UInt32(size)))
-        ihdr.append(be32(UInt32(size)))
+        ihdr.append(be32(UInt32(width)))
+        ihdr.append(be32(UInt32(height)))
         ihdr.append(contentsOf: [8, 6, 0, 0, 0])
         data.append(chunk("IHDR", ihdr))
         data.append(chunk("IDAT", zlibStore(raw)))
@@ -211,11 +216,11 @@ package enum LampIcon {
         return data
     }
 
-    private static func decodeStoredPNG(_ url: URL) -> [UInt8] {
+    private static func decodeStoredPNG(_ url: URL) -> (width: Int, height: Int, pixels: [UInt8]) {
         guard let data = FileManager.default.contents(atPath: url.path) else {
-            return []
+            return (0, 0, [])
         }
-        guard data.count > 8, data.prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]) else { return [] }
+        guard data.count > 8, data.prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]) else { return (0, 0, []) }
         var offset = 8
         var width = 0
         var height = 0
@@ -225,7 +230,7 @@ package enum LampIcon {
             let kind = String(data: data.subdata(in: (offset + 4)..<(offset + 8)), encoding: .ascii) ?? ""
             let start = offset + 8
             let end = start + length
-            guard end + 4 <= data.count else { return [] }
+            guard end + 4 <= data.count else { return (0, 0, []) }
             let payload = data.subdata(in: start..<end)
             if kind == "IHDR", payload.count >= 10 {
                 width = Int(be32(payload, 0))
@@ -237,19 +242,19 @@ package enum LampIcon {
             }
             offset = end + 4
         }
-        guard width > 0, height > 0, let inflated = inflateStored(idat) else { return [] }
+        guard width > 0, height > 0, let inflated = inflateStored(idat) else { return (0, 0, []) }
         let stride = width * 4
-        guard inflated.count >= height * (1 + stride) else { return [] }
+        guard inflated.count >= height * (1 + stride) else { return (0, 0, []) }
         var pixels = [UInt8]()
         pixels.reserveCapacity(width * height * 4)
         var cursor = 0
         for _ in 0..<height {
-            guard inflated[cursor] == 0 else { return [] }
+            guard inflated[cursor] == 0 else { return (0, 0, []) }
             cursor += 1
             pixels.append(contentsOf: inflated[cursor..<(cursor + stride)])
             cursor += stride
         }
-        return pixels
+        return (width, height, pixels)
     }
 
     /// zlib の非圧縮ブロック。`make-menu-icon.py` が同じ形で書く。
