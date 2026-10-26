@@ -38,7 +38,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 置き場所は Notion のデータベース（2026-10-26 決定）。ボットが返事 1 件につき 1 行を足し、Mac はデータソースを約 10 秒ごとに query する。`notion_data_source_id` が空のときは、差し替え用の GET JSON（`reply_fetch_url`）に戻る。どちらも https だけを使い、トークンは使うたびに読み直す。
 
-Notion の列は `reply_id`（title）、`chat_id`（number、確認用）、`in_reply_to_guid`（rich_text、必須）、`idempotency_key`（rich_text）、`text`（rich_text）、`created_at`（created_time）。どこまで読んだかは水位（読み終えた行の最も新しい時刻）で、次の取得はその 120 秒前から読み直す。ただし読み始めた分より前には戻らない。重複は処理済み ID で落とす。カーソルが空のときは今の分の先頭から読む。処理済みでない返事より先には水位を進めない。`Notion-Version` は `2026-03-11`。平均で毎秒 3 回を超えないよう間隔を空け、429 と 529 は `Retry-After` を待つ。ボット側の約束（1行は列を揃えて一度に書く、7日より古い行を片付ける、など）は `SPEC.md` 5.1。
+Notion の列は `reply_id`（title）、`chat_id`（number、確認用）、`in_reply_to_guid`（rich_text、必須）、`idempotency_key`（rich_text）、`text`（rich_text）、`created_at`（created_time）。どこまで読んだかは水位（読み終えた行の最も新しい時刻）で、次の取得はその 120 秒前から読み直す。ただし読み始めた分より前には戻らない。重複は処理済み ID で落とす。処理済みの行と、保留中・送信中の返事は 100 件の枠に数えない。カーソルが空のときは、その取得を始めた分の先頭から読む。処理済みでない返事より先には水位を進めない。1回の取得は 2000 行まで。`Notion-Version` は `2026-03-11`。平均で毎秒 3 回を超えないよう間隔を空け、429 と 529 は `Retry-After` を待つ。ボット側の約束（1行は列を揃えて一度に書く、7日より古い行を片付ける、など）は `SPEC.md` 5.1。
 
 送り先は、webhook に渡したときの guid と chat_id の対応から決める。`reply_id` で冪等にする。必須の列が欠けた行、対応が無い行、取得元の chat_id と食い違う行は送らない。本文はログに出さない。
 

@@ -324,6 +324,108 @@ final class NotionReplyTests: XCTestCase {
         XCTAssertGreaterThan(page.skipped, 0)
     }
 
+    func testHeldRepliesDoNotBlockAnotherChat() async throws {
+        let harness = Harness()
+        harness.allow.ids = [1, 2]
+        harness.config.notionDataSourceID = dataSource
+        harness.config.replyFetchURL = ""
+        harness.config.rateLimitCount = 1
+        harness.config.rateLimitWindowSeconds = 3600
+        let origin = ISO8601.date(from: NotionCursor.freshStart(now: harness.clock.now())) ?? harness.clock.now()
+        var rows: [[String: Any]] = []
+        for index in 0..<101 {
+            let id = String(format: "h%03d", index)
+            let guid = String(format: "g%03d", index)
+            let at = ISO8601.string(from: origin.addingTimeInterval(Double(index)))
+            seedRoute(harness, guid: guid, chat: 1)
+            rows.append(row(id, at: at, guid: guid, text: "held", chat: 1))
+        }
+        let otherAt = ISO8601.string(from: origin.addingTimeInterval(300))
+        seedRoute(harness, guid: "g-other", chat: 2)
+        rows.append(row("other", at: otherAt, guid: "g-other", text: "other-chat", chat: 2))
+        let dataset = DatasetNotion(rows: rows)
+        let engine = try makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
+        await engine.pollReplies()
+        await engine.pollReplies()
+        await engine.pollReplies()
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
+        XCTAssertTrue(harness.sender.sent.contains { $0.chatID == 2 && $0.text.contains("other-chat") })
+        let snap = await engine.snapshot()
+        XCTAssertEqual(snap.heldCount, 100)
+    }
+
+    func testFetchKeepsTheMinuteItStartedIn() async throws {
+        let clock = ManualClock(ISO8601.date(from: "2023-11-14T22:13:50.000Z") ?? Date(timeIntervalSince1970: 1_700_000_030))
+        let script = ScriptedNotion(responses: [
+            ok([row("edge", at: minute, guid: "g", text: "kept")]),
+        ])
+        script.onSend = { clock.current = clock.current.addingTimeInterval(30) }
+        let page = try await makeSource(script, clock: clock).fetch(cursor: nil)
+        XCTAssertEqual(page.replies.map(\.id), ["edge"])
+        XCTAssertEqual(NotionCursor.decode(page.nextCursor)?.notBefore, minute)
+    }
+
+    func testPagingUsesTheNextCursorAndStopsAtTwentyPages() async throws {
+        var rows: [[String: Any]] = []
+        for index in 0..<100 {
+            rows.append(row(String(format: "p%03d", index), at: minute, guid: "g", text: "x"))
+        }
+        rows.append(row("tail", at: minute, guid: "g", text: "x"))
+        let dataset = DatasetNotion(rows: rows)
+        let page = try await makeSource(dataset, clock: ManualClock()).fetch(
+            cursor: nil,
+            skipping: Set((0..<100).map { String(format: "p%03d", $0) })
+        )
+        XCTAssertEqual(page.replies.map(\.id), ["tail"])
+        XCTAssertEqual(dataset.requests.count, 2)
+        let second = try JSONSerialization.jsonObject(with: dataset.requests[1].httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(second?["start_cursor"] as? String, "100")
+
+        var many: [[String: Any]] = []
+        for index in 0..<2000 {
+            many.append(row(String(format: "q%04d", index), at: minute, guid: "g", text: "x"))
+        }
+        many.append(row("beyond", at: minute, guid: "g", text: "x"))
+        let wide = DatasetNotion(rows: many)
+        let stopped = try await makeSource(wide, clock: ManualClock()).fetch(
+            cursor: nil,
+            skipping: Set((0..<2000).map { String(format: "q%04d", $0) })
+        )
+        XCTAssertFalse(stopped.replies.map(\.id).contains("beyond"))
+        XCTAssertEqual(wide.requests.count, NotionAPI.maxPages)
+    }
+
+    func testLegacyCursorKeepsTheLookback() async throws {
+        let legacy = #"{"created_at":"2023-11-14T22:13:00.000Z","reply_ids":["seen"]}"#
+        var rows: [[String: Any]] = [
+            row("early", at: "2023-11-14T22:11:30.000Z", guid: "g", text: "x"),
+            row("seen", at: minute, guid: "g", text: "x"),
+        ]
+        for index in 0..<100 {
+            rows.append(row(String(format: "n%03d", index), at: minute, guid: "g", text: "x"))
+        }
+        let page = try await makeSource(
+            ScriptedNotion(responses: [ok(rows)]),
+            clock: ManualClock()
+        ).fetch(cursor: legacy)
+        XCTAssertTrue(page.replies.map(\.id).contains("early"))
+        XCTAssertNil(NotionCursor.decode(page.nextCursor)?.notBefore)
+    }
+
+    func testChatIDDoesNotBorrowTheNextRowsNumber() async throws {
+        let raw = """
+        {"object":"list","results":[{"object":"page","id":"page-text","created_time":"2023-11-14T22:13:00.000Z","properties":{"reply_id":{"title":[{"plain_text":"texty"}]},"created_at":{"created_time":"2023-11-14T22:13:00.000Z"},"chat_id":{"type":"rich_text","rich_text":[{"plain_text":"nope"}]},"in_reply_to_guid":{"rich_text":[{"plain_text":"g"}]},"text":{"rich_text":[{"plain_text":"hi"}]}}},{"object":"page","id":"page-big","created_time":"2023-11-14T22:13:00.000Z","properties":{"reply_id":{"title":[{"plain_text":"big"}]},"created_at":{"created_time":"2023-11-14T22:13:00.000Z"},"chat_id":{"number":9007199254740993},"in_reply_to_guid":{"rich_text":[{"plain_text":"g"}]},"text":{"rich_text":[{"plain_text":"hi"}]}}}],"has_more":false}
+        """
+        let script = ScriptedNotion(responses: [
+            NotionHTTPResponse(status: 200, headers: [:], body: Data(raw.utf8)),
+        ])
+        let page = try await makeSource(script, clock: ManualClock()).fetch(cursor: nil)
+        XCTAssertEqual(page.replies.map(\.id), ["big"])
+        XCTAssertEqual(page.replies.first?.chatID, 9_007_199_254_740_993)
+        XCTAssertGreaterThan(page.skipped, 0)
+    }
+
     func testRealDatabaseIDsAreNotInSource() throws {
         let root = repoRoot().appendingPathComponent("Sources")
         let banned = [
@@ -443,12 +545,14 @@ final class ScriptedNotion: NotionTransport, @unchecked Sendable {
     var responses: [NotionHTTPResponse]
     var requests: [URLRequest] = []
     var bodies: [Data] { requests.compactMap(\.httpBody) }
+    var onSend: (() -> Void)?
 
     init(responses: [NotionHTTPResponse]) {
         self.responses = responses
     }
 
     func send(_ request: URLRequest) async throws -> NotionHTTPResponse {
+        onSend?()
         requests.append(request)
         if responses.isEmpty { throw ReplyFetchError.transport }
         return responses.removeFirst()

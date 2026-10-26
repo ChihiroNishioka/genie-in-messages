@@ -38,7 +38,12 @@ package struct ReplyPage: Equatable {
 }
 
 package protocol ReplySource: Sendable {
-    func fetch(cursor: String?, skipping handledReplyIDs: Set<String>) async throws -> ReplyPage
+    /// `holding` は保留中・送信中の reply_id。処理済み（`skipping`）とは別に、1回の件数には数えない。
+    func fetch(
+        cursor: String?,
+        skipping handledReplyIDs: Set<String>,
+        holding replyIDs: Set<String>
+    ) async throws -> ReplyPage
 }
 
 enum ReplyFetchError: Error {
@@ -63,8 +68,13 @@ package struct HTTPReplySource: ReplySource {
         self.session = session
     }
 
-    package func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
+    package func fetch(
+        cursor: String?,
+        skipping handledReplyIDs: Set<String> = [],
+        holding replyIDs: Set<String> = []
+    ) async throws -> ReplyPage {
         _ = handledReplyIDs
+        _ = replyIDs
         let secret: String?
         do {
             secret = try secrets.replySecret()
@@ -139,8 +149,13 @@ enum ReplyPageDecoder {
 
 package struct EmptyReplySource: ReplySource {
     package init() {}
-    package func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
+    package func fetch(
+        cursor: String?,
+        skipping handledReplyIDs: Set<String> = [],
+        holding replyIDs: Set<String> = []
+    ) async throws -> ReplyPage {
         _ = handledReplyIDs
+        _ = replyIDs
         return ReplyPage(replies: [], nextCursor: cursor)
     }
 }

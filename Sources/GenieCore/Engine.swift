@@ -198,14 +198,17 @@ package actor GenieEngine {
             }
         }
         do {
+            let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs)
             let page = try await replySource.fetch(
                 cursor: persisted.replyCursor,
-                skipping: Set(persisted.handledReplyIDs)
+                skipping: Set(persisted.handledReplyIDs),
+                holding: holding
             )
             if page.skipped > 0 {
                 log.record(level: .error, code: "reply_bad_entry", chatID: nil, guid: nil, rowid: nil)
             }
-            if page.replies.count > config.replyPageLimit {
+            let freshCount = page.replies.filter { !holding.contains($0.id) }.count
+            if freshCount > config.replyPageLimit {
                 log.record(level: .error, code: "reply_page_over_limit", chatID: nil, guid: nil, rowid: nil)
             }
             for reply in page.replies {

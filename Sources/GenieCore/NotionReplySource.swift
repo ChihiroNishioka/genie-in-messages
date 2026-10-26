@@ -175,23 +175,31 @@ struct NotionAdvance {
     var reachedLimit: Bool
 }
 
-/// 水位の 120 秒前から読み、処理済みと見たと覚えた ID は件数に数えない。
+/// 水位の 120 秒前から読み、処理済み・見たと覚えた ID・保留中は件数に数えない。
 enum NotionRead {
     static func collect(
         cursor: NotionCursor?,
         rows: [NotionCandidate],
         handled: Set<String>,
+        holding: Set<String> = [],
         limit: Int,
         now: Date
     ) -> NotionAdvance {
         let cap = max(1, limit)
         let lowerBound = cursor?.queryStart(now: now) ?? NotionCursor.freshStart(now: now)
-        let notBefore = cursor?.notBefore ?? NotionCursor.freshStart(now: now)
+        // 空のカーソルだけ、この取得を始めた分を下限にする。古い形式は notBefore を足さない。
+        let notBefore: String?
+        if let cursor {
+            notBefore = cursor.notBefore
+        } else {
+            notBefore = NotionCursor.freshStart(now: now)
+        }
         var known: [String: String] = [:]
         for item in cursor?.seen ?? [] where !item.id.isEmpty {
             known[item.id] = item.at
         }
         var replies: [FetchedReply] = []
+        var fresh = 0
         var skipped = 0
         var reachedLimit = false
         var newest = cursor?.createdAt ?? ""
@@ -212,7 +220,8 @@ enum NotionRead {
                 }
                 continue
             }
-            if replies.count >= cap {
+            let parked = holding.contains(row.replyID)
+            if !parked && fresh >= cap {
                 reachedLimit = true
                 break
             }
@@ -224,6 +233,9 @@ enum NotionRead {
             known[row.replyID] = row.createdAt
             if newest.isEmpty || row.createdAt > newest {
                 newest = row.createdAt
+            }
+            if !parked {
+                fresh += 1
             }
         }
         if newest.isEmpty {
@@ -331,7 +343,11 @@ package struct NotionReplySource: ReplySource {
         self.transport = transport
     }
 
-    package func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
+    package func fetch(
+        cursor: String?,
+        skipping handledReplyIDs: Set<String> = [],
+        holding replyIDs: Set<String> = []
+    ) async throws -> ReplyPage {
         guard let id = NotionDataSourceID.canonical(dataSourceID),
               let url = URL(string: "https://api.notion.com/v1/data_sources/\(id)/query") else {
             throw ReplyFetchError.badResponse
@@ -342,8 +358,9 @@ package struct NotionReplySource: ReplySource {
         } catch let error as SecretReadError {
             throw ReplyFetchError.notionToken(error)
         }
+        let now = clock.now()
         let stored = NotionCursor.decode(cursor)
-        let lowerBound = stored?.queryStart(now: clock.now()) ?? NotionCursor.freshStart(now: clock.now())
+        let lowerBound = stored?.queryStart(now: now) ?? NotionCursor.freshStart(now: now)
         var start: String?
         var collected: [NotionCandidate] = []
         var skippedInPages = 0
@@ -355,8 +372,9 @@ package struct NotionReplySource: ReplySource {
                 cursor: stored,
                 rows: collected,
                 handled: handledReplyIDs,
+                holding: replyIDs,
                 limit: pageLimit,
-                now: clock.now()
+                now: now
             )
             if partial.reachedLimit || !page.hasMore {
                 return ReplyPage(
@@ -378,8 +396,9 @@ package struct NotionReplySource: ReplySource {
             cursor: stored,
             rows: collected,
             handled: handledReplyIDs,
+            holding: replyIDs,
             limit: pageLimit,
-            now: clock.now()
+            now: now
         )
         return ReplyPage(
             replies: advanced.replies,
@@ -497,43 +516,111 @@ enum NotionPageDecoder {
         return NotionQueryPage(rows: rows, hasMore: hasMore, nextCursor: next, skipped: skipped)
     }
 
-    /// JSON の数値は 2^53 を超えると丸まる。chat_id は原文の桁のまま読む。
+    /// JSON の数値は 2^53 を超えると丸まる。chat_id は、その列の値だけを原文の桁のまま読む。
     static func chatIDTokens(in raw: String) -> [NotionNumber] {
         var tokens: [NotionNumber] = []
         var rest = Substring(raw)
         while let key = rest.range(of: "\"chat_id\"") {
-            var search = rest[key.upperBound...]
-            var matched = false
-            while let numberKey = search.range(of: "\"number\"") {
-                let afterQuotes = search[numberKey.upperBound...]
-                let afterSpace = afterQuotes.drop(while: { $0.isWhitespace })
-                // `"type":"number"` の値ではなく、`"number":` のキーだけを読む。
-                guard afterSpace.first == ":" else {
-                    search = afterQuotes
-                    continue
-                }
-                let value = afterSpace.dropFirst().drop(while: { $0.isWhitespace })
-                if value.hasPrefix("null") {
-                    tokens.append(.absent)
-                } else {
-                    let token = value.prefix { character in
-                        character == "-" || character == "+" || character == "." || character == "e" || character == "E" || character.isNumber
-                    }
-                    let text = String(token)
-                    if let parsed = Int64(text),
-                       !text.contains("."), !text.contains("e"), !text.contains("E"), !text.contains("+") {
-                        tokens.append(.exact(parsed))
-                    } else {
-                        tokens.append(.invalid)
-                    }
-                }
-                rest = value
-                matched = true
-                break
+            let afterKey = rest[key.upperBound...].drop(while: { $0.isWhitespace })
+            guard afterKey.first == ":" else {
+                rest = rest[key.upperBound...]
+                continue
             }
-            if !matched { break }
+            let valueStart = afterKey.dropFirst().drop(while: { $0.isWhitespace })
+            guard let value = jsonValue(valueStart) else { break }
+            tokens.append(numberToken(in: value))
+            rest = valueStart.dropFirst(value.count)
         }
         return tokens
+    }
+
+    /// `"chat_id"` の値の中だけを見る。隣の行の `"number"` は読まない。
+    private static func numberToken(in value: Substring) -> NotionNumber {
+        var search = value
+        while let numberKey = search.range(of: "\"number\"") {
+            let afterQuotes = search[numberKey.upperBound...]
+            let afterSpace = afterQuotes.drop(while: { $0.isWhitespace })
+            guard afterSpace.first == ":" else {
+                search = afterQuotes
+                continue
+            }
+            let tokenText = afterSpace.dropFirst().drop(while: { $0.isWhitespace })
+            if tokenText.hasPrefix("null") { return .absent }
+            let token = tokenText.prefix { character in
+                character == "-" || character == "+" || character == "." || character == "e" || character == "E" || character.isNumber
+            }
+            let text = String(token)
+            if let parsed = Int64(text),
+               !text.contains("."), !text.contains("e"), !text.contains("E"), !text.contains("+") {
+                return .exact(parsed)
+            }
+            return .invalid
+        }
+        return .invalid
+    }
+
+    private static func jsonValue(_ raw: Substring) -> Substring? {
+        guard let first = raw.first else { return nil }
+        switch first {
+        case "{":
+            return balanced(raw, open: "{", close: "}")
+        case "[":
+            return balanced(raw, open: "[", close: "]")
+        case "\"":
+            return quoted(raw)
+        default:
+            let literal = raw.prefix { character in
+                character != "," && character != "}" && character != "]" && !character.isWhitespace
+            }
+            return literal.isEmpty ? nil : literal
+        }
+    }
+
+    private static func balanced(_ raw: Substring, open: Character, close: Character) -> Substring? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var index = raw.startIndex
+        while index < raw.endIndex {
+            let character = raw[index]
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+            } else if character == "\"" {
+                inString = true
+            } else if character == open {
+                depth += 1
+            } else if character == close {
+                depth -= 1
+                if depth == 0 {
+                    return raw[raw.startIndex...index]
+                }
+            }
+            index = raw.index(after: index)
+        }
+        return nil
+    }
+
+    private static func quoted(_ raw: Substring) -> Substring? {
+        var escaped = false
+        var index = raw.index(after: raw.startIndex)
+        while index < raw.endIndex {
+            let character = raw[index]
+            if escaped {
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else if character == "\"" {
+                return raw[raw.startIndex...index]
+            }
+            index = raw.index(after: index)
+        }
+        return nil
     }
 
     private static func candidate(_ item: Any, chat: NotionNumber) -> NotionCandidate? {
