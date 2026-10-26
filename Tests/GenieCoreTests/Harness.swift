@@ -56,7 +56,8 @@ final class FakeLock: ScreenLockChecking, @unchecked Sendable {
 
 final class ScriptedReplies: ReplySource, @unchecked Sendable {
     var pages: [ReplyPage] = []
-    func fetch(cursor: String?) async throws -> ReplyPage {
+    func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
+        _ = handledReplyIDs
         if pages.isEmpty {
             return ReplyPage(replies: [], nextCursor: cursor)
         }

@@ -10,6 +10,10 @@ enum NotionAPI {
     static let pageSize = 100
     static let maxPages = 20
     static let maxRetries = 5
+    /// 水位よりこの秒数だけ前から読み直す。分に丸めた created_time と、行が見えるまでの遅れを吸収する。
+    static let lookbackSeconds: TimeInterval = 120
+    static let seenCap = 5000
+    static let retryCapSeconds = 60.0
 }
 
 enum NotionDataSourceID {
@@ -33,33 +37,66 @@ enum NotionDataSourceID {
     }
 }
 
+struct NotionSeenID: Codable, Equatable {
+    var id: String
+    var at: String
+}
+
 struct NotionCursor: Codable, Equatable {
+    /// 読み終えた行のうち最も新しい created_at。未処理の返事があるときは、その時刻より新しくはしない。
     var createdAt: String
-    var replyIDs: [String]
-    /// より新しい時刻を見たが、同じ時刻の行を次の取得でも拾うため、まだ水位にしていない。
-    var pendingAt: String?
-    var pendingIDs: [String]
+    /// 読み直し幅の中で既に見た reply_id。
+    var seen: [NotionSeenID]
+    /// カーソルを作り始めた分の先頭。これより前は読まない。
+    var notBefore: String?
 
     enum CodingKeys: String, CodingKey {
         case createdAt = "created_at"
+        case seen
+        case notBefore = "not_before"
         case replyIDs = "reply_ids"
         case pendingAt = "pending_at"
         case pendingIDs = "pending_ids"
     }
 
-    init(createdAt: String, replyIDs: [String], pendingAt: String? = nil, pendingIDs: [String] = []) {
+    init(createdAt: String, seen: [NotionSeenID], notBefore: String? = nil) {
         self.createdAt = createdAt
-        self.replyIDs = replyIDs
-        self.pendingAt = pendingAt
-        self.pendingIDs = pendingIDs
+        self.seen = seen
+        self.notBefore = notBefore
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        createdAt = try container.decode(String.self, forKey: .createdAt)
-        replyIDs = try container.decodeIfPresent([String].self, forKey: .replyIDs) ?? []
-        pendingAt = try container.decodeIfPresent(String.self, forKey: .pendingAt)
-        pendingIDs = try container.decodeIfPresent([String].self, forKey: .pendingIDs) ?? []
+        let created = try container.decode(String.self, forKey: .createdAt)
+        if let seen = try container.decodeIfPresent([NotionSeenID].self, forKey: .seen) {
+            createdAt = created
+            self.seen = seen
+            notBefore = try container.decodeIfPresent(String.self, forKey: .notBefore)
+            return
+        }
+        notBefore = nil
+        var items: [NotionSeenID] = []
+        let ids = try container.decodeIfPresent([String].self, forKey: .replyIDs) ?? []
+        for id in ids where !id.isEmpty {
+            items.append(NotionSeenID(id: id, at: created))
+        }
+        if let pending = try container.decodeIfPresent(String.self, forKey: .pendingAt) {
+            let pendingIDs = try container.decodeIfPresent([String].self, forKey: .pendingIDs) ?? []
+            for id in pendingIDs where !id.isEmpty {
+                items.append(NotionSeenID(id: id, at: pending))
+            }
+            createdAt = pending > created ? pending : created
+        } else {
+            createdAt = created
+        }
+        seen = items
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(seen, forKey: .seen)
+        try container.encodeIfPresent(notBefore, forKey: .notBefore)
     }
 
     func encoded() -> String? {
@@ -73,6 +110,56 @@ struct NotionCursor: Codable, Equatable {
         guard let raw, let data = raw.data(using: .utf8), !raw.isEmpty else { return nil }
         return try? JSONDecoder().decode(NotionCursor.self, from: data)
     }
+
+    /// カーソルが空のときは、今の分の先頭から読む。それより古い行は読まない。
+    static func freshStart(now: Date) -> String {
+        let floored = floor(now.timeIntervalSince1970 / 60) * 60
+        return ISO8601.string(from: Date(timeIntervalSince1970: floored))
+    }
+
+    func queryStart(now: Date) -> String {
+        let lookback: String
+        if let frontier = ISO8601.date(from: createdAt) {
+            lookback = ISO8601.string(from: frontier.addingTimeInterval(-NotionAPI.lookbackSeconds))
+        } else {
+            lookback = Self.freshStart(now: now)
+        }
+        if let notBefore, notBefore > lookback {
+            return notBefore
+        }
+        return lookback
+    }
+
+    mutating func prune() {
+        guard let frontier = ISO8601.date(from: createdAt) else { return }
+        let start = ISO8601.string(from: frontier.addingTimeInterval(-NotionAPI.lookbackSeconds))
+        seen.removeAll { $0.at < start }
+        seen.sort { lhs, rhs in
+            if lhs.at == rhs.at { return lhs.id < rhs.id }
+            return lhs.at < rhs.at
+        }
+        if seen.count > NotionAPI.seenCap {
+            seen = Array(seen.suffix(NotionAPI.seenCap))
+        }
+    }
+
+    static func ids(in raw: String?) -> Set<String> {
+        Set(decode(raw)?.seen.map(\.id) ?? [])
+    }
+
+    /// 未処理の返事より先に水位を進めない。その ID は見たと覚えないので、次も読み直す。
+    static func reconcile(proposed: String?, unhandled: [FetchedReply]) -> String? {
+        guard let proposed, var cursor = decode(proposed) else { return proposed }
+        guard !unhandled.isEmpty else { return proposed }
+        let drop = Set(unhandled.map(\.id))
+        cursor.seen.removeAll { drop.contains($0.id) }
+        if let oldest = unhandled.compactMap(\.createdAt).filter({ !$0.isEmpty }).min(),
+           cursor.createdAt > oldest {
+            cursor.createdAt = oldest
+        }
+        cursor.prune()
+        return cursor.encoded()
+    }
 }
 
 struct NotionCandidate {
@@ -84,107 +171,71 @@ struct NotionCandidate {
 struct NotionAdvance {
     var replies: [FetchedReply]
     var skipped: Int
-    var cursor: NotionCursor?
-    var truncated: Bool
+    var cursor: NotionCursor
+    var reachedLimit: Bool
 }
 
-/// created_time は分単位で同じ値になる。水位はその時刻と、そこで見た reply_id の組。
-/// より新しい時刻を初めて見たら、次の取得まで水位を動かさず、同じ時刻の後着を拾う。
+/// 水位の 120 秒前から読み、処理済みと見たと覚えた ID は件数に数えない。
 enum NotionRead {
-    static func advance(
+    static func collect(
         cursor: NotionCursor?,
         rows: [NotionCandidate],
-        scanComplete: Bool,
-        limit: Int
+        handled: Set<String>,
+        limit: Int,
+        now: Date
     ) -> NotionAdvance {
         let cap = max(1, limit)
-        var open = cursor?.createdAt
-        var openIDs = Set(cursor?.replyIDs ?? [])
-        let hadPending = cursor?.pendingAt != nil
-        var pending = cursor?.pendingAt
-        var pendingIDs = Set(cursor?.pendingIDs ?? [])
-        var foundNewAtOpen = false
+        let lowerBound = cursor?.queryStart(now: now) ?? NotionCursor.freshStart(now: now)
+        let notBefore = cursor?.notBefore ?? NotionCursor.freshStart(now: now)
+        var known: [String: String] = [:]
+        for item in cursor?.seen ?? [] where !item.id.isEmpty {
+            known[item.id] = item.at
+        }
         var replies: [FetchedReply] = []
         var skipped = 0
-        var truncated = false
-
-        func take(_ row: NotionCandidate) -> Bool {
-            guard let reply = row.reply else {
-                skipped += 1
-                return true
-            }
-            if replies.count >= cap {
-                truncated = true
-                return false
-            }
-            replies.append(reply)
-            return true
+        var reachedLimit = false
+        var newest = cursor?.createdAt ?? ""
+        let ordered = rows.sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt { return lhs.replyID < rhs.replyID }
+            return lhs.createdAt < rhs.createdAt
         }
-
-        for row in rows {
+        for row in ordered {
             if row.replyID.isEmpty || row.createdAt.isEmpty {
                 skipped += 1
                 continue
             }
-            if let open, row.createdAt < open {
+            if row.createdAt < lowerBound { continue }
+            if known[row.replyID] != nil || handled.contains(row.replyID) {
+                known[row.replyID] = row.createdAt
+                if newest.isEmpty || row.createdAt > newest {
+                    newest = row.createdAt
+                }
                 continue
             }
-            if let open, row.createdAt == open {
-                if openIDs.contains(row.replyID) { continue }
-                if !take(row) { break }
-                openIDs.insert(row.replyID)
-                foundNewAtOpen = true
-                continue
+            if replies.count >= cap {
+                reachedLimit = true
+                break
             }
-            if open == nil {
-                if !take(row) { break }
-                open = row.createdAt
-                openIDs = [row.replyID]
-                foundNewAtOpen = true
-                continue
+            if let reply = row.reply {
+                replies.append(reply)
+            } else {
+                skipped += 1
             }
-            if let pending, row.createdAt < pending {
-                _ = take(row)
-                if truncated { break }
-                continue
+            known[row.replyID] = row.createdAt
+            if newest.isEmpty || row.createdAt > newest {
+                newest = row.createdAt
             }
-            if let pending, row.createdAt == pending {
-                if pendingIDs.contains(row.replyID) { continue }
-                if !take(row) { break }
-                pendingIDs.insert(row.replyID)
-                continue
-            }
-            if !take(row) { break }
-            pending = row.createdAt
-            pendingIDs = [row.replyID]
         }
-
-        let complete = scanComplete && !truncated
-        if hadPending, !foundNewAtOpen, complete, let newest = pending {
-            open = newest
-            openIDs = pendingIDs
-            pending = nil
-            pendingIDs = []
+        if newest.isEmpty {
+            newest = NotionCursor.freshStart(now: now)
         }
-        if openIDs.count > 5000 {
-            openIDs = Set(Array(openIDs).sorted().suffix(5000))
-        }
-        if pendingIDs.count > 5000 {
-            pendingIDs = Set(Array(pendingIDs).sorted().suffix(5000))
-        }
-
-        let next: NotionCursor?
-        if let open {
-            next = NotionCursor(
-                createdAt: open,
-                replyIDs: openIDs.sorted(),
-                pendingAt: pending,
-                pendingIDs: pendingIDs.sorted()
-            )
-        } else {
-            next = nil
-        }
-        return NotionAdvance(replies: replies, skipped: skipped, cursor: next, truncated: truncated)
+        var next = NotionCursor(
+            createdAt: newest,
+            seen: known.map { NotionSeenID(id: $0.key, at: $0.value) },
+            notBefore: notBefore
+        )
+        next.prune()
+        return NotionAdvance(replies: replies, skipped: skipped, cursor: next, reachedLimit: reachedLimit)
     }
 }
 
@@ -280,7 +331,7 @@ package struct NotionReplySource: ReplySource {
         self.transport = transport
     }
 
-    package func fetch(cursor: String?) async throws -> ReplyPage {
+    package func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
         guard let id = NotionDataSourceID.canonical(dataSourceID),
               let url = URL(string: "https://api.notion.com/v1/data_sources/\(id)/query") else {
             throw ReplyFetchError.badResponse
@@ -292,39 +343,47 @@ package struct NotionReplySource: ReplySource {
             throw ReplyFetchError.notionToken(error)
         }
         let stored = NotionCursor.decode(cursor)
+        let lowerBound = stored?.queryStart(now: clock.now()) ?? NotionCursor.freshStart(now: clock.now())
         var start: String?
         var collected: [NotionCandidate] = []
         var skippedInPages = 0
-        var scanComplete = false
         for _ in 0..<NotionAPI.maxPages {
-            let page = try await query(url: url, token: token, cursor: stored, startCursor: start)
+            let page = try await query(url: url, token: token, lowerBound: lowerBound, startCursor: start)
             collected.append(contentsOf: page.rows)
             skippedInPages += page.skipped
-            let partial = NotionRead.advance(
+            let partial = NotionRead.collect(
                 cursor: stored,
                 rows: collected,
-                scanComplete: false,
-                limit: pageLimit
+                handled: handledReplyIDs,
+                limit: pageLimit,
+                now: clock.now()
             )
-            if !page.hasMore {
-                scanComplete = true
-                break
+            if partial.reachedLimit || !page.hasMore {
+                return ReplyPage(
+                    replies: partial.replies,
+                    nextCursor: partial.cursor.encoded(),
+                    skipped: skippedInPages + partial.skipped
+                )
             }
-            if partial.truncated || partial.replies.count >= max(1, pageLimit) {
-                break
+            guard let next = page.nextCursor, !next.isEmpty else {
+                return ReplyPage(
+                    replies: partial.replies,
+                    nextCursor: partial.cursor.encoded(),
+                    skipped: skippedInPages + partial.skipped
+                )
             }
-            guard let next = page.nextCursor, !next.isEmpty else { break }
             start = next
         }
-        let advanced = NotionRead.advance(
+        let advanced = NotionRead.collect(
             cursor: stored,
             rows: collected,
-            scanComplete: scanComplete,
-            limit: pageLimit
+            handled: handledReplyIDs,
+            limit: pageLimit,
+            now: clock.now()
         )
         return ReplyPage(
             replies: advanced.replies,
-            nextCursor: advanced.cursor?.encoded(),
+            nextCursor: advanced.cursor.encoded(),
             skipped: skippedInPages + advanced.skipped
         )
     }
@@ -332,7 +391,7 @@ package struct NotionReplySource: ReplySource {
     private func query(
         url: URL,
         token: String,
-        cursor: NotionCursor?,
+        lowerBound: String,
         startCursor: String?
     ) async throws -> NotionQueryPage {
         var attempt = 0
@@ -346,7 +405,7 @@ package struct NotionReplySource: ReplySource {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue(NotionAPI.version, forHTTPHeaderField: "Notion-Version")
-            request.httpBody = try Self.body(cursor: cursor, startCursor: startCursor)
+            request.httpBody = try Self.body(lowerBound: lowerBound, startCursor: startCursor)
             let response: NotionHTTPResponse
             do {
                 response = try await transport.send(request)
@@ -355,12 +414,12 @@ package struct NotionReplySource: ReplySource {
             } catch {
                 throw ReplyFetchError.transport
             }
-            if response.status == 429 {
+            if Self.retries(status: response.status) {
+                let delay = Self.retryDelay(headers: response.headers, attempt: attempt)
+                try await clock.sleep(seconds: delay)
                 if attempt >= NotionAPI.maxRetries {
                     throw ReplyFetchError.transport
                 }
-                let delay = Self.retryDelay(headers: response.headers, attempt: attempt)
-                try await clock.sleep(seconds: delay)
                 continue
             }
             guard (200...299).contains(response.status) else {
@@ -370,25 +429,27 @@ package struct NotionReplySource: ReplySource {
         }
     }
 
+    private static func retries(status: Int) -> Bool {
+        status == 429 || status == 529 || status == 500 || status == 503
+    }
+
     private static func retryDelay(headers: [String: String], attempt: Int) -> Double {
         if let raw = headers["retry-after"]?.trimmingCharacters(in: .whitespacesAndNewlines),
            let seconds = Double(raw), seconds >= 0 {
-            return max(seconds, NotionAPI.minimumInterval)
+            return min(NotionAPI.retryCapSeconds, max(seconds, NotionAPI.minimumInterval))
         }
-        return min(60, pow(2, Double(max(0, attempt - 1))))
+        return min(NotionAPI.retryCapSeconds, pow(2, Double(max(0, attempt - 1))))
     }
 
-    private static func body(cursor: NotionCursor?, startCursor: String?) throws -> Data {
+    private static func body(lowerBound: String, startCursor: String?) throws -> Data {
         var object: [String: Any] = [
             "page_size": NotionAPI.pageSize,
             "sorts": [["timestamp": "created_time", "direction": "ascending"]],
-        ]
-        if let createdAt = cursor?.createdAt, !createdAt.isEmpty {
-            object["filter"] = [
+            "filter": [
                 "timestamp": "created_time",
-                "created_time": ["on_or_after": createdAt],
-            ]
-        }
+                "created_time": ["on_or_after": lowerBound],
+            ],
+        ]
         if let startCursor, !startCursor.isEmpty {
             object["start_cursor"] = startCursor
         }
@@ -396,16 +457,36 @@ package struct NotionReplySource: ReplySource {
     }
 }
 
+enum NotionNumber: Equatable {
+    case absent
+    case exact(Int64)
+    case invalid
+}
+
 enum NotionPageDecoder {
     static func decode(_ data: Data) throws -> NotionQueryPage {
+        let raw = String(data: data, encoding: .utf8) ?? ""
+        let tokens = chatIDTokens(in: raw)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw ReplyFetchError.badResponse
         }
         let results = object["results"] as? [Any] ?? []
         var rows: [NotionCandidate] = []
         var skipped = 0
+        var tokenIndex = 0
         for item in results {
-            if let row = candidate(item) {
+            let chat: NotionNumber
+            if hasChatID(item) {
+                if tokenIndex < tokens.count {
+                    chat = tokens[tokenIndex]
+                    tokenIndex += 1
+                } else {
+                    chat = number(chatProperty(item))
+                }
+            } else {
+                chat = .absent
+            }
+            if let row = candidate(item, chat: chat) {
                 rows.append(row)
             } else {
                 skipped += 1
@@ -416,7 +497,46 @@ enum NotionPageDecoder {
         return NotionQueryPage(rows: rows, hasMore: hasMore, nextCursor: next, skipped: skipped)
     }
 
-    private static func candidate(_ item: Any) -> NotionCandidate? {
+    /// JSON の数値は 2^53 を超えると丸まる。chat_id は原文の桁のまま読む。
+    static func chatIDTokens(in raw: String) -> [NotionNumber] {
+        var tokens: [NotionNumber] = []
+        var rest = Substring(raw)
+        while let key = rest.range(of: "\"chat_id\"") {
+            var search = rest[key.upperBound...]
+            var matched = false
+            while let numberKey = search.range(of: "\"number\"") {
+                let afterQuotes = search[numberKey.upperBound...]
+                let afterSpace = afterQuotes.drop(while: { $0.isWhitespace })
+                // `"type":"number"` の値ではなく、`"number":` のキーだけを読む。
+                guard afterSpace.first == ":" else {
+                    search = afterQuotes
+                    continue
+                }
+                let value = afterSpace.dropFirst().drop(while: { $0.isWhitespace })
+                if value.hasPrefix("null") {
+                    tokens.append(.absent)
+                } else {
+                    let token = value.prefix { character in
+                        character == "-" || character == "+" || character == "." || character == "e" || character == "E" || character.isNumber
+                    }
+                    let text = String(token)
+                    if let parsed = Int64(text),
+                       !text.contains("."), !text.contains("e"), !text.contains("E"), !text.contains("+") {
+                        tokens.append(.exact(parsed))
+                    } else {
+                        tokens.append(.invalid)
+                    }
+                }
+                rest = value
+                matched = true
+                break
+            }
+            if !matched { break }
+        }
+        return tokens
+    }
+
+    private static func candidate(_ item: Any, chat: NotionNumber) -> NotionCandidate? {
         guard let page = item as? [String: Any] else { return nil }
         if page["object"] as? String == "page", page["in_trash"] as? Bool == true {
             return nil
@@ -427,12 +547,30 @@ enum NotionPageDecoder {
         let guid = plain(properties["in_reply_to_guid"], key: "rich_text")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let text = plain(properties["text"], key: "rich_text")
-        let chatID = number(properties["chat_id"])
+        if chat == .invalid {
+            return NotionCandidate(replyID: replyID, createdAt: created, reply: nil)
+        }
+        let chatID: Int64?
+        if case .exact(let value) = chat {
+            chatID = value
+        } else {
+            chatID = nil
+        }
         let deliverable = !replyID.isEmpty && !created.isEmpty && !guid.isEmpty && !text.isEmpty
         let reply = deliverable
             ? FetchedReply(id: replyID, chatID: chatID, text: text, inReplyToGUID: guid, createdAt: created)
             : nil
         return NotionCandidate(replyID: replyID, createdAt: created, reply: reply)
+    }
+
+    private static func hasChatID(_ item: Any) -> Bool {
+        chatProperty(item) != nil
+    }
+
+    private static func chatProperty(_ item: Any) -> Any? {
+        guard let page = item as? [String: Any],
+              let properties = page["properties"] as? [String: Any] else { return nil }
+        return properties["chat_id"]
     }
 
     private static func createdTime(_ property: Any?, fallback: String?) -> String {
@@ -450,13 +588,30 @@ enum NotionPageDecoder {
         }.joined()
     }
 
-    private static func number(_ property: Any?) -> Int64? {
-        guard let object = property as? [String: Any] else { return nil }
+    private static func number(_ property: Any?) -> NotionNumber {
+        guard let object = property as? [String: Any] else { return .absent }
         let value = object["number"]
-        if let number = value as? NSNumber { return number.int64Value }
-        if let int = value as? Int { return Int64(int) }
-        if let int = value as? Int64 { return int }
-        return nil
+        if value == nil || value is NSNull { return .absent }
+        if let text = value as? String {
+            if let parsed = Int64(text), !text.contains("."), !text.contains("e"), !text.contains("E") {
+                return .exact(parsed)
+            }
+            return .invalid
+        }
+        if let number = value as? NSNumber {
+            let text = number.stringValue
+            if let parsed = Int64(text), !text.contains("."), !text.contains("e"), !text.contains("E") {
+                return .exact(parsed)
+            }
+            let double = number.doubleValue
+            guard double.isFinite, double == double.rounded(), abs(double) <= 9_007_199_254_740_992 else {
+                return .invalid
+            }
+            return .exact(number.int64Value)
+        }
+        if let int = value as? Int { return .exact(Int64(int)) }
+        if let int = value as? Int64 { return .exact(int) }
+        return .invalid
     }
 
     private static func normalizeTime(_ raw: String) -> String {

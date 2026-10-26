@@ -38,7 +38,7 @@ package struct ReplyPage: Equatable {
 }
 
 package protocol ReplySource: Sendable {
-    func fetch(cursor: String?) async throws -> ReplyPage
+    func fetch(cursor: String?, skipping handledReplyIDs: Set<String>) async throws -> ReplyPage
 }
 
 enum ReplyFetchError: Error {
@@ -63,7 +63,8 @@ package struct HTTPReplySource: ReplySource {
         self.session = session
     }
 
-    package func fetch(cursor: String?) async throws -> ReplyPage {
+    package func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
+        _ = handledReplyIDs
         let secret: String?
         do {
             secret = try secrets.replySecret()
@@ -138,7 +139,8 @@ enum ReplyPageDecoder {
 
 package struct EmptyReplySource: ReplySource {
     package init() {}
-    package func fetch(cursor: String?) async throws -> ReplyPage {
-        ReplyPage(replies: [], nextCursor: cursor)
+    package func fetch(cursor: String?, skipping handledReplyIDs: Set<String> = []) async throws -> ReplyPage {
+        _ = handledReplyIDs
+        return ReplyPage(replies: [], nextCursor: cursor)
     }
 }

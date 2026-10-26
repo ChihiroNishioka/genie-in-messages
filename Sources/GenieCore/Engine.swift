@@ -198,7 +198,10 @@ package actor GenieEngine {
             }
         }
         do {
-            let page = try await replySource.fetch(cursor: persisted.replyCursor)
+            let page = try await replySource.fetch(
+                cursor: persisted.replyCursor,
+                skipping: Set(persisted.handledReplyIDs)
+            )
             if page.skipped > 0 {
                 log.record(level: .error, code: "reply_bad_entry", chatID: nil, guid: nil, rowid: nil)
             }
@@ -208,12 +211,22 @@ package actor GenieEngine {
             for reply in page.replies {
                 await deliverReply(reply)
             }
-            let blocked = page.replies.contains { reply in
+            let unhandled = page.replies.filter { reply in
                 !reply.id.isEmpty && !persisted.handledReplyIDs.contains(reply.id)
             }
-            if !blocked, let next = page.nextCursor {
-                persisted.replyCursor = next
-                persist()
+            if let proposed = page.nextCursor {
+                let next: String?
+                if NotionCursor.decode(proposed) != nil {
+                    next = NotionCursor.reconcile(proposed: proposed, unhandled: unhandled)
+                } else if unhandled.isEmpty {
+                    next = proposed
+                } else {
+                    next = nil
+                }
+                if let next, next != persisted.replyCursor {
+                    persisted.replyCursor = next
+                    persist()
+                }
             }
         } catch ReplyFetchError.secretMode {
             lastError = "reply_secret_mode"
@@ -244,13 +257,22 @@ package actor GenieEngine {
         }
         holds = kept
         for hold in ready {
+            if clock.now().timeIntervalSince(hold.createdAt) > config.routeTTLSeconds {
+                inFlightReplyIDs.remove(hold.replyID)
+                markReplyHandled(hold.replyID)
+                log.record(level: .info, code: "reply_too_old", chatID: hold.chatID, guid: nil, rowid: nil)
+                persist()
+                continue
+            }
             await performSend(
                 replyID: hold.replyID,
                 chatID: hold.chatID,
                 text: hold.text,
                 attempts: hold.attempts + 1,
                 reserved: true,
-                pauseReason: hold.reason
+                pauseReason: hold.reason,
+                createdAt: hold.createdAt,
+                originGUID: hold.originGUID
             )
         }
     }
@@ -436,14 +458,13 @@ package actor GenieEngine {
         if inFlightReplyIDs.contains(reply.id) { return }
         guard let origin = reply.inReplyToGUID?.trimmingCharacters(in: .whitespacesAndNewlines), !origin.isEmpty,
               let createdAt = reply.createdAt?.trimmingCharacters(in: .whitespacesAndNewlines), !createdAt.isEmpty,
-              ISO8601.date(from: createdAt) != nil else {
+              let created = ISO8601.date(from: createdAt) else {
             log.record(level: .error, code: "reply_missing_fields", chatID: reply.chatID, guid: nil, rowid: nil)
             markReplyHandled(reply.id)
             persist()
             return
         }
-        if let created = ISO8601.date(from: createdAt),
-           clock.now().timeIntervalSince(created) > config.routeTTLSeconds {
+        if clock.now().timeIntervalSince(created) > config.routeTTLSeconds {
             log.record(level: .info, code: "reply_too_old", chatID: reply.chatID, guid: nil, rowid: nil)
             markReplyHandled(reply.id)
             persist()
@@ -483,7 +504,9 @@ package actor GenieEngine {
             text: prepared,
             attempts: 1,
             reserved: false,
-            pauseReason: .appleEventNotStarted
+            pauseReason: .appleEventNotStarted,
+            createdAt: created,
+            originGUID: origin
         )
     }
 
@@ -493,7 +516,9 @@ package actor GenieEngine {
         text: String,
         attempts: Int,
         reserved: Bool,
-        pauseReason: HoldReason
+        pauseReason: HoldReason,
+        createdAt: Date,
+        originGUID: String
     ) async {
         if !reserved {
             guard inFlightReplyIDs.insert(replyID).inserted else { return }
@@ -502,7 +527,7 @@ package actor GenieEngine {
 
         refreshConfig()
         if paused {
-            hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
         guard allowlist.contains(chatID) else {
@@ -513,7 +538,7 @@ package actor GenieEngine {
         noteLock(locked)
         refreshConfig()
         if paused {
-            hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
         guard allowlist.contains(chatID) else {
@@ -522,7 +547,7 @@ package actor GenieEngine {
         }
         if locked == .locked {
             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
-            hold(replyID: replyID, chatID: chatID, text: text, reason: .screenLocked, attempts: attempts, logIt: first)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: .screenLocked, attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
             if first {
                 lastError = "screen_locked"
             }
@@ -536,22 +561,27 @@ package actor GenieEngine {
                 lastError = "rate_limited"
                 log.record(level: .error, code: "rate_limited", chatID: chatID, guid: nil, rowid: nil)
             }
-            hold(replyID: replyID, chatID: chatID, text: text, reason: .rateLimited, attempts: attempts, logIt: false)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: .rateLimited, attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        recordIntent(replyID: replyID, chatID: chatID, text: text)
+        let reservedAt = clock.now()
+        countRate(chatID: chatID, at: reservedAt)
+        recordIntent(replyID: replyID, chatID: chatID, text: text, at: reservedAt, rateCounted: true)
         if !persist() {
+            releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
-            hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: false)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
             return
         }
         if paused {
+            releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             persist()
-            hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
         if !allowlist.contains(chatID) {
+            releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             dropDisabled(replyID: replyID, chatID: chatID)
             return
@@ -559,7 +589,6 @@ package actor GenieEngine {
         do {
             let receipt = try await sender.send(chatID: chatID, text: text)
             finishIntent(replyID: replyID)
-            countRate(chatID: chatID)
             appendCapped(receipt.guid, to: &persisted.sentGUIDs)
             holds.removeAll { $0.replyID == replyID }
             markReplyHandled(replyID)
@@ -567,8 +596,9 @@ package actor GenieEngine {
             log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid, rowid: receipt.id)
             persist()
         } catch SendFailure.notStarted {
+            releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
-            hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1)
+            hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1, createdAt: createdAt, originGUID: originGUID)
             if attempts == 1 {
                 lastError = "apple_event_1712"
             }
@@ -578,26 +608,19 @@ package actor GenieEngine {
             markReplyHandled(replyID)
             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: "send_uncertain") {
                 finishIntent(replyID: replyID)
-                countRate(chatID: chatID)
-            } else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
-                if !persisted.pendingSends[index].rateCounted {
-                    countRate(chatID: chatID, at: persisted.pendingSends[index].at)
-                    persisted.pendingSends[index].rateCounted = true
-                }
-            } else {
-                countRate(chatID: chatID)
             }
             lastError = "send_uncertain"
             log.record(level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil)
             persist()
         } catch {
+            releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             holds.removeAll { $0.replyID == replyID }
             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: "send_failed") {
                 markReplyHandled(replyID)
                 persist()
             } else {
-                hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: false)
+                hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
                 persist()
             }
             lastError = "send_failed"
@@ -620,7 +643,9 @@ package actor GenieEngine {
         reason: HoldReason,
         attempts: Int,
         logIt: Bool,
-        immediate: Bool = false
+        immediate: Bool = false,
+        createdAt: Date,
+        originGUID: String
     ) {
         holds.removeAll { $0.replyID == replyID }
         let delay = immediate ? 0 : config.holdRetryIntervalSeconds
@@ -631,7 +656,9 @@ package actor GenieEngine {
                 text: text,
                 reason: reason,
                 attempts: attempts,
-                nextAttemptAt: clock.now().addingTimeInterval(delay)
+                nextAttemptAt: clock.now().addingTimeInterval(delay),
+                createdAt: createdAt,
+                originGUID: originGUID
             )
         )
         if logIt {
@@ -653,20 +680,27 @@ package actor GenieEngine {
         pruneRates(now: clock.now())
     }
 
+    private func releaseRate(chatID: Int64, at: Date) {
+        if let index = persisted.rateEvents.lastIndex(where: { $0.chatID == chatID && $0.at == at }) {
+            persisted.rateEvents.remove(at: index)
+        }
+    }
+
     private func pruneRates(now: Date) {
         persisted.rateEvents.removeAll {
             now.timeIntervalSince($0.at) >= config.rateLimitWindowSeconds
         }
     }
 
-    private func recordIntent(replyID: String, chatID: Int64, text: String) {
-        let now = clock.now()
+    private func recordIntent(replyID: String, chatID: Int64, text: String, at: Date, rateCounted: Bool) {
         let hash = SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
         persisted.pendingSends.removeAll { $0.replyID == replyID }
-        persisted.pendingSends.append(PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: now))
+        persisted.pendingSends.append(
+            PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at, rateCounted: rateCounted)
+        )
         cap(&persisted.pendingSends)
-        persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: now))
-        pruneFingerprints(now: now)
+        persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
+        pruneFingerprints(now: at)
     }
 
     private func rollbackIntent(replyID: String) {
@@ -699,12 +733,12 @@ package actor GenieEngine {
                 attempts: 1,
                 error: "send_interrupted"
             )
+            var wrote = false
             do {
                 try store.appendDeadLetter(entry)
+                wrote = true
             } catch {
-                kept.append(item)
                 log.record(level: .error, code: "deadletter_write_failed", chatID: item.chatID, guid: nil, rowid: nil)
-                continue
             }
             if !state.fingerprints.contains(where: { $0.hash == item.hash && $0.sentAt == item.at }) {
                 state.fingerprints.append(SentFingerprint(hash: item.hash, sentAt: item.at))
@@ -714,12 +748,16 @@ package actor GenieEngine {
             }
             if !item.replyID.isEmpty, !state.handledReplyIDs.contains(item.replyID) {
                 state.handledReplyIDs.append(item.replyID)
-                if state.handledReplyIDs.count > 5000 {
-                    state.handledReplyIDs.removeFirst(state.handledReplyIDs.count - 5000)
-                }
             }
-            log.record(level: .error, code: "send_interrupted", chatID: item.chatID, guid: nil, rowid: nil)
+            if wrote {
+                log.record(level: .error, code: "send_interrupted", chatID: item.chatID, guid: nil, rowid: nil)
+            } else {
+                var copy = item
+                copy.rateCounted = true
+                kept.append(copy)
+            }
         }
+        HandledReplyIDs.prune(&state.handledReplyIDs, protecting: NotionCursor.ids(in: state.replyCursor))
         state.pendingSends = kept
         state.rateEvents.removeAll { now.timeIntervalSince($0.at) >= window }
         do {
@@ -777,11 +815,11 @@ package actor GenieEngine {
     }
 
     private func markReplyHandled(_ id: String) {
-        guard !id.isEmpty, !persisted.handledReplyIDs.contains(id) else { return }
-        persisted.handledReplyIDs.append(id)
-        if persisted.handledReplyIDs.count > 5000 {
-            persisted.handledReplyIDs.removeFirst(persisted.handledReplyIDs.count - 5000)
-        }
+        HandledReplyIDs.insert(
+            id,
+            into: &persisted.handledReplyIDs,
+            protecting: NotionCursor.ids(in: persisted.replyCursor)
+        )
     }
 
     private func appendCapped(_ guid: String, to list: inout [String]) {
@@ -901,5 +939,38 @@ package actor GenieEngine {
         case .empty: return "notion_token_empty"
         case .unreadable: return "notion_token_unreadable"
         }
+    }
+}
+
+enum HandledReplyIDs {
+    static let cap = 5000
+
+    static func insert(_ id: String, into ids: inout [String], protecting: Set<String>) {
+        guard !id.isEmpty, !ids.contains(id) else { return }
+        ids.append(id)
+        prune(&ids, protecting: protecting)
+    }
+
+    static func prune(_ ids: inout [String], protecting: Set<String>) {
+        guard ids.count > cap else { return }
+        var protected: [String] = []
+        var rest: [String] = []
+        for id in ids {
+            if protecting.contains(id) {
+                protected.append(id)
+            } else {
+                rest.append(id)
+            }
+        }
+        let protectedKept = protected.count > cap ? Array(protected.suffix(cap)) : protected
+        let room = max(0, cap - protectedKept.count)
+        if rest.count > room {
+            rest.removeFirst(rest.count - room)
+        }
+        var merged = rest + protectedKept
+        if merged.count > cap {
+            merged = Array(merged.suffix(cap))
+        }
+        ids = merged
     }
 }

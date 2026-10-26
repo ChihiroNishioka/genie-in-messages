@@ -1,4 +1,9 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 package enum ProcessRunner {
     package struct Output {
@@ -53,6 +58,13 @@ package enum ProcessRunner {
         if process.isRunning {
             timedOut = true
             process.terminate()
+            let grace = Date().addingTimeInterval(0.5)
+            while process.isRunning && Date() < grace {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
         }
         process.waitUntilExit()
         group.wait()

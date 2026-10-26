@@ -130,7 +130,7 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertEqual(harness.sender.sent.count, 1)
     }
 
-    func testFailedSendIsDeadLetteredAndLaunchFailureIsRetried() async throws {
+    func testFailedSendIsDeadLetteredAndNotRetried() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
@@ -348,12 +348,93 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertEqual(blocked, .blocked)
     }
 
+    func testInterruptedSendIsHandledEvenWhenDeadLetterWriteFails() async throws {
+        let harness = Harness()
+        harness.allow.ids = [1]
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        harness.state.shouldFailDeadLetter = true
+        harness.state.state.pendingSends = [
+            PendingSend(replyID: "r1", chatID: 1, hash: "abc", at: harness.clock.current),
+        ]
+        harness.state.state.routes = [MessageRoute(guid: "origin", chatID: 1, at: harness.clock.current)]
+        harness.replies.pages = [
+            ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
+            ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
+        ]
+        let engine = try harness.engine()
+        XCTAssertTrue(harness.state.deadLetters.isEmpty)
+        XCTAssertTrue(harness.state.state.handledReplyIDs.contains("r1"))
+        XCTAssertEqual(harness.state.state.pendingSends.map(\.replyID), ["r1"])
+        XCTAssertTrue(harness.state.state.pendingSends[0].rateCounted)
+        XCTAssertTrue(harness.log.records.contains { $0.code == "deadletter_write_failed" })
+        await engine.pollReplies()
+        XCTAssertTrue(harness.sender.sent.isEmpty)
+
+        harness.state.shouldFailDeadLetter = false
+        let restarted = try harness.engine()
+        XCTAssertEqual(harness.state.deadLetters.map(\.error), ["send_interrupted"])
+        XCTAssertTrue(harness.state.state.pendingSends.isEmpty)
+        await restarted.pollReplies()
+        XCTAssertTrue(harness.sender.sent.isEmpty)
+        assertNoBody(harness, "SECRET_REPLY")
+    }
+
+    func testHeldReplyIsNotSentAfterTheRouteExpires() async throws {
+        let harness = Harness()
+        harness.allow.ids = [1]
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        harness.config.routeTTLSeconds = 60
+        harness.lock.locked = true
+        seedRoute(harness, guid: "origin", chat: 1)
+        harness.replies.pages = [
+            ReplyPage(replies: [routedReply("r1", chat: 1, text: "hello", guid: "origin")], nextCursor: nil),
+        ]
+        let engine = try harness.engine()
+        await engine.pollReplies()
+        XCTAssertTrue(harness.sender.sent.isEmpty)
+        harness.lock.locked = false
+        harness.clock.current = harness.clock.current.addingTimeInterval(61)
+        await engine.retryHolds()
+        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.log.records.contains { $0.code == "reply_too_old" })
+        XCTAssertTrue(harness.state.state.handledReplyIDs.contains("r1"))
+    }
+
+    func testConcurrentSendsDoNotExceedTheRateLimit() async throws {
+        let harness = Harness()
+        harness.allow.ids = [1]
+        harness.config.replyFetchURL = "https://127.0.0.1/replies"
+        harness.config.rateLimitCount = 1
+        seedRoute(harness, guid: "g1", chat: 1)
+        seedRoute(harness, guid: "g2", chat: 1)
+        let page = ReplyPage(
+            replies: [
+                routedReply("r1", chat: 1, text: "one", guid: "g1"),
+                routedReply("r2", chat: 1, text: "two", guid: "g2"),
+            ],
+            nextCursor: nil
+        )
+        harness.replies.pages = [page, page]
+        let engine = try harness.engine()
+        harness.sender.onSend = {
+            await engine.pollReplies()
+        }
+        await engine.pollReplies()
+        XCTAssertEqual(harness.sender.sent.count, 1)
+    }
+
     func testChildProcessTimeout() async {
         let result = await ProcessRunner.run(executable: "/bin/sleep", arguments: ["5"], timeout: 0.3)
         XCTAssertTrue(result.timedOut)
         let missing = await ProcessRunner.run(executable: "/no/such/imsg", arguments: [], timeout: 1)
         XCTAssertEqual(missing.exitCode, -1)
         XCTAssertFalse(missing.timedOut)
+        let stubborn = await ProcessRunner.run(
+            executable: "/bin/bash",
+            arguments: ["-c", "trap '' TERM; while true; do :; done"],
+            timeout: 0.2
+        )
+        XCTAssertTrue(stubborn.timedOut)
     }
 
     func testOldStateFileStillDecodes() throws {

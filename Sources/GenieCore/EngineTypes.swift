@@ -13,6 +13,8 @@ struct HeldSend: Equatable {
     var reason: HoldReason
     var attempts: Int
     var nextAttemptAt: Date
+    var createdAt: Date
+    var originGUID: String
 }
 
 package protocol MessageSending: Sendable {
