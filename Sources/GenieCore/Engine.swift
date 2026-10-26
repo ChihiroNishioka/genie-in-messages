@@ -20,6 +20,7 @@ package actor GenieEngine {
     private var inFlightReplyIDs: Set<String> = []
     private var screenLock: ScreenLockState = .unknown
     private var lastError: String?
+    private var loggedMarkerReplacement = false
 
     package init(
         configProvider: any ConfigProviding,
@@ -50,6 +51,10 @@ package actor GenieEngine {
         var loaded = persisted
         Self.settleInterrupted(state: &loaded, store: stateStore, log: log, now: clock.now(), window: config.rateLimitWindowSeconds)
         persisted = loaded
+        if config.markerWasReplaced {
+            log.record(level: .warning, code: "marker_replaced", chatID: nil, guid: nil, rowid: nil)
+            loggedMarkerReplacement = true
+        }
     }
 
     package func setPaused(_ paused: Bool) {
@@ -854,9 +859,21 @@ package actor GenieEngine {
     private func refreshConfig() {
         do {
             config = try configProvider.load().sanitized()
+            noteMarkerReplacement(config)
         } catch {
             lastError = "config_unreadable"
             log.record(level: .error, code: "config_unreadable", chatID: nil, guid: nil, rowid: nil)
+        }
+    }
+
+    private func noteMarkerReplacement(_ loaded: GenieConfig) {
+        if loaded.markerWasReplaced {
+            if !loggedMarkerReplacement {
+                log.record(level: .warning, code: "marker_replaced", chatID: nil, guid: nil, rowid: nil)
+                loggedMarkerReplacement = true
+            }
+        } else {
+            loggedMarkerReplacement = false
         }
     }
 

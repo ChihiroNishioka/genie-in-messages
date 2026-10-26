@@ -1,12 +1,26 @@
 import Foundation
 
+struct ResolvedMarker: Equatable {
+    var text: String
+    var replaced: Bool
+}
+
 enum ReplyComposer {
+    /// 空、空白だけ、合図で始まる印は製品既定に戻す。
+    static func resolveMarker(_ marker: String) -> ResolvedMarker {
+        let markerNFC = TextNormalizer.nfc(marker)
+        let blank = markerNFC.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if blank || Signal.matches(markerNFC) {
+            return ResolvedMarker(text: GenieConfig.productDefaults.marker, replaced: true)
+        }
+        return ResolvedMarker(text: markerNFC, replaced: false)
+    }
+
     /// 送信直前に、合図を外し、印が無ければ先頭へ付ける。判定は `Signal.scan`。
     static func prepare(body: String, marker: String) -> String {
         let scan = Signal.scan(body)
         let text = scan.matched ? trimLeadingWhitespace(scan.remainder) : scan.remainder
-        let markerNFC = TextNormalizer.nfc(marker)
-        let chosen = Signal.matches(markerNFC) ? GenieConfig.productDefaults.marker : markerNFC
+        let chosen = resolveMarker(marker).text
         if text.hasPrefix(chosen) {
             return text
         }

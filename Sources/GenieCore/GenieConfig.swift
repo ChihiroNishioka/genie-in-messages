@@ -20,6 +20,8 @@ package struct GenieConfig: Equatable, Sendable {
     package var chatsTimeoutSeconds: Double
     package var replyPageLimit: Int
     package var notionDataSourceID: String
+    /// 読み込んだ印を製品既定へ戻した。設定ファイルには書かない。
+    package var markerWasReplaced = false
 
     package static let productDefaults = GenieConfig(
         webhookURL: "",
@@ -62,8 +64,10 @@ package struct GenieConfig: Equatable, Sendable {
         copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
         copy.replyPageLimit = max(1, copy.replyPageLimit)
         copy.notionDataSourceID = copy.notionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        if Signal.matches(copy.marker) {
-            copy.marker = GenieConfig.productDefaults.marker
+        let resolved = ReplyComposer.resolveMarker(copy.marker)
+        if resolved.replaced {
+            copy.marker = resolved.text
+            copy.markerWasReplaced = true
         }
         return copy
     }
