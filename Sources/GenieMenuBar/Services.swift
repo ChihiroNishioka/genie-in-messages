@@ -1,0 +1,59 @@
+import Foundation
+import GenieCore
+import ServiceManagement
+
+enum LoginItemController {
+    static func statusText() -> String {
+        switch SMAppService.mainApp.status {
+        case .enabled:
+            return "オン"
+        case .notRegistered:
+            return "オフ"
+        case .requiresApproval:
+            return "承認が必要"
+        case .notFound:
+            return "見つからない"
+        @unknown default:
+            return "不明"
+        }
+    }
+
+    static func setEnabled(_ enabled: Bool) throws {
+        if enabled {
+            try SMAppService.mainApp.register()
+        } else {
+            try SMAppService.mainApp.unregister()
+        }
+    }
+}
+
+package struct ConfiguredReplySource: ReplySource {
+    var config: FileConfigProvider
+    var secrets: FileSecretProvider
+
+    package func fetch(cursor: String?) async throws -> ReplyPage {
+        let loaded = try config.load()
+        let text = loaded.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let url = URL(string: text) else {
+            return ReplyPage(replies: [], nextCursor: cursor)
+        }
+        return try await HTTPReplySource(url: url, secrets: secrets).fetch(cursor: cursor)
+    }
+}
+
+package struct ImsgMessageSender: MessageSending {
+    var config: FileConfigProvider
+
+    package func send(chatID: Int64, text: String) async throws -> SendReceipt {
+        let loaded = try config.load()
+        let result = await ProcessRunner.run(
+            executable: loaded.imsgExecutable,
+            arguments: ImsgCommand.sendArguments(chatID: chatID, text: text)
+        )
+        return try SendResultParser.parse(
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode
+        ).get()
+    }
+}

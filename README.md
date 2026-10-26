@@ -6,7 +6,27 @@ iMessageの中に常駐する、アンビエント型のアシスタントbot「
 
 ## ステータス
 
-要件確定・未実装。次にやることは `SPEC.md` 6章の0、Apple Mac Tools による実機での事前確認。
+中心処理とメニューバーアプリの最初の版を実装済み。実機での送信・chat.db の読み取り・許可ダイアログの確認はまだ行っていない。実装は、実機確認を反映した仕様（`spec/device-check-2026-10-26`、PR #3）に合わせてある。この実装は `SPEC.md` 自体は変更しない。
+
+## 動かし方
+
+```bash
+swift test
+swift build --product GenieMenuBar   # macOS
+scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
+```
+
+署名IDは Apple Development 証明書の名前を引数か `GENIE_CODESIGN_IDENTITY` で渡す。アドホック署名は使わない。証明書はリポジトリに置かない。
+
+設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。返事の取得用トークンは任意の `reply-secret`（0600）。どちらもコードに書かない。
+
+`imsg` は既定で `/opt/homebrew/opt/imsg/libexec/imsg` を直接起動する。パスは設定で変えられる。`/opt/homebrew/bin/imsg`（bash ラッパー）は使わない。
+
+メニューには状態、一時停止、トークごとの許可（初期はすべてオフ）、最後のエラー、ログを開く、ログイン時起動、画面ロック中の警告が出る。同じ Apple ID のほかの Mac では動かさない。
+
+## 返事の取得
+
+置き場所は未決定。`ReplySource` で差し替えられ、既定は設定した URL を GET して `{ "cursor", "replies": [{ "id", "chat_id", "text" }] }` を読む単純な実装。URL が空なら取得しない。cursor は、そのページの返事を処理し終えるまで進めない。
 
 ## ファイル
 
