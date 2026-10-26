@@ -31,6 +31,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.rateLimitCount, 5)
         XCTAssertEqual(config.webhookURL, "")
         XCTAssertEqual(config.replyFetchURL, "")
+        XCTAssertEqual(config.notionDataSourceID, "")
     }
 
     func testExampleConfigHasNoPersonalValues() throws {
@@ -42,6 +43,7 @@ final class ConfigTests: XCTestCase {
         let config = try JSONDecoder().decode(GenieConfig.self, from: data)
         XCTAssertEqual(config.webhookURL, "")
         XCTAssertEqual(config.replyFetchURL, "")
+        XCTAssertEqual(config.notionDataSourceID, "")
         XCTAssertEqual(config.imsgExecutable, "/opt/homebrew/opt/imsg/libexec/imsg")
         XCTAssertFalse(Signal.matches(config.marker))
     }

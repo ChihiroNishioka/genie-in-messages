@@ -133,7 +133,8 @@ package actor GenieEngine {
             lastError: lastError,
             screenLocked: screenLock == .locked,
             screenLock: screenLock,
-            replyFetchConfigured: EndpointURL.https(config.replyFetchURL) != nil,
+            replyFetchConfigured: !config.notionDataSourceID.isEmpty
+                || EndpointURL.https(config.replyFetchURL) != nil,
             webhookConfigured: EndpointURL.https(config.webhookURL) != nil
         )
     }
@@ -186,12 +187,15 @@ package actor GenieEngine {
     package func pollReplies() async {
         if paused { return }
         refreshConfig()
+        let notion = !config.notionDataSourceID.isEmpty
         let rawURL = config.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if rawURL.isEmpty { return }
-        guard EndpointURL.https(rawURL) != nil else {
-            lastError = "url_not_https"
-            log.record(level: .error, code: "url_not_https", chatID: nil, guid: nil, rowid: nil)
-            return
+        if !notion {
+            if rawURL.isEmpty { return }
+            guard EndpointURL.https(rawURL) != nil else {
+                lastError = "url_not_https"
+                log.record(level: .error, code: "url_not_https", chatID: nil, guid: nil, rowid: nil)
+                return
+            }
         }
         do {
             let page = try await replySource.fetch(cursor: persisted.replyCursor)
@@ -214,6 +218,10 @@ package actor GenieEngine {
         } catch ReplyFetchError.secretMode {
             lastError = "reply_secret_mode"
             log.record(level: .error, code: "reply_secret_mode", chatID: nil, guid: nil, rowid: nil)
+        } catch ReplyFetchError.notionToken(let error) {
+            let code = notionTokenCode(error)
+            lastError = code
+            log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
         } catch {
             lastError = "reply_fetch_failed"
             log.record(level: .error, code: "reply_fetch_failed", chatID: nil, guid: nil, rowid: nil)
@@ -883,6 +891,15 @@ package actor GenieEngine {
         case .insecureMode: return "secret_mode"
         case .empty: return "secret_empty"
         case .unreadable: return "secret_unreadable"
+        }
+    }
+
+    private func notionTokenCode(_ error: SecretReadError) -> String {
+        switch error {
+        case .missing: return "notion_token_missing"
+        case .insecureMode: return "notion_token_mode"
+        case .empty: return "notion_token_empty"
+        case .unreadable: return "notion_token_unreadable"
         }
     }
 }

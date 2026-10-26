@@ -7,6 +7,7 @@ package struct ConfigPaths: Equatable {
     package var configFile: URL { root.appendingPathComponent("config.json") }
     package var secretFile: URL { root.appendingPathComponent("secret") }
     package var replySecretFile: URL { root.appendingPathComponent("reply-secret") }
+    package var notionTokenFile: URL { root.appendingPathComponent("notion-token") }
     package var allowlistFile: URL { root.appendingPathComponent("allowlist.json") }
     package var stateFile: URL { root.appendingPathComponent("state.json") }
     package var deadLetterFile: URL { root.appendingPathComponent("deadletter.jsonl") }
@@ -56,7 +57,7 @@ package enum ConfigDirectory {
     }
 }
 
-enum SecretReadError: Error, Equatable {
+package enum SecretReadError: Error, Equatable {
     case missing
     case insecureMode
     case empty
@@ -103,6 +104,49 @@ package protocol SecretProviding: Sendable {
     func webhookSecret() throws -> String
     /// ファイルが無ければ nil。モードが 0600 でなければ投げる。
     func replySecret() throws -> String?
+    /// 使うたびに読む。ファイルが無い、空、0600 でないときは投げる。
+    func notionToken() throws -> String
+}
+
+package enum NotionTokenStatus: String, Equatable {
+    case missing
+    case insecure
+    case empty
+    case configured
+}
+
+package enum NotionToken {
+    package static func save(_ token: String, to url: URL) throws {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw SecretReadError.empty }
+        let directory = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FilePermissions.set(directory, mode: 0o700)
+        try Data(trimmed.utf8).write(to: url, options: .atomic)
+        try FilePermissions.set(url, mode: 0o600)
+    }
+
+    package static func status(at url: URL) -> NotionTokenStatus {
+        guard FileManager.default.fileExists(atPath: url.path) else { return .missing }
+        guard (try? FilePermissions.mode(of: url)) == 0o600 else { return .insecure }
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .empty
+        }
+        return .configured
+    }
+
+    package static func statusLabel(_ status: NotionTokenStatus) -> String {
+        switch status {
+        case .missing, .empty:
+            return "未設定"
+        case .insecure:
+            return "権限が 600 ではありません"
+        case .configured:
+            return "設定済み"
+        }
+    }
 }
 
 package struct FileConfigProvider: ConfigProviding, Sendable {
@@ -134,11 +178,22 @@ package struct FileSecretProvider: SecretProviding {
         }
         return try SecretFile.readToken(at: paths.replySecretFile)
     }
+
+    package func notionToken() throws -> String {
+        try SecretFile.readToken(at: paths.notionTokenFile)
+    }
 }
 
 struct StaticSecret: SecretProviding, Sendable {
     var webhook: String
     var reply: String?
+    var notion: String? = nil
     func webhookSecret() throws -> String { webhook }
     func replySecret() throws -> String? { reply }
+    func notionToken() throws -> String {
+        guard let notion else { throw SecretReadError.missing }
+        let trimmed = notion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw SecretReadError.empty }
+        return trimmed
+    }
 }

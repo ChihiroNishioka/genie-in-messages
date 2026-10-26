@@ -32,12 +32,17 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 4. 初回の送信で、Messages を操作してよいかの許可ダイアログが出る。Grok Bot 側で許可済みでも、このアプリからは別の許可になる。
 5. 同じ Apple ID のほかの Mac では動かさない。
 6. トークの許可は初期状態ですべてオフ。オンにしたトークだけ転送する。
+7. Notion で内部連携を作り、このデータベースだけをその連携に共有する。データベース `875a3b9a-fa64-4631-88cf-1328c2bef05f`、データソース `1a7710fa-96a4-4fb3-9fa7-8c7eb2337513`。データソース ID を `config.json` の `notion_data_source_id` に書く。トークンはメニューの「Notion トークンを設定」から入れる。ファイルは `~/.config/genie-in-messages/notion-token`（0600）で、画面には出さない。
 
 ## 返事の取得
 
-置き場所は未決定。`ReplySource` で差し替えられ、既定は設定した URL を 10 秒ごとに GET する。URL が空なら取得しない。http は使わず、https だけを受け付ける。`reply-secret`（0600）があれば `Authorization: Bearer` を付ける。
+置き場所は Notion のデータベース（2026-10-26 決定）。ボットが返事 1 件につき 1 行を足し、Mac はデータソースを約 10 秒ごとに query する。`notion_data_source_id` が空のときは、差し替え用の GET JSON（`reply_fetch_url`）に戻る。どちらも https だけを使い、トークンは使うたびに読み直す。
 
-返事の JSON は `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。送り先は、webhook に渡したときの guid と chat_id の対応から決める。対応が無い返事や、取得元の chat_id と食い違う返事は送らない。cursor は、そのページの id 付き返事を処理し終えるまで進めない。1ページは 100 件までを想定し、壊れた要素は飛ばしてログに残す。
+Notion の列は `reply_id`（title）、`chat_id`（number、確認用）、`in_reply_to_guid`（rich_text、必須）、`idempotency_key`（rich_text）、`text`（rich_text）、`created_at`（created_time）。`created_time` は分単位で同じ値になることがある。どこまで読んだかは、その時刻とそこで見た `reply_id` の組を state に残し、より新しい時刻を見ても次の取得まで水位を進めない。`Notion-Version` は `2026-03-11`。平均で毎秒 3 回を超えないよう間隔を空け、429 は `Retry-After` を待つ。
+
+送り先は、webhook に渡したときの guid と chat_id の対応から決める。`reply_id` で冪等にする。必須の列が欠けた行、対応が無い行、取得元の chat_id と食い違う行は送らない。本文はログに出さない。
+
+GET JSON を使う場合の形は `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。`reply-secret`（0600）があれば Bearer を付ける。cursor は、そのページの id 付き返事を処理し終えるまで進めない。1ページは 100 件までを想定し、壊れた要素は飛ばしてログに残す。
 
 ## 送信
 

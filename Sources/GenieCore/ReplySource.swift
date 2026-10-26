@@ -43,6 +43,7 @@ package protocol ReplySource: Sendable {
 
 enum ReplyFetchError: Error {
     case secretMode
+    case notionToken(SecretReadError)
     case transport
     case badResponse
 }

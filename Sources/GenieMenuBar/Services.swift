@@ -31,8 +31,16 @@ package struct ConfiguredReplySource: ReplySource {
     var config: FileConfigProvider
     var secrets: FileSecretProvider
 
+    /// データソース ID があれば Notion を読む。無ければ従来の GET JSON に戻す。
     package func fetch(cursor: String?) async throws -> ReplyPage {
         let loaded = try config.load()
+        if !loaded.notionDataSourceID.isEmpty {
+            return try await NotionReplySource(
+                dataSourceID: loaded.notionDataSourceID,
+                secrets: secrets,
+                pageLimit: loaded.replyPageLimit
+            ).fetch(cursor: cursor)
+        }
         let text = loaded.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let url = URL(string: text) else {
             return ReplyPage(replies: [], nextCursor: cursor)

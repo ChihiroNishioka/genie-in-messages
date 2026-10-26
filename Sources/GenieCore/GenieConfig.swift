@@ -19,6 +19,7 @@ package struct GenieConfig: Equatable, Sendable {
     package var sendTimeoutSeconds: Double
     package var chatsTimeoutSeconds: Double
     package var replyPageLimit: Int
+    package var notionDataSourceID: String
 
     package static let productDefaults = GenieConfig(
         webhookURL: "",
@@ -38,7 +39,8 @@ package struct GenieConfig: Equatable, Sendable {
         routeTTLSeconds: 604_800,
         sendTimeoutSeconds: 150,
         chatsTimeoutSeconds: 30,
-        replyPageLimit: 100
+        replyPageLimit: 100,
+        notionDataSourceID: ""
     )
 
     func sanitized() -> GenieConfig {
@@ -59,6 +61,7 @@ package struct GenieConfig: Equatable, Sendable {
         copy.sendTimeoutSeconds = max(1, copy.sendTimeoutSeconds)
         copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
         copy.replyPageLimit = max(1, copy.replyPageLimit)
+        copy.notionDataSourceID = copy.notionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
         return copy
     }
 }
@@ -83,6 +86,7 @@ extension GenieConfig: Codable {
         case sendTimeoutSeconds = "send_timeout_seconds"
         case chatsTimeoutSeconds = "chats_timeout_seconds"
         case replyPageLimit = "reply_page_limit"
+        case notionDataSourceID = "notion_data_source_id"
     }
 
     package init(from decoder: Decoder) throws {
@@ -106,6 +110,7 @@ extension GenieConfig: Codable {
         sendTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .sendTimeoutSeconds) ?? defaults.sendTimeoutSeconds
         chatsTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .chatsTimeoutSeconds) ?? defaults.chatsTimeoutSeconds
         replyPageLimit = try c.decodeIfPresent(Int.self, forKey: .replyPageLimit) ?? defaults.replyPageLimit
+        notionDataSourceID = try c.decodeIfPresent(String.self, forKey: .notionDataSourceID) ?? defaults.notionDataSourceID
         self = sanitized()
     }
 }

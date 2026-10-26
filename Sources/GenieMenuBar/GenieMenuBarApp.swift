@@ -40,11 +40,12 @@ final class AppModel: ObservableObject {
     @Published var startupError: String?
 
     private let controller: GenieController?
+    private let paths = ConfigPaths.default()
     private var refreshTask: Task<Void, Never>?
     private var lastChatRefresh = Date.distantPast
+    @Published var notionTokenLabel = "未設定"
 
     init() {
-        let paths = ConfigPaths.default()
         do {
             controller = try GenieController(paths: paths)
             startupError = nil
@@ -53,6 +54,7 @@ final class AppModel: ObservableObject {
             startupError = "設定を読めませんでした"
             phase = "停止"
         }
+        notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
         begin()
     }
 
@@ -127,6 +129,29 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
+    func promptNotionToken() {
+        let alert = NSAlert()
+        alert.messageText = "Notion トークン"
+        alert.informativeText = "内部連携のトークンを入力します。保存後は画面に出しません。"
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        alert.accessoryView = field
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "キャンセル")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let entered = field.stringValue
+        field.stringValue = ""
+        do {
+            try NotionToken.save(entered, to: paths.notionTokenFile)
+            notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
+        } catch let error as SecretReadError {
+            let code = error == .empty ? "notion_token_empty" : "notion_token_unreadable"
+            Task { await controller?.engine.setLastError(code) }
+        } catch {
+            Task { await controller?.engine.setLastError("notion_token_unreadable") }
+        }
+    }
+
     func quit() {
         controller?.shutdown()
         NSApp.terminate(nil)
@@ -144,6 +169,7 @@ final class AppModel: ObservableObject {
         let snap = await controller.engine.snapshot()
         snapshot = snap
         loginStatus = LoginItemController.statusText()
+        notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
         phase = Self.phaseText(snap)
         symbol = Self.symbol(for: snap)
         if Date().timeIntervalSince(lastChatRefresh) >= 30 {
@@ -219,6 +245,14 @@ final class AppModel: ObservableObject {
             return "返事の取得に失敗しました"
         case "reply_secret_mode":
             return "reply-secret の権限が 600 ではありません"
+        case "notion_token_missing":
+            return "Notion トークンがありません"
+        case "notion_token_mode":
+            return "Notion トークンの権限が 600 ではありません"
+        case "notion_token_empty":
+            return "Notion トークンが空です"
+        case "notion_token_unreadable":
+            return "Notion トークンを保存できませんでした"
         case "state_reset":
             return "壊れていた状態ファイルを退避し、今から監視しています"
         case "allowlist_reset":
@@ -280,6 +314,9 @@ struct MenuContent: View {
                 }
             }
         }
+        Divider()
+        Text("Notion トークン: \(model.notionTokenLabel)")
+        Button("Notion トークンを設定") { model.promptNotionToken() }
         Divider()
         Text("最後のエラー: \(model.errorText)")
         Button("ログを開く") { model.openLog() }
