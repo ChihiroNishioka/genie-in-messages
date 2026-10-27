@@ -46,6 +46,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.notionDataSourceID, "")
         XCTAssertEqual(config.selfSenderName, "me")
         XCTAssertTrue(config.senderNames.isEmpty)
+        XCTAssertTrue(config.selfChatIDs.isEmpty)
     }
 
     func testExampleConfigHasNoPersonalValues() throws {

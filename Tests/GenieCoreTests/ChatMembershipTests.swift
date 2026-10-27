@@ -60,11 +60,36 @@ final class SenderHandleTests: XCTestCase {
 
 final class SelfChatRuleTests: XCTestCase {
     func testGroupAndDirectChatAcceptTheOtherSide() {
-        XCTAssertFalse(SelfChat.ignoresInboundEcho(isGroup: true, participantsKnown: false, participants: []))
+        let mine = Set([SenderHandle.normalize("+81 90 0000 0000")!])
+        XCTAssertFalse(SelfChat.ignoresInboundEcho(
+            isGroup: true,
+            chatID: 42,
+            participantsKnown: false,
+            participants: [],
+            ownHandles: [],
+            forcedSelfChatIDs: []
+        ))
         XCTAssertFalse(SelfChat.ignoresInboundEcho(
             isGroup: false,
+            chatID: 9,
             participantsKnown: true,
-            participants: ["+81 90 0000 0000"]
+            participants: ["+81 70 0000 0002"],
+            ownHandles: mine,
+            forcedSelfChatIDs: []
+        ))
+        XCTAssertTrue(SelfChat.isSelfChat(
+            isGroup: false,
+            participantsKnown: true,
+            participants: ["090-0000-0000"],
+            ownHandles: mine
+        ))
+        XCTAssertTrue(SelfChat.ignoresInboundEcho(
+            isGroup: false,
+            chatID: 9,
+            participantsKnown: true,
+            participants: ["+81 70 0000 0002"],
+            ownHandles: mine,
+            forcedSelfChatIDs: [9]
         ))
         XCTAssertTrue(SelfChat.resolveGroup(
             flag: nil,
@@ -79,9 +104,23 @@ final class SelfChatRuleTests: XCTestCase {
     }
 
     func testEmptyOrUnknownParticipantsAreTheSafeSide() {
-        XCTAssertTrue(SelfChat.ignoresInboundEcho(isGroup: false, participantsKnown: true, participants: []))
-        XCTAssertTrue(SelfChat.ignoresInboundEcho(isGroup: false, participantsKnown: true, participants: ["  "]))
-        XCTAssertTrue(SelfChat.ignoresInboundEcho(isGroup: false, participantsKnown: false, participants: []))
+        let mine = Set([SenderHandle.normalize("+81 90 0000 0000")!])
+        XCTAssertTrue(SelfChat.ignoresInboundEcho(
+            isGroup: false, chatID: 7, participantsKnown: true, participants: [],
+            ownHandles: mine, forcedSelfChatIDs: []
+        ))
+        XCTAssertTrue(SelfChat.ignoresInboundEcho(
+            isGroup: false, chatID: 7, participantsKnown: true, participants: ["  "],
+            ownHandles: mine, forcedSelfChatIDs: []
+        ))
+        XCTAssertTrue(SelfChat.ignoresInboundEcho(
+            isGroup: false, chatID: 7, participantsKnown: false, participants: [],
+            ownHandles: mine, forcedSelfChatIDs: []
+        ))
+        XCTAssertTrue(SelfChat.ignoresInboundEcho(
+            isGroup: false, chatID: 9, participantsKnown: true, participants: ["+81 70 0000 0002"],
+            ownHandles: [], forcedSelfChatIDs: []
+        ))
         XCTAssertTrue(SelfChat.isHandle("+81 90 0000 0000", sender: "090-0000-0000"))
         XCTAssertTrue(SelfChat.isHandle("Hana@Example.com", sender: "hana@example.com"))
         XCTAssertFalse(SelfChat.isHandle("hana", sender: "+81 90 0000 0000"))
@@ -95,6 +134,7 @@ final class SenderNameConfigTests: XCTestCase {
         XCTAssertEqual(config.webhookURL, "https://127.0.0.1/hook")
         XCTAssertEqual(config.selfSenderName, "me")
         XCTAssertTrue(config.senderNames.isEmpty)
+        XCTAssertTrue(config.selfChatIDs.isEmpty)
         XCTAssertNil(config.displayName(matching: "+81 90 0000 0000"))
 
         let blank = Data(#"{"self_sender_name":"  ","sender_names":null}"#.utf8)
@@ -127,12 +167,15 @@ final class SenderNameConfigTests: XCTestCase {
         let config = try JSONDecoder().decode(GenieConfig.self, from: data)
         XCTAssertEqual(config.selfSenderName, "me")
         XCTAssertTrue(config.senderNames.isEmpty)
+        XCTAssertTrue(config.selfChatIDs.isEmpty)
+        XCTAssertTrue(text.contains("self_chat_ids"))
     }
 }
 
 final class ChatMembershipEngineTests: XCTestCase {
     private let phone = "+81 90 0000 0000"
     private let phoneNational = "090-0000-0000"
+    private let other = "+81 70 0000 0002"
     private let mail = "hana@example.com"
 
     private func allow(_ harness: Harness, chat: Int64, names: [String: String] = [:], selfName: String = "me") {
@@ -218,9 +261,10 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         allow(harness, chat: 9)
         let engine = try harness.engine()
+        await learnDeviceChats(engine)
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-dm", chat: 9, fromMe: false, text: "\u{1FA94} dm",
-            sender: "+81-90-0000-0000", isGroup: false, participants: [phoneNational],
+            sender: other, isGroup: false, participants: [other],
             contactName: "hana"
         ))
         XCTAssertEqual(result, .delivered)
@@ -387,7 +431,164 @@ final class ChatMembershipEngineTests: XCTestCase {
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.map(\.chatID), [42])
     }
+
+    func testDeviceChatsDistinguishSelfDirectAndGroup() async throws {
+        let parsed = ChatListParser.parse(ndjson: deviceChatsNDJSON)
+        XCTAssertEqual(parsed.failedLineCount, 0)
+        XCTAssertEqual(parsed.chats.map(\.id), [7, 9, 42])
+        XCTAssertEqual(parsed.chats.map(\.title), ["トーク 7", "hana", "family"])
+        XCTAssertEqual(parsed.chats.map(\.participants.count), [1, 1, 3])
+        for chat in parsed.chats {
+            XCTAssertFalse(chat.title.contains("90"))
+            XCTAssertFalse(chat.title.contains("70"))
+            XCTAssertFalse(chat.title.contains("555"))
+        }
+        let handles = SelfChat.ownHandleKeys(in: parsed.chats)
+        XCTAssertEqual(handles, [SenderHandle.normalize(phone)!])
+        XCTAssertTrue(SelfChat.isSelfChat(
+            isGroup: parsed.chats[0].isGroup,
+            participantsKnown: true,
+            participants: parsed.chats[0].participants,
+            ownHandles: handles
+        ))
+        XCTAssertFalse(SelfChat.isSelfChat(
+            isGroup: parsed.chats[1].isGroup,
+            participantsKnown: true,
+            participants: parsed.chats[1].participants,
+            ownHandles: handles
+        ))
+
+        let harness = Harness()
+        harness.allow.ids = [7, 9, 42]
+        let engine = try harness.engine()
+        await engine.reconcileChats(parsed.chats)
+
+        let echo = await engine.ingestWatchLine(watchLine(
+            id: 1, guid: "self-false", chat: 7, fromMe: false, text: "\u{1FA94} QXSELF91",
+            sender: phone, isGroup: false, participants: [phone]
+        ))
+        let mine = await engine.ingestWatchLine(watchLine(
+            id: 2, guid: "self-true", chat: 7, fromMe: true, text: "\u{1FA94} QXSELF91",
+            isGroup: false, participants: [phone]
+        ))
+        let direct = await engine.ingestWatchLine(watchLine(
+            id: 3, guid: "direct-false", chat: 9, fromMe: false, text: "\u{1FA94} hello",
+            sender: other, isGroup: false, participants: [other]
+        ))
+        let group = await engine.ingestWatchLine(watchLine(
+            id: 4, guid: "group-false", chat: 42, fromMe: false, text: "\u{1FA94} family",
+            sender: other, isGroup: true, participants: [other, "080-0000-0001", "+1 555 010 0000"]
+        ))
+        XCTAssertEqual(echo, .ignoredNotFromMe)
+        XCTAssertEqual(mine, .delivered)
+        XCTAssertEqual(direct, .delivered)
+        XCTAssertEqual(group, .delivered)
+        XCTAssertEqual(harness.webhook.bodies.count, 3)
+        let selfBody = try payload(harness.webhook.bodies[0])
+        XCTAssertEqual(selfBody.senderIsMe, true)
+        XCTAssertEqual(selfBody.chatID, 7)
+        XCTAssertEqual(try payload(harness.webhook.bodies[1]).chatID, 9)
+        XCTAssertEqual(try payload(harness.webhook.bodies[1]).senderIsMe, false)
+        XCTAssertEqual(try payload(harness.webhook.bodies[2]).chatID, 42)
+        let dumped = harness.webhook.bodies.map { String(data: $0, encoding: .utf8) ?? "" }.joined(separator: "\n")
+        assertNoHandle(dumped)
+        assertNoSecrets(renderedDiagnostics(harness), body: "QXSELF91", handle: phone)
+        assertNoSecrets(renderedDiagnostics(harness), handle: other)
+    }
+
+    func testSelfChatIDsOverrideANormalDirectChat() async throws {
+        let harness = Harness()
+        harness.allow.ids = [9]
+        harness.config.selfChatIDs = [9]
+        let engine = try harness.engine()
+        await learnDeviceChats(engine)
+        let echo = await engine.ingestWatchLine(watchLine(
+            id: 1, guid: "forced-false", chat: 9, fromMe: false, text: "\u{1FA94} QXFORCE91",
+            sender: other, isGroup: false, participants: [other]
+        ))
+        let mine = await engine.ingestWatchLine(watchLine(
+            id: 2, guid: "forced-true", chat: 9, fromMe: true, text: "\u{1FA94} QXFORCE91"
+        ))
+        XCTAssertEqual(echo, .ignoredNotFromMe)
+        XCTAssertEqual(mine, .delivered)
+        XCTAssertEqual(harness.webhook.bodies.count, 1)
+        XCTAssertEqual(try payload(harness.webhook.bodies[0]).senderIsMe, true)
+        assertNoSecrets(renderedDiagnostics(harness), body: "QXFORCE91", handle: other)
+    }
+
+    func testUnreadableChatsStayOnTheSafeSide() async throws {
+        let harness = Harness()
+        allow(harness, chat: 9)
+        let engine = try harness.engine()
+        await engine.noteChatsProblem(code: "chats_failed", updateMenu: true)
+        await engine.noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
+        let echo = await engine.ingestWatchLine(watchLine(
+            id: 1, guid: "unread", chat: 9, fromMe: false, text: "\u{1FA94} QXMISS91",
+            sender: other, isGroup: false, participants: [other]
+        ))
+        XCTAssertEqual(echo, .ignoredNotFromMe)
+        XCTAssertTrue(harness.webhook.bodies.isEmpty)
+        XCTAssertEqual(harness.log.records.filter { $0.code == "chats_failed" }.count, 1)
+        XCTAssertEqual(harness.log.records.filter { $0.code == "chats_parse_failed" }.count, 1)
+        assertNoSecrets(renderedDiagnostics(harness), body: "QXMISS91", handle: other)
+
+        let broken = """
+        {"id":9,"is_group":false,"participants":["\(other)"],"last_addressed_handle":"\(phone)"}
+        {not-json \(phone)
+        """
+        let parsed = ChatListParser.parse(ndjson: broken)
+        XCTAssertEqual(parsed.failedLineCount, 1)
+        XCTAssertEqual(parsed.chats.count, 1)
+        await engine.reconcileChats(parsed.chats)
+        let after = await engine.ingestWatchLine(watchLine(
+            id: 2, guid: "after", chat: 9, fromMe: false, text: "\u{1FA94} later",
+            sender: other, isGroup: false, participants: [other]
+        ))
+        XCTAssertEqual(after, .delivered)
+        await engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        let kept = await engine.ingestWatchLine(watchLine(
+            id: 3, guid: "kept", chat: 9, fromMe: false, text: "\u{1FA94} kept",
+            sender: other, isGroup: false, participants: [other]
+        ))
+        XCTAssertEqual(kept, .delivered)
+        assertNoSecrets(renderedDiagnostics(harness), handle: phone)
+    }
+
+    func testWatchLineCallerIDIdentifiesSelfWithoutChats() async throws {
+        let harness = Harness()
+        harness.allow.ids = [7, 9]
+        let engine = try harness.engine()
+        let mine = await engine.ingestWatchLine(watchLine(
+            id: 1, guid: "out", chat: 7, fromMe: true, text: "\u{1FA94} mine",
+            isGroup: false, participants: [phone], destinationCallerID: phoneNational
+        ))
+        let echo = await engine.ingestWatchLine(watchLine(
+            id: 2, guid: "echo", chat: 7, fromMe: false, text: "\u{1FA94} mine",
+            sender: phone, isGroup: false, participants: [phone]
+        ))
+        let direct = await engine.ingestWatchLine(watchLine(
+            id: 3, guid: "dm", chat: 9, fromMe: false, text: "\u{1FA94} dm",
+            sender: other, isGroup: false, participants: [other]
+        ))
+        XCTAssertEqual(mine, .delivered)
+        XCTAssertEqual(echo, .ignoredNotFromMe)
+        XCTAssertEqual(direct, .delivered)
+        XCTAssertEqual(harness.webhook.bodies.count, 2)
+        assertNoHandle(harness.webhook.bodies.map { String(data: $0, encoding: .utf8) ?? "" }.joined())
+        assertNoSecrets(renderedDiagnostics(harness), handle: phone)
+    }
+
+    private func learnDeviceChats(_ engine: GenieEngine) async {
+        let parsed = ChatListParser.parse(ndjson: deviceChatsNDJSON)
+        await engine.reconcileChats(parsed.chats)
+    }
 }
+
+private let deviceChatsNDJSON = """
+{"id":7,"name":"","is_group":false,"identifier":"+81 90 0000 0000","guid":"iMessage;-;self","participants":["+81 90 0000 0000"],"last_addressed_handle":"+81 90 0000 0000"}
+{"id":9,"name":"hana","is_group":false,"identifier":"+81 70 0000 0002","guid":"iMessage;-;hana","participants":["+81 70 0000 0002"],"last_addressed_handle":"090-0000-0000"}
+{"id":42,"name":"family","is_group":true,"identifier":"any;+;chat-fixture","guid":"iMessage;+;chat-fixture","participants":["+81 70 0000 0002","080-0000-0001","+1 555 010 0000"],"last_addressed_handle":"+81 90 0000 0000"}
+"""
 
 private let payloadKeys: Set<String> = [
     "v", "event", "idempotency_key", "guid", "chat_id", "text", "created_at",

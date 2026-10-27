@@ -95,14 +95,48 @@ enum SelfChat {
         return false
     }
 
-    /// 自分宛てトークの `is_from_me=false` を無視する。
-    /// グループか、外部の参加者がいる1対1なら無視しない。
-    /// 参加者が空の自分宛てと、欄が無くて判定できないときは無視する（安全側）。
-    static func ignoresInboundEcho(isGroup: Bool, participantsKnown: Bool, participants: [String]) -> Bool {
-        if isGroup { return false }
-        if participantsKnown && participants.contains(where: { !isBlankParticipant($0) }) {
-            return false
+    /// `last_addressed_handle` を、自分のハンドル候補にする。
+    static func ownHandleKeys(in chats: [ChatSummary]) -> Set<String> {
+        var keys: Set<String> = []
+        for chat in chats {
+            if let key = SenderHandle.normalize(chat.lastAddressedHandle) {
+                keys.insert(key)
+            }
         }
+        return keys
+    }
+
+    /// グループでなく、空白でない participant が1人で、その人が自分のハンドルと一致する。
+    static func isSelfChat(
+        isGroup: Bool,
+        participantsKnown: Bool,
+        participants: [String],
+        ownHandles: Set<String>
+    ) -> Bool {
+        if isGroup || !participantsKnown || ownHandles.isEmpty { return false }
+        let people = participants.filter { !isBlankParticipant($0) }
+        guard people.count == 1, let key = SenderHandle.normalize(people[0]) else { return false }
+        return ownHandles.contains(key)
+    }
+
+    /// 自分宛てトークの `is_from_me=false` を無視する。
+    /// グループ、または自分のハンドルと一致しない participant がいる1対1は無視しない。
+    /// 自分のハンドルが不明、participants が無い、空、自分と一致する1人、のときは無視する（安全側）。
+    static func ignoresInboundEcho(
+        isGroup: Bool,
+        chatID: Int64?,
+        participantsKnown: Bool,
+        participants: [String],
+        ownHandles: Set<String>,
+        forcedSelfChatIDs: Set<Int64>
+    ) -> Bool {
+        if let chatID, forcedSelfChatIDs.contains(chatID) { return true }
+        if isGroup { return false }
+        if !participantsKnown || ownHandles.isEmpty { return true }
+        let people = participants.filter { !isBlankParticipant($0) }
+        if people.isEmpty { return true }
+        let keys = people.compactMap { SenderHandle.normalize($0) }
+        if keys.contains(where: { !ownHandles.contains($0) }) { return false }
         return true
     }
 

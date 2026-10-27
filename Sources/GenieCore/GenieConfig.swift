@@ -24,6 +24,8 @@ package struct GenieConfig: Equatable, Sendable {
     package var selfSenderName: String
     /// ハンドルから表示名。反応の可否には使わない。
     package var senderNames: [String: String]
+    /// 自分宛てとして扱う chat.ROWID。無くても判定できる。
+    package var selfChatIDs: [Int64]
     /// 比較キーから表示名。設定ファイルには書かない。
     package var senderNameKeys: [String: String] = [:]
     /// 読み込んだ印を製品既定へ戻した。設定ファイルには書かない。
@@ -50,7 +52,8 @@ package struct GenieConfig: Equatable, Sendable {
         replyPageLimit: 100,
         notionDataSourceID: "",
         selfSenderName: "me",
-        senderNames: [:]
+        senderNames: [:],
+        selfChatIDs: []
     )
 
     func sanitized() -> GenieConfig {
@@ -75,6 +78,8 @@ package struct GenieConfig: Equatable, Sendable {
         let selfName = copy.selfSenderName.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.selfSenderName = TextNormalizer.isBlank(selfName) ? "me" : selfName
         copy.senderNameKeys = Self.indexNames(copy.senderNames)
+        var seenChatIDs: Set<Int64> = []
+        copy.selfChatIDs = copy.selfChatIDs.filter { seenChatIDs.insert($0).inserted }
         let resolved = ReplyComposer.resolveMarker(copy.marker)
         if resolved.replaced {
             copy.marker = resolved.text
@@ -126,6 +131,7 @@ extension GenieConfig: Codable {
         case notionDataSourceID = "notion_data_source_id"
         case selfSenderName = "self_sender_name"
         case senderNames = "sender_names"
+        case selfChatIDs = "self_chat_ids"
     }
 
     package init(from decoder: Decoder) throws {
@@ -152,6 +158,7 @@ extension GenieConfig: Codable {
         notionDataSourceID = try c.decodeIfPresent(String.self, forKey: .notionDataSourceID) ?? defaults.notionDataSourceID
         selfSenderName = try c.decodeIfPresent(String.self, forKey: .selfSenderName) ?? defaults.selfSenderName
         senderNames = try Self.decodeSenderNames(c)
+        selfChatIDs = try Self.decodeSelfChatIDs(c)
         senderNameKeys = [:]
         self = sanitized()
     }
@@ -161,6 +168,13 @@ extension GenieConfig: Codable {
         guard container.contains(.senderNames) else { return [:] }
         if try container.decodeNil(forKey: .senderNames) { return [:] }
         return try container.decode([String: String].self, forKey: .senderNames)
+    }
+
+    /// キーが無い、または null なら空。反応の初期状態はこれ無しでも動く。
+    private static func decodeSelfChatIDs(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [Int64] {
+        guard container.contains(.selfChatIDs) else { return [] }
+        if try container.decodeNil(forKey: .selfChatIDs) { return [] }
+        return try container.decode([Int64].self, forKey: .selfChatIDs)
     }
 }
 

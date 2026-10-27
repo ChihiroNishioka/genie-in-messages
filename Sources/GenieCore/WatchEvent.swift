@@ -20,6 +20,8 @@ struct WatchEvent: Equatable {
     var participants: [String]
     /// `participants` が配列として読めたか。無い・壊れているときは false。
     var participantsKnown: Bool
+    /// 送った側の自分の番号。無いときは空。ログにも payload にも出さない。
+    var destinationCallerID: String
 
     var isMutation: Bool { type != nil }
 
@@ -46,7 +48,8 @@ struct WatchEvent: Equatable {
                 chatIdentifier: raw.chatIdentifier
             ),
             participants: raw.participants,
-            participantsKnown: raw.participantsKnown
+            participantsKnown: raw.participantsKnown,
+            destinationCallerID: raw.destinationCallerID ?? ""
         )
     }
 }
@@ -66,6 +69,7 @@ private struct Raw: Decodable {
     var isGroup: Bool?
     var participants: [String]
     var participantsKnown: Bool
+    var destinationCallerID: String?
     var chatIdentifier: String?
 
     enum CodingKeys: String, CodingKey {
@@ -78,6 +82,7 @@ private struct Raw: Decodable {
         case isGroup = "is_group"
         case contactName = "sender_name"
         case chatIdentifier = "chat_identifier"
+        case destinationCallerID = "destination_caller_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +101,7 @@ private struct Raw: Decodable {
         contactName = try? container.decode(String.self, forKey: .contactName)
         isGroup = try? container.decode(Bool.self, forKey: .isGroup)
         chatIdentifier = try? container.decode(String.self, forKey: .chatIdentifier)
+        destinationCallerID = try? container.decode(String.self, forKey: .destinationCallerID)
         if container.contains(.participants),
            let list = try? container.decode([String].self, forKey: .participants) {
             participants = list

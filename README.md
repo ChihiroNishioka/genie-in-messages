@@ -20,7 +20,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。返事の取得用トークンは任意の `reply-secret`（0600）。どちらもコードに書かない。
 
-誰が呼べるかは、メニューのチャット許可（オン・オフ）だけ。オンのトークにいる人は全員。オフは自分の 🪔 も無視する。表示名の表は任意で、反応には影響しない。番号とメールは架空の例。
+誰が呼べるかは、メニューのチャット許可（オン・オフ）だけ。オンのトークにいる人は全員。オフは自分の 🪔 も無視する。自分宛てトークは、グループでなく participant が1人で自分のハンドルと一致するときだけ、受信側の重複を無視する。表示名の表は任意で、反応には影響しない。`self_chat_ids` も任意で、書いた `chat_id` を自分宛てとして扱う。番号とメールは架空の例。
 
 ```json
 {
@@ -28,7 +28,8 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
   "sender_names": {
     "+81 90 0000 0000": "hana",
     "hana@example.com": "hana-mail"
-  }
+  },
+  "self_chat_ids": [7]
 }
 ```
 
