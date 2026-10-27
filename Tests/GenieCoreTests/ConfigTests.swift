@@ -45,7 +45,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.replyFetchURL, "")
         XCTAssertEqual(config.notionDataSourceID, "")
         XCTAssertEqual(config.selfSenderName, "me")
-        XCTAssertTrue(config.allowedSenders.isEmpty)
+        XCTAssertTrue(config.senderNames.isEmpty)
     }
 
     func testExampleConfigHasNoPersonalValues() throws {
@@ -59,7 +59,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.replyFetchURL, "")
         XCTAssertEqual(config.notionDataSourceID, "")
         XCTAssertEqual(config.selfSenderName, "me")
-        XCTAssertTrue(config.allowedSenders.isEmpty)
+        XCTAssertTrue(config.senderNames.isEmpty)
         XCTAssertEqual(config.imsgExecutable, "/opt/homebrew/opt/imsg/libexec/imsg")
         XCTAssertFalse(Signal.matches(config.marker))
     }

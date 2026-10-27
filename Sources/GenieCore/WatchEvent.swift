@@ -11,11 +11,15 @@ struct WatchEvent: Equatable {
     var type: String?
     var isReaction: Bool
     var chatGUID: String?
-    /// imsg の `sender`。無いときは空。
+    /// imsg の `sender`。無いときは空。ログにも payload にも出さない。
     var sender: String
+    /// 連絡先名。imsg が既に付けているときだけ。無いときは空。
+    var contactName: String
     var isGroup: Bool
-    /// 外部の参加者。自分宛てトークでは空。
+    /// 外部の参加者。自分は入らない。自分宛てトークでは空。
     var participants: [String]
+    /// `participants` が配列として読めたか。無い・壊れているときは false。
+    var participantsKnown: Bool
 
     var isMutation: Bool { type != nil }
 
@@ -35,8 +39,14 @@ struct WatchEvent: Equatable {
             isReaction: raw.isReaction ?? false,
             chatGUID: raw.chatGUID,
             sender: raw.sender ?? "",
-            isGroup: raw.isGroup ?? false,
-            participants: raw.participants ?? []
+            contactName: raw.contactName ?? "",
+            isGroup: SelfChat.resolveGroup(
+                flag: raw.isGroup,
+                chatGUID: raw.chatGUID,
+                chatIdentifier: raw.chatIdentifier
+            ),
+            participants: raw.participants,
+            participantsKnown: raw.participantsKnown
         )
     }
 }
@@ -52,8 +62,11 @@ private struct Raw: Decodable {
     var isReaction: Bool?
     var chatGUID: String?
     var sender: String?
+    var contactName: String?
     var isGroup: Bool?
-    var participants: [String]?
+    var participants: [String]
+    var participantsKnown: Bool
+    var chatIdentifier: String?
 
     enum CodingKeys: String, CodingKey {
         case id, guid, text, type, sender, participants
@@ -63,6 +76,8 @@ private struct Raw: Decodable {
         case isReaction = "is_reaction"
         case chatGUID = "chat_guid"
         case isGroup = "is_group"
+        case contactName = "sender_name"
+        case chatIdentifier = "chat_identifier"
     }
 
     init(from decoder: Decoder) throws {
@@ -78,7 +93,16 @@ private struct Raw: Decodable {
         chatGUID = try container.decodeIfPresent(String.self, forKey: .chatGUID)
         // 新しい欄の型が違っても、行全体は捨てない。
         sender = try? container.decode(String.self, forKey: .sender)
+        contactName = try? container.decode(String.self, forKey: .contactName)
         isGroup = try? container.decode(Bool.self, forKey: .isGroup)
-        participants = try? container.decode([String].self, forKey: .participants)
+        chatIdentifier = try? container.decode(String.self, forKey: .chatIdentifier)
+        if container.contains(.participants),
+           let list = try? container.decode([String].self, forKey: .participants) {
+            participants = list
+            participantsKnown = true
+        } else {
+            participants = []
+            participantsKnown = false
+        }
     }
 }

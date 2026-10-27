@@ -86,84 +86,41 @@ enum SenderHandle {
     }
 }
 
-package struct AllowedSender: Equatable, Sendable, Codable {
-    package var handle: String
-    package var name: String
-
-    package init(handle: String, name: String) {
-        self.handle = handle
-        self.name = name
+enum SelfChat {
+    /// imsg は `is_group` か、識別子の `;+;` でグループを表す。
+    static func resolveGroup(flag: Bool?, chatGUID: String?, chatIdentifier: String?) -> Bool {
+        if flag == true { return true }
+        if let chatGUID, chatGUID.contains(";+;") { return true }
+        if let chatIdentifier, chatIdentifier.contains(";+;") { return true }
+        return false
     }
 
-    /// 表示名。空ならハンドルではなく `sender`。
-    package var payloadName: String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if TextNormalizer.isBlank(trimmed) { return "sender" }
-        return trimmed
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case handle, name
-    }
-
-    package init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        handle = try container.decodeIfPresent(String.self, forKey: .handle) ?? ""
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(handle, forKey: .handle)
-        try container.encode(name, forKey: .name)
-    }
-}
-
-package struct ChatSenders: Equatable, Sendable, Codable {
-    package var chatID: Int64
-    package var senders: [AllowedSender]
-
-    package init(chatID: Int64, senders: [AllowedSender]) {
-        self.chatID = chatID
-        self.senders = senders
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case chatID = "chat_id"
-        case senders
-    }
-
-    package init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        chatID = try container.decodeIfPresent(Int64.self, forKey: .chatID) ?? 0
-        senders = try container.decodeIfPresent([AllowedSender].self, forKey: .senders) ?? []
-    }
-
-    package func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(chatID, forKey: .chatID)
-        try container.encode(senders, forKey: .senders)
-    }
-}
-
-enum SenderAllowlist {
-    /// グループか、外部の参加者がいるトークだけを見る。
-    /// 自分宛て（グループでなく participants が空）の is_from_me=false はここに来ても一致させない。
-    static func match(
-        sender: String,
-        chatID: Int64?,
-        isGroup: Bool,
-        participants: [String],
-        lists: [ChatSenders]
-    ) -> AllowedSender? {
-        guard isGroup || !participants.isEmpty else { return nil }
-        guard let chatID else { return nil }
-        guard let key = SenderHandle.normalize(sender) else { return nil }
-        for list in lists where list.chatID == chatID {
-            if let found = list.senders.first(where: { SenderHandle.normalize($0.handle) == key }) {
-                return found
-            }
+    /// 自分宛てトークの `is_from_me=false` を無視する。
+    /// グループか、外部の参加者がいる1対1なら無視しない。
+    /// 参加者が空の自分宛てと、欄が無くて判定できないときは無視する（安全側）。
+    static func ignoresInboundEcho(isGroup: Bool, participantsKnown: Bool, participants: [String]) -> Bool {
+        if isGroup { return false }
+        if participantsKnown && participants.contains(where: { !isBlankParticipant($0) }) {
+            return false
         }
-        return nil
+        return true
+    }
+
+    /// 連絡先名がハンドルそのものなら、payload に載せて番号を出さない。
+    static func isHandle(_ name: String, sender: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = sender.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || raw.isEmpty { return false }
+        if trimmed.compare(raw, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame {
+            return true
+        }
+        if let left = SenderHandle.normalize(trimmed), let right = SenderHandle.normalize(raw), left == right {
+            return true
+        }
+        return false
+    }
+
+    private static func isBlankParticipant(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

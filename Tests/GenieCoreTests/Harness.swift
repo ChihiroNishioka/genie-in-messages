@@ -116,7 +116,9 @@ func watchLine(
     sender: String? = nil,
     isGroup: Bool? = nil,
     participants: [String]? = nil,
-    attachments: Bool = false
+    attachments: Bool = false,
+    contactName: String? = nil,
+    chatIdentifier: String? = nil
 ) -> String {
     var object: [String: Any] = [
         "id": id,
@@ -132,6 +134,8 @@ func watchLine(
     if let sender { object["sender"] = sender }
     if let isGroup { object["is_group"] = isGroup }
     if let participants { object["participants"] = participants }
+    if let contactName { object["sender_name"] = contactName }
+    if let chatIdentifier { object["chat_identifier"] = chatIdentifier }
     if attachments {
         object["attachments"] = [["filename": "photo.jpg", "mime_type": "image/jpeg"]]
     }

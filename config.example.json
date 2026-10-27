@@ -18,5 +18,5 @@
   "reply_page_limit": 100,
   "notion_data_source_id": "",
   "self_sender_name": "me",
-  "allowed_senders": []
+  "sender_names": {}
 }

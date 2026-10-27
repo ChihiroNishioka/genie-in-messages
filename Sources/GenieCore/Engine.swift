@@ -341,47 +341,18 @@ package actor GenieEngine {
             return finish(event, .ignoredFingerprint)
         }
         let normalized = TextNormalizer.nfc(event.text)
-        let matches = Signal.matches(normalized)
-        if !event.isFromMe {
-            // 自分宛ての is_from_me=false は SenderAllowlist が一致させない。
-            if let sender = SenderAllowlist.match(
-                sender: event.sender,
-                chatID: event.chatID,
-                isGroup: event.isGroup,
-                participants: event.participants,
-                lists: config.allowedSenders
-            ) {
-                if !matches {
-                    return finish(event, .ignoredNoSignal)
-                }
-                guard let chatID = event.chatID, allowlist.contains(chatID) else {
-                    return finish(event, .ignoredNotAllowed)
-                }
-                if paused {
-                    return .deferredPaused
-                }
-                return await deliverWebhook(
-                    event: event,
-                    chatID: chatID,
-                    text: normalized,
-                    senderIsMe: false,
-                    senderName: sender.payloadName
-                )
-            }
-            if matches,
-               let chatID = event.chatID,
-               allowlist.contains(chatID),
-               SenderHandle.normalize(event.sender) != nil,
-               event.isGroup || !event.participants.isEmpty {
-                log.record(level: .info, code: "ignored_sender", chatID: chatID, guid: event.guid, rowid: event.id)
-            }
-            return finish(event, .ignoredNotFromMe)
-        }
-        if !matches {
+        if !Signal.matches(normalized) {
             return finish(event, .ignoredNoSignal)
         }
         guard let chatID = event.chatID, allowlist.contains(chatID) else {
             return finish(event, .ignoredNotAllowed)
+        }
+        if !event.isFromMe && SelfChat.ignoresInboundEcho(
+            isGroup: event.isGroup,
+            participantsKnown: event.participantsKnown,
+            participants: event.participants
+        ) {
+            return finish(event, .ignoredNotFromMe)
         }
         if paused {
             return .deferredPaused
@@ -390,9 +361,23 @@ package actor GenieEngine {
             event: event,
             chatID: chatID,
             text: normalized,
-            senderIsMe: true,
-            senderName: config.selfSenderName
+            senderIsMe: event.isFromMe,
+            senderName: payloadSenderName(event)
         )
+    }
+
+    /// 表示名。対応表が無くても、ここは反応の可否を変えない。ハンドルは返さない。
+    private func payloadSenderName(_ event: WatchEvent) -> String {
+        if event.isFromMe {
+            return config.selfSenderName
+        }
+        if let mapped = config.displayName(matching: event.sender) {
+            return mapped
+        }
+        let contact = event.contactName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if TextNormalizer.isBlank(contact) { return "" }
+        if SelfChat.isHandle(contact, sender: event.sender) { return "" }
+        return contact
     }
 
     private func deliverWebhook(
