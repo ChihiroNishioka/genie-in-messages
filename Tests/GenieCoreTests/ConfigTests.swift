@@ -44,6 +44,8 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.webhookURL, "")
         XCTAssertEqual(config.replyFetchURL, "")
         XCTAssertEqual(config.notionDataSourceID, "")
+        XCTAssertEqual(config.selfSenderName, "me")
+        XCTAssertTrue(config.allowedSenders.isEmpty)
     }
 
     func testExampleConfigHasNoPersonalValues() throws {
@@ -56,6 +58,8 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(config.webhookURL, "")
         XCTAssertEqual(config.replyFetchURL, "")
         XCTAssertEqual(config.notionDataSourceID, "")
+        XCTAssertEqual(config.selfSenderName, "me")
+        XCTAssertTrue(config.allowedSenders.isEmpty)
         XCTAssertEqual(config.imsgExecutable, "/opt/homebrew/opt/imsg/libexec/imsg")
         XCTAssertFalse(Signal.matches(config.marker))
     }

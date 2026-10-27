@@ -20,6 +20,10 @@ package struct GenieConfig: Equatable, Sendable {
     package var chatsTimeoutSeconds: Double
     package var replyPageLimit: Int
     package var notionDataSourceID: String
+    /// 自分の webhook 表示名。空なら `me`。
+    package var selfSenderName: String
+    /// チャットごとの、自分以外の許可送信者。
+    package var allowedSenders: [ChatSenders]
     /// 読み込んだ印を製品既定へ戻した。設定ファイルには書かない。
     package var markerWasReplaced = false
 
@@ -42,7 +46,9 @@ package struct GenieConfig: Equatable, Sendable {
         sendTimeoutSeconds: 150,
         chatsTimeoutSeconds: 30,
         replyPageLimit: 100,
-        notionDataSourceID: ""
+        notionDataSourceID: "",
+        selfSenderName: "me",
+        allowedSenders: []
     )
 
     func sanitized() -> GenieConfig {
@@ -64,12 +70,40 @@ package struct GenieConfig: Equatable, Sendable {
         copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
         copy.replyPageLimit = max(1, copy.replyPageLimit)
         copy.notionDataSourceID = copy.notionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selfName = copy.selfSenderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.selfSenderName = TextNormalizer.isBlank(selfName) ? "me" : selfName
+        copy.allowedSenders = Self.collapseSenders(copy.allowedSenders)
         let resolved = ReplyComposer.resolveMarker(copy.marker)
         if resolved.replaced {
             copy.marker = resolved.text
             copy.markerWasReplaced = true
         }
         return copy
+    }
+
+    /// 同じチャットの同じハンドルは先の表示名を残す。比較できないハンドルは落とす。
+    private static func collapseSenders(_ lists: [ChatSenders]) -> [ChatSenders] {
+        var order: [Int64] = []
+        var grouped: [Int64: [AllowedSender]] = [:]
+        var seen: [Int64: Set<String>] = [:]
+        for list in lists {
+            if grouped[list.chatID] == nil {
+                order.append(list.chatID)
+                grouped[list.chatID] = []
+            }
+            for sender in list.senders {
+                let handle = sender.handle.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let key = SenderHandle.normalize(handle) else { continue }
+                if seen[list.chatID, default: []].contains(key) { continue }
+                seen[list.chatID, default: []].insert(key)
+                let name = sender.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                grouped[list.chatID, default: []].append(AllowedSender(handle: handle, name: name))
+            }
+        }
+        return order.compactMap { chatID in
+            guard let senders = grouped[chatID], !senders.isEmpty else { return nil }
+            return ChatSenders(chatID: chatID, senders: senders)
+        }
     }
 }
 
@@ -94,6 +128,8 @@ extension GenieConfig: Codable {
         case chatsTimeoutSeconds = "chats_timeout_seconds"
         case replyPageLimit = "reply_page_limit"
         case notionDataSourceID = "notion_data_source_id"
+        case selfSenderName = "self_sender_name"
+        case allowedSenders = "allowed_senders"
     }
 
     package init(from decoder: Decoder) throws {
@@ -118,7 +154,24 @@ extension GenieConfig: Codable {
         chatsTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .chatsTimeoutSeconds) ?? defaults.chatsTimeoutSeconds
         replyPageLimit = try c.decodeIfPresent(Int.self, forKey: .replyPageLimit) ?? defaults.replyPageLimit
         notionDataSourceID = try c.decodeIfPresent(String.self, forKey: .notionDataSourceID) ?? defaults.notionDataSourceID
+        selfSenderName = try c.decodeIfPresent(String.self, forKey: .selfSenderName) ?? defaults.selfSenderName
+        allowedSenders = try Self.decodeAllowedSenders(c)
         self = sanitized()
+    }
+
+    /// キーが無い、null、チャット id の無い要素は、設定全体を落とさずに飛ばす。
+    private static func decodeAllowedSenders(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [ChatSenders] {
+        guard container.contains(.allowedSenders) else { return [] }
+        if try container.decodeNil(forKey: .allowedSenders) { return [] }
+        var rows = try container.nestedUnkeyedContainer(forKey: .allowedSenders)
+        var lists: [ChatSenders] = []
+        while !rows.isAtEnd {
+            let row = try rows.nestedContainer(keyedBy: ChatSenders.CodingKeys.self)
+            guard let chatID = try row.decodeIfPresent(Int64.self, forKey: .chatID) else { continue }
+            let senders = try row.decodeIfPresent([AllowedSender].self, forKey: .senders) ?? []
+            lists.append(ChatSenders(chatID: chatID, senders: senders))
+        }
+        return lists
     }
 }
 

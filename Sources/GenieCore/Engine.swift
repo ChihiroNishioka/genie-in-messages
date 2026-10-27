@@ -340,11 +340,44 @@ package actor GenieEngine {
         if fingerprintMatches(text: event.text, createdAt: event.createdAt) {
             return finish(event, .ignoredFingerprint)
         }
+        let normalized = TextNormalizer.nfc(event.text)
+        let matches = Signal.matches(normalized)
         if !event.isFromMe {
+            // 自分宛ての is_from_me=false は SenderAllowlist が一致させない。
+            if let sender = SenderAllowlist.match(
+                sender: event.sender,
+                chatID: event.chatID,
+                isGroup: event.isGroup,
+                participants: event.participants,
+                lists: config.allowedSenders
+            ) {
+                if !matches {
+                    return finish(event, .ignoredNoSignal)
+                }
+                guard let chatID = event.chatID, allowlist.contains(chatID) else {
+                    return finish(event, .ignoredNotAllowed)
+                }
+                if paused {
+                    return .deferredPaused
+                }
+                return await deliverWebhook(
+                    event: event,
+                    chatID: chatID,
+                    text: normalized,
+                    senderIsMe: false,
+                    senderName: sender.payloadName
+                )
+            }
+            if matches,
+               let chatID = event.chatID,
+               allowlist.contains(chatID),
+               SenderHandle.normalize(event.sender) != nil,
+               event.isGroup || !event.participants.isEmpty {
+                log.record(level: .info, code: "ignored_sender", chatID: chatID, guid: event.guid, rowid: event.id)
+            }
             return finish(event, .ignoredNotFromMe)
         }
-        let normalized = TextNormalizer.nfc(event.text)
-        if !Signal.matches(normalized) {
+        if !matches {
             return finish(event, .ignoredNoSignal)
         }
         guard let chatID = event.chatID, allowlist.contains(chatID) else {
@@ -353,10 +386,22 @@ package actor GenieEngine {
         if paused {
             return .deferredPaused
         }
-        return await deliverWebhook(event: event, chatID: chatID, text: normalized)
+        return await deliverWebhook(
+            event: event,
+            chatID: chatID,
+            text: normalized,
+            senderIsMe: true,
+            senderName: config.selfSenderName
+        )
     }
 
-    private func deliverWebhook(event: WatchEvent, chatID: Int64, text: String) async -> IngestResult {
+    private func deliverWebhook(
+        event: WatchEvent,
+        chatID: Int64,
+        text: String,
+        senderIsMe: Bool,
+        senderName: String
+    ) async -> IngestResult {
         let rawURL = config.webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if rawURL.isEmpty {
             return deadLetter(event, error: "webhook_not_configured", attempts: 0)
@@ -371,7 +416,9 @@ package actor GenieEngine {
             guid: event.guid,
             chatID: chatID,
             text: text,
-            createdAt: event.createdAt
+            createdAt: event.createdAt,
+            senderIsMe: senderIsMe,
+            senderName: senderName
         )
         let body: Data
         do {
