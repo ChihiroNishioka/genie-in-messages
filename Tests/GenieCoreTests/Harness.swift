@@ -112,7 +112,14 @@ func watchLine(
     created: String = "2026-10-26T01:00:00Z",
     type: String? = nil,
     reaction: Bool = false,
-    chatGUID: String? = nil
+    chatGUID: String? = nil,
+    sender: String? = nil,
+    isGroup: Bool? = nil,
+    participants: [String]? = nil,
+    attachments: Bool = false,
+    contactName: String? = nil,
+    chatIdentifier: String? = nil,
+    destinationCallerID: String? = nil
 ) -> String {
     var object: [String: Any] = [
         "id": id,
@@ -125,6 +132,15 @@ func watchLine(
     if let chatGUID { object["chat_guid"] = chatGUID }
     if let type { object["type"] = type }
     if reaction { object["is_reaction"] = true }
+    if let sender { object["sender"] = sender }
+    if let isGroup { object["is_group"] = isGroup }
+    if let participants { object["participants"] = participants }
+    if let contactName { object["sender_name"] = contactName }
+    if let chatIdentifier { object["chat_identifier"] = chatIdentifier }
+    if let destinationCallerID { object["destination_caller_id"] = destinationCallerID }
+    if attachments {
+        object["attachments"] = [["filename": "photo.jpg", "mime_type": "image/jpeg"]]
+    }
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(data: data, encoding: .utf8)!
 }

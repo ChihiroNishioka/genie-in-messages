@@ -20,6 +20,14 @@ package struct GenieConfig: Equatable, Sendable {
     package var chatsTimeoutSeconds: Double
     package var replyPageLimit: Int
     package var notionDataSourceID: String
+    /// 自分の webhook 表示名。空なら `me`。
+    package var selfSenderName: String
+    /// ハンドルから表示名。反応の可否には使わない。
+    package var senderNames: [String: String]
+    /// 自分宛てとして扱う chat.ROWID。無くても判定できる。
+    package var selfChatIDs: [Int64]
+    /// 比較キーから表示名。設定ファイルには書かない。
+    package var senderNameKeys: [String: String] = [:]
     /// 読み込んだ印を製品既定へ戻した。設定ファイルには書かない。
     package var markerWasReplaced = false
 
@@ -42,7 +50,10 @@ package struct GenieConfig: Equatable, Sendable {
         sendTimeoutSeconds: 150,
         chatsTimeoutSeconds: 30,
         replyPageLimit: 100,
-        notionDataSourceID: ""
+        notionDataSourceID: "",
+        selfSenderName: "me",
+        senderNames: [:],
+        selfChatIDs: []
     )
 
     func sanitized() -> GenieConfig {
@@ -64,12 +75,36 @@ package struct GenieConfig: Equatable, Sendable {
         copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
         copy.replyPageLimit = max(1, copy.replyPageLimit)
         copy.notionDataSourceID = copy.notionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selfName = copy.selfSenderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.selfSenderName = TextNormalizer.isBlank(selfName) ? "me" : selfName
+        copy.senderNameKeys = Self.indexNames(copy.senderNames)
+        var seenChatIDs: Set<Int64> = []
+        copy.selfChatIDs = copy.selfChatIDs.filter { seenChatIDs.insert($0).inserted }
         let resolved = ReplyComposer.resolveMarker(copy.marker)
         if resolved.replaced {
             copy.marker = resolved.text
             copy.markerWasReplaced = true
         }
         return copy
+    }
+
+    /// 空の表示名と比較できないハンドルは落とす。同じキーは、ハンドル文字列の順で先の名前を残す。
+    private static func indexNames(_ names: [String: String]) -> [String: String] {
+        var indexed: [String: String] = [:]
+        for handle in names.keys.sorted() {
+            let name = names[handle]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !TextNormalizer.isBlank(name) else { continue }
+            guard let key = SenderHandle.normalize(handle) else { continue }
+            if indexed[key] == nil {
+                indexed[key] = name
+            }
+        }
+        return indexed
+    }
+
+    func displayName(matching handle: String) -> String? {
+        guard let key = SenderHandle.normalize(handle) else { return nil }
+        return senderNameKeys[key]
     }
 }
 
@@ -94,6 +129,9 @@ extension GenieConfig: Codable {
         case chatsTimeoutSeconds = "chats_timeout_seconds"
         case replyPageLimit = "reply_page_limit"
         case notionDataSourceID = "notion_data_source_id"
+        case selfSenderName = "self_sender_name"
+        case senderNames = "sender_names"
+        case selfChatIDs = "self_chat_ids"
     }
 
     package init(from decoder: Decoder) throws {
@@ -118,7 +156,25 @@ extension GenieConfig: Codable {
         chatsTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .chatsTimeoutSeconds) ?? defaults.chatsTimeoutSeconds
         replyPageLimit = try c.decodeIfPresent(Int.self, forKey: .replyPageLimit) ?? defaults.replyPageLimit
         notionDataSourceID = try c.decodeIfPresent(String.self, forKey: .notionDataSourceID) ?? defaults.notionDataSourceID
+        selfSenderName = try c.decodeIfPresent(String.self, forKey: .selfSenderName) ?? defaults.selfSenderName
+        senderNames = try Self.decodeSenderNames(c)
+        selfChatIDs = try Self.decodeSelfChatIDs(c)
+        senderNameKeys = [:]
         self = sanitized()
+    }
+
+    /// キーが無い、または null なら空。反応の可否には使わない。
+    private static func decodeSenderNames(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [String: String] {
+        guard container.contains(.senderNames) else { return [:] }
+        if try container.decodeNil(forKey: .senderNames) { return [:] }
+        return try container.decode([String: String].self, forKey: .senderNames)
+    }
+
+    /// キーが無い、または null なら空。反応の初期状態はこれ無しでも動く。
+    private static func decodeSelfChatIDs(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [Int64] {
+        guard container.contains(.selfChatIDs) else { return [] }
+        if try container.decodeNil(forKey: .selfChatIDs) { return [] }
+        return try container.decode([Int64].self, forKey: .selfChatIDs)
     }
 }
 

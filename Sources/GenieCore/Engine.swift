@@ -17,7 +17,18 @@ package actor GenieEngine {
 
     private var paused = false
     private var holds: [HeldSend] = []
+    /// `imsg chats` の `last_addressed_handle`。失敗した読み直しでは残す。
+    private var directoryHandleKeys: Set<String> = []
+    /// watch の `destination_caller_id`。chats が読めなくても残る。
+    private var watchHandleKeys: Set<String> = []
+    private var directoryChats: [Int64: DirectoryChat] = [:]
     private var inFlightReplyIDs: Set<String> = []
+
+    private struct DirectoryChat {
+        var isGroup: Bool
+        var participantsKnown: Bool
+        var participants: [String]
+    }
     private var screenLock: ScreenLockState = .unknown
     private var lastError: String?
     private var loggedMarkerReplacement = false
@@ -141,11 +152,35 @@ package actor GenieEngine {
     }
 
     package func reconcileChats(_ chats: [ChatSummary]) {
+        var facts: [Int64: DirectoryChat] = [:]
+        for chat in chats {
+            facts[chat.id] = DirectoryChat(
+                isGroup: chat.isGroup,
+                participantsKnown: chat.participantsKnown,
+                participants: chat.participants
+            )
+        }
+        directoryChats = facts
+        directoryHandleKeys = SelfChat.ownHandleKeys(in: chats)
         for chat in chats where !chat.guid.isEmpty {
             if observeChat(id: chat.id, guid: chat.guid) {
                 return
             }
         }
+    }
+
+    /// `imsg chats` の失敗。標準出力も標準エラーも残さない。
+    package func noteChatsProblem(code: String, updateMenu: Bool) {
+        if updateMenu {
+            lastError = code
+        }
+        log.record(
+            level: updateMenu ? .error : .warning,
+            code: code,
+            chatID: nil,
+            guid: nil,
+            rowid: nil
+        )
     }
 
     package func resumeRateLimit(chatID: Int64) async {
@@ -340,9 +375,6 @@ package actor GenieEngine {
         if fingerprintMatches(text: event.text, createdAt: event.createdAt) {
             return finish(event, .ignoredFingerprint)
         }
-        if !event.isFromMe {
-            return finish(event, .ignoredNotFromMe)
-        }
         let normalized = TextNormalizer.nfc(event.text)
         if !Signal.matches(normalized) {
             return finish(event, .ignoredNoSignal)
@@ -350,13 +382,66 @@ package actor GenieEngine {
         guard let chatID = event.chatID, allowlist.contains(chatID) else {
             return finish(event, .ignoredNotAllowed)
         }
+        if let key = SenderHandle.normalize(event.destinationCallerID) {
+            watchHandleKeys.insert(key)
+        }
+        let echoed = echoParticipants(for: event)
+        if !event.isFromMe && SelfChat.ignoresInboundEcho(
+            isGroup: echoed.isGroup,
+            chatID: event.chatID,
+            participantsKnown: echoed.participantsKnown,
+            participants: echoed.participants,
+            ownHandles: directoryHandleKeys.union(watchHandleKeys),
+            forcedSelfChatIDs: Set(config.selfChatIDs)
+        ) {
+            return finish(event, .ignoredNotFromMe)
+        }
         if paused {
             return .deferredPaused
         }
-        return await deliverWebhook(event: event, chatID: chatID, text: normalized)
+        return await deliverWebhook(
+            event: event,
+            chatID: chatID,
+            text: normalized,
+            senderIsMe: event.isFromMe,
+            senderName: payloadSenderName(event)
+        )
     }
 
-    private func deliverWebhook(event: WatchEvent, chatID: Int64, text: String) async -> IngestResult {
+    /// watch の行に participants が無いときは、直近の chats のその chat_id を使う。
+    private func echoParticipants(for event: WatchEvent) -> (isGroup: Bool, participantsKnown: Bool, participants: [String]) {
+        let stored = event.chatID.flatMap { directoryChats[$0] }
+        let isGroup = event.isGroup || (stored?.isGroup ?? false)
+        if event.participantsKnown {
+            return (isGroup, true, event.participants)
+        }
+        if let stored, stored.participantsKnown {
+            return (isGroup, true, stored.participants)
+        }
+        return (isGroup, false, [])
+    }
+
+    /// 表示名。対応表が無くても、ここは反応の可否を変えない。ハンドルは返さない。
+    private func payloadSenderName(_ event: WatchEvent) -> String {
+        if event.isFromMe {
+            return config.selfSenderName
+        }
+        if let mapped = config.displayName(matching: event.sender) {
+            return mapped
+        }
+        let contact = event.contactName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if TextNormalizer.isBlank(contact) { return "" }
+        if SelfChat.isHandle(contact, sender: event.sender) { return "" }
+        return contact
+    }
+
+    private func deliverWebhook(
+        event: WatchEvent,
+        chatID: Int64,
+        text: String,
+        senderIsMe: Bool,
+        senderName: String
+    ) async -> IngestResult {
         let rawURL = config.webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if rawURL.isEmpty {
             return deadLetter(event, error: "webhook_not_configured", attempts: 0)
@@ -371,7 +456,9 @@ package actor GenieEngine {
             guid: event.guid,
             chatID: chatID,
             text: text,
-            createdAt: event.createdAt
+            createdAt: event.createdAt,
+            senderIsMe: senderIsMe,
+            senderName: senderName
         )
         let body: Data
         do {

@@ -50,14 +50,18 @@ final class GenieController: @unchecked Sendable {
             timeout: loaded.chatsTimeoutSeconds
         )
         if result.exitCode != 0 || result.timedOut {
-            if reportError {
-                await engine.setLastError("chats_failed")
-            }
+            await engine.noteChatsProblem(code: "chats_failed", updateMenu: reportError)
             return []
         }
-        let chats = ChatListParser.parse(ndjson: result.stdout)
-        await engine.reconcileChats(chats)
-        return chats
+        let parsed = ChatListParser.parse(ndjson: result.stdout)
+        if parsed.failedLineCount > 0 {
+            await engine.noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
+        }
+        if parsed.chats.isEmpty && parsed.failedLineCount > 0 {
+            return []
+        }
+        await engine.reconcileChats(parsed.chats)
+        return parsed.chats
     }
 
     private func start() {
@@ -65,6 +69,7 @@ final class GenieController: @unchecked Sendable {
         let engine = self.engine
         let config = self.config
         supervisor = Task.detached {
+            _ = await self.loadChats(reportError: true)
             var delay = 1.0
             while !self.isStopped {
                 if await engine.isPaused() {
@@ -107,6 +112,7 @@ final class GenieController: @unchecked Sendable {
         }
         poller = Task.detached {
             var lastReply = Date.distantPast
+            var lastChats = Date()
             while !self.isStopped {
                 let loaded = (try? config.load()) ?? .productDefaults
                 await engine.refreshLock()
@@ -114,6 +120,10 @@ final class GenieController: @unchecked Sendable {
                 if Date().timeIntervalSince(lastReply) >= loaded.replyPollIntervalSeconds {
                     await engine.pollReplies()
                     lastReply = Date()
+                }
+                if Date().timeIntervalSince(lastChats) >= 30 {
+                    _ = await self.loadChats(reportError: false)
+                    lastChats = Date()
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }

@@ -37,12 +37,16 @@ struct WebhookPayload: Encodable {
     var chatID: Int64
     var text: String
     var createdAt: String?
+    var senderIsMe: Bool
+    var senderName: String
 
     enum CodingKeys: String, CodingKey {
         case v, event, guid, text
         case idempotencyKey = "idempotency_key"
         case chatID = "chat_id"
         case createdAt = "created_at"
+        case senderIsMe = "sender_is_me"
+        case senderName = "sender_name"
     }
 
     func encodeData() throws -> Data {
