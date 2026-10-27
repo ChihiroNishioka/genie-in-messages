@@ -123,6 +123,10 @@ final class SelfChatRuleTests: XCTestCase {
         ))
         XCTAssertTrue(SelfChat.isHandle("+81 90 0000 0000", sender: "090-0000-0000"))
         XCTAssertTrue(SelfChat.isHandle("Hana@Example.com", sender: "hana@example.com"))
+        XCTAssertTrue(SelfChat.isHandle("hana@example.com", sender: ""))
+        XCTAssertTrue(SelfChat.isHandle("+81 90 0000 0000", sender: ""))
+        XCTAssertTrue(SelfChat.isHandle("090-0000-0000", sender: ""))
+        XCTAssertFalse(SelfChat.isHandle("hana", sender: ""))
         XCTAssertFalse(SelfChat.isHandle("hana", sender: "+81 90 0000 0000"))
     }
 }
@@ -296,6 +300,33 @@ final class ChatMembershipEngineTests: XCTestCase {
         assertNoHandle(String(data: harness.webhook.bodies[0], encoding: .utf8) ?? "")
         let second = String(data: harness.webhook.bodies[1], encoding: .utf8) ?? ""
         XCTAssertFalse(second.lowercased().contains("example.com"))
+    }
+
+    func testEmptySenderDropsHandleShapedContactNames() async throws {
+        let harness = Harness()
+        allow(harness, chat: 42)
+        let engine = try harness.engine()
+        let mailResult = await engine.ingestWatchLine(watchLine(
+            id: 1, guid: "g-mail-blank", chat: 42, fromMe: false, text: "\u{1FA94} mail",
+            isGroup: true, participants: [mail], contactName: "hana@example.com"
+        ))
+        let phoneResult = await engine.ingestWatchLine(watchLine(
+            id: 2, guid: "g-phone-blank", chat: 42, fromMe: false, text: "\u{1FA94} phone",
+            isGroup: true, participants: [phone], contactName: "+81 90 0000 0000"
+        ))
+        let named = await engine.ingestWatchLine(watchLine(
+            id: 3, guid: "g-name-blank", chat: 42, fromMe: false, text: "\u{1FA94} name",
+            isGroup: true, participants: [phone], contactName: "hana"
+        ))
+        XCTAssertEqual(mailResult, .delivered)
+        XCTAssertEqual(phoneResult, .delivered)
+        XCTAssertEqual(named, .delivered)
+        XCTAssertEqual(try payload(harness.webhook.bodies[0]).senderName, "")
+        XCTAssertEqual(try payload(harness.webhook.bodies[1]).senderName, "")
+        XCTAssertEqual(try payload(harness.webhook.bodies[2]).senderName, "hana")
+        let joined = harness.webhook.bodies.map { String(data: $0, encoding: .utf8) ?? "" }.joined(separator: "\n")
+        assertNoHandle(joined)
+        XCTAssertFalse(joined.lowercased().contains("example.com"))
     }
 
     func testMappedNameWinsOverContactName() async throws {

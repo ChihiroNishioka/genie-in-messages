@@ -33,7 +33,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 }
 ```
 
-`+81 90 0000 0000` と `090-0000-0000` は同じハンドルとして表示名を引く。メールは大文字と小文字を区別しない。表が無いときは、連絡先名が watch に既にあればそれを使い、無ければ空。自分の表示名の既定は `me`。規則は `SPEC.md` の 4.10。webhook には `sender_is_me` と `sender_name` を足す。`v` は 1 のまま。ハンドルは送らない。
+`+81 90 0000 0000` と `090-0000-0000` は同じハンドルとして表示名を引く。メールは大文字と小文字を区別しない。表が無いときは、連絡先名が watch に既にあればそれを使う。その名前がメールまたは電話番号の形なら、`sender` が空でも空にする。無ければ空。自分の表示名の既定は `me`。規則は `SPEC.md` の 4.10。webhook には `sender_is_me` と `sender_name` を足す。`v` は 1 のまま。ハンドルは送らない。
 
 `imsg` は既定で `/opt/homebrew/opt/imsg/libexec/imsg` を直接起動する。パスは設定で変えられる。`/opt/homebrew/bin/imsg`（bash ラッパー）は使わない。
 

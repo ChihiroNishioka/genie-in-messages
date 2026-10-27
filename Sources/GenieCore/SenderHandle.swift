@@ -140,18 +140,15 @@ enum SelfChat {
         return true
     }
 
-    /// 連絡先名がハンドルそのものなら、payload に載せて番号を出さない。
+    /// 連絡先名がメールか電話番号の形、または sender と同じハンドルなら、payload に載せない。
+    /// sender が空でも、名前だけでハンドルの形なら載せるのをやめる。
     static func isHandle(_ name: String, sender: String) -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return false }
+        if SenderHandle.normalize(trimmed) != nil { return true }
         let raw = sender.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || raw.isEmpty { return false }
-        if trimmed.compare(raw, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame {
-            return true
-        }
-        if let left = SenderHandle.normalize(trimmed), let right = SenderHandle.normalize(raw), left == right {
-            return true
-        }
-        return false
+        if raw.isEmpty { return false }
+        return trimmed.compare(raw, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
     }
 
     private static func isBlankParticipant(_ value: String) -> Bool {
