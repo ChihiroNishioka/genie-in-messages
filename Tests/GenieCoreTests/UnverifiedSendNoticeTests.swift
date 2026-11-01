@@ -1,0 +1,97 @@
+import XCTest
+@testable import GenieCore
+
+/// 照合できずに返事を送らなかった理由が、状態とログから見えることを見る。
+final class UnverifiedSendNoticeTests: XCTestCase {
+    func testEmptyListShowsWhyTheReplyWasHeld() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept")
+        await started.engine.reconcileChats([])
+        await started.engine.pollReplies()
+        await assertHeld(
+            started,
+            code: "reply_held_empty_list",
+            status: "トーク一覧が空のため、返事を送っていません"
+        )
+    }
+
+    func testChatMissingFromListShowsWhyTheReplyWasHeld() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept")
+        await started.engine.reconcileChats([
+            ChatSummary(id: 99, title: "other", isGroup: false, guid: "someone-else"),
+        ])
+        await started.engine.pollReplies()
+        await assertHeld(
+            started,
+            code: "reply_held_not_in_list",
+            status: "一覧に無いトークのため、返事を送っていません"
+        )
+    }
+
+    func testFailedChatFetchShowsOnTheStatusEvenWhenTheCallerHidesIt() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept")
+        await started.engine.reconcileChats([
+            ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
+        ])
+        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        let snap = await started.engine.snapshot()
+        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(snap.lastError, "chats_failed")
+        XCTAssertEqual(SendHoldStatus.text(for: snap.lastError), "トーク一覧を読めないため、返事を送っていません")
+        let notes = started.harness.log.records.filter { $0.code == "chats_failed" }
+        XCTAssertFalse(notes.isEmpty)
+        XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
+    }
+
+    func testDifferentGuidShowsWhyTheReplyWasHeldWithoutIdentifiers() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept")
+        await started.engine.reconcileChats([
+            ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-kept"),
+        ])
+        await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)
+        await started.engine.pollReplies()
+        await assertHeld(
+            started,
+            code: "reply_chat_guid_mismatch",
+            status: "トークの識別子が変わったため、返事を送っていません"
+        )
+    }
+}
+
+/// メニューの「最後のエラー」に出す短い文。番号や識別子は含めない。
+enum SendHoldStatus {
+    static func text(for code: String?) -> String {
+        switch code {
+        case "reply_held_empty_list":
+            return "トーク一覧が空のため、返事を送っていません"
+        case "reply_held_not_in_list":
+            return "一覧に無いトークのため、返事を送っていません"
+        case "chats_failed", "chats_parse_failed":
+            return "トーク一覧を読めないため、返事を送っていません"
+        case "reply_chat_guid_mismatch":
+            return "トークの識別子が変わったため、返事を送っていません"
+        default:
+            return "なし"
+        }
+    }
+}
+
+private func assertHeld(
+    _ started: Started,
+    code: String,
+    status: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    let snap = await started.engine.snapshot()
+    XCTAssertEqual(started.harness.sender.sent.count, 0, file: file, line: line)
+    XCTAssertEqual(snap.lastError, code, file: file, line: line)
+    XCTAssertEqual(SendHoldStatus.text(for: snap.lastError), status, file: file, line: line)
+    let notes = started.harness.log.records.filter { $0.code == code }
+    XCTAssertFalse(notes.isEmpty, file: file, line: line)
+    XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil }, file: file, line: line)
+    for note in notes {
+        XCTAssertFalse(note.code.contains("chat-kept"), file: file, line: line)
+        XCTAssertFalse((note.guid ?? "").contains("chat-"), file: file, line: line)
+        XCTAssertFalse((note.detail ?? "").contains("chat-"), file: file, line: line)
+    }
+}
