@@ -35,8 +35,13 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         let snap = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
-        XCTAssertEqual(snap.lastError, "chats_failed")
-        XCTAssertEqual(SendHoldStatus.text(for: snap.lastError), "トーク一覧を読めないため、返事を送っていません")
+        XCTAssertNil(snap.lastError)
+        XCTAssertEqual(snap.holdNotice, "chats_failed")
+        XCTAssertEqual(SendHoldStatus.text(for: snap.holdNotice), "トーク一覧を読めないため、返事を送っていません")
+        XCTAssertEqual(
+            SendHoldStatus.menuLine(for: snap.holdNotice),
+            "照合: トーク一覧を読めないため、返事を送っていません"
+        )
         let notes = started.harness.log.records.filter { $0.code == "chats_failed" }
         XCTAssertFalse(notes.isEmpty)
         XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
@@ -66,8 +71,10 @@ private func assertHeld(
 ) async {
     let snap = await started.engine.snapshot()
     XCTAssertEqual(started.harness.sender.sent.count, 0, file: file, line: line)
-    XCTAssertEqual(snap.lastError, code, file: file, line: line)
-    XCTAssertEqual(SendHoldStatus.text(for: snap.lastError), status, file: file, line: line)
+    XCTAssertNil(snap.lastError, file: file, line: line)
+    XCTAssertEqual(snap.holdNotice, code, file: file, line: line)
+    XCTAssertEqual(SendHoldStatus.text(for: snap.holdNotice), status, file: file, line: line)
+    XCTAssertEqual(SendHoldStatus.menuLine(for: snap.holdNotice), "照合: \(status)", file: file, line: line)
     let notes = started.harness.log.records.filter { $0.code == code }
     XCTAssertFalse(notes.isEmpty, file: file, line: line)
     XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil }, file: file, line: line)

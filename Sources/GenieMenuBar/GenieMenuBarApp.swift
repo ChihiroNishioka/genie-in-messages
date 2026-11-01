@@ -310,6 +310,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         menu.addItem(token)
         menu.addItem(.separator())
         label("最後のエラー: \(errorText)")
+        label(SendHoldStatus.menuLine(for: snapshot?.holdNotice))
         let log = NSMenuItem(title: "ログを開く", action: #selector(openLogAction), keyEquivalent: "")
         log.target = self
         menu.addItem(log)

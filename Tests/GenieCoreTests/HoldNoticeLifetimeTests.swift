@@ -2,7 +2,7 @@ import XCTest
 @testable import GenieCore
 
 /// 照合の表示が、ほかのエラーを消さず、待つ理由がなくなったら消えることを見る。
-/// メニューに出る文は SendHoldStatus.text。いまは最後のエラーのコードから作る。
+/// メニューの照合の行は SendHoldStatus.menuLine。最後のエラーとは別。
 final class HoldNoticeLifetimeTests: XCTestCase {
     func testListFailureDoesNotReplaceAnotherError() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
@@ -13,7 +13,11 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.lastError, "messages_db_reset")
-        XCTAssertEqual(SendHoldStatus.text(for: during.lastError), "なし")
+        XCTAssertEqual(during.holdNotice, "chats_failed")
+        XCTAssertEqual(
+            SendHoldStatus.menuLine(for: during.holdNotice),
+            "照合: トーク一覧を読めないため、返事を送っていません"
+        )
         let notes = started.harness.log.records.filter { $0.code == "chats_failed" }
         XCTAssertFalse(notes.isEmpty)
         XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
@@ -32,7 +36,11 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         let afterSave = await saved.engine.snapshot()
         XCTAssertEqual(saved.harness.sender.sent.count, 0)
         XCTAssertEqual(afterSave.lastError, "state_save_failed")
-        XCTAssertEqual(SendHoldStatus.text(for: afterSave.lastError), "なし")
+        XCTAssertEqual(afterSave.holdNotice, "reply_chat_guid_mismatch")
+        XCTAssertEqual(
+            SendHoldStatus.menuLine(for: afterSave.holdNotice),
+            "照合: トークの識別子が変わったため、返事を送っていません"
+        )
         let mismatch = saved.harness.log.records.filter { $0.code == "reply_chat_guid_mismatch" }
         XCTAssertFalse(mismatch.isEmpty)
         XCTAssertTrue(mismatch.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
@@ -48,10 +56,11 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         await expired.engine.reconcileChats([])
         await expired.engine.pollReplies()
         let waiting = await expired.engine.snapshot()
-        XCTAssertEqual(waiting.lastError, "reply_held_empty_list")
+        XCTAssertNil(waiting.lastError)
+        XCTAssertEqual(waiting.holdNotice, "reply_held_empty_list")
         XCTAssertEqual(
-            SendHoldStatus.text(for: waiting.lastError),
-            "トーク一覧が空のため、返事を送っていません"
+            SendHoldStatus.menuLine(for: waiting.holdNotice),
+            "照合: トーク一覧が空のため、返事を送っていません"
         )
         XCTAssertEqual(expired.harness.sender.sent.count, 0)
 
@@ -60,20 +69,26 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         let gone = await expired.engine.snapshot()
         XCTAssertEqual(expired.harness.sender.sent.count, 0)
         XCTAssertNil(gone.lastError)
-        XCTAssertEqual(SendHoldStatus.text(for: gone.lastError), "なし")
+        XCTAssertNil(gone.holdNotice)
+        XCTAssertEqual(SendHoldStatus.menuLine(for: gone.holdNotice), "照合: なし")
         XCTAssertTrue(expired.harness.log.records.contains { $0.code == "reply_too_old" })
 
         let empty = try makeEngine(allowedGuid: "chat-kept")
         await empty.engine.reconcileChats([])
         await empty.engine.pollReplies()
         let emptyHeld = await empty.engine.snapshot()
-        XCTAssertEqual(emptyHeld.lastError, "reply_held_empty_list")
+        XCTAssertEqual(emptyHeld.holdNotice, "reply_held_empty_list")
+        XCTAssertEqual(
+            SendHoldStatus.menuLine(for: emptyHeld.holdNotice),
+            "照合: トーク一覧が空のため、返事を送っていません"
+        )
         await empty.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let listed = await empty.engine.snapshot()
         XCTAssertNil(listed.lastError)
-        XCTAssertEqual(SendHoldStatus.text(for: listed.lastError), "なし")
+        XCTAssertNil(listed.holdNotice)
+        XCTAssertEqual(SendHoldStatus.menuLine(for: listed.holdNotice), "照合: なし")
 
         let missing = try makeEngine(allowedGuid: "chat-kept")
         await missing.engine.reconcileChats([
@@ -81,17 +96,18 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         ])
         await missing.engine.pollReplies()
         let missingHeld = await missing.engine.snapshot()
-        XCTAssertEqual(missingHeld.lastError, "reply_held_not_in_list")
+        XCTAssertEqual(missingHeld.holdNotice, "reply_held_not_in_list")
         XCTAssertEqual(
-            SendHoldStatus.text(for: missingHeld.lastError),
-            "一覧に無いトークのため、返事を送っていません"
+            SendHoldStatus.menuLine(for: missingHeld.holdNotice),
+            "照合: 一覧に無いトークのため、返事を送っていません"
         )
         await missing.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let found = await missing.engine.snapshot()
         XCTAssertNil(found.lastError)
-        XCTAssertEqual(SendHoldStatus.text(for: found.lastError), "なし")
+        XCTAssertNil(found.holdNotice)
+        XCTAssertEqual(SendHoldStatus.menuLine(for: found.holdNotice), "照合: なし")
     }
 
     func testSuccessfulRereadClearsTheListFailureAndKeepsAnotherError() async throws {
@@ -100,13 +116,19 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.lastError, "messages_db_reset")
-        XCTAssertEqual(SendHoldStatus.text(for: during.lastError), "なし")
+        XCTAssertEqual(during.holdNotice, "chats_failed")
+        XCTAssertEqual(
+            SendHoldStatus.menuLine(for: during.holdNotice),
+            "照合: トーク一覧を読めないため、返事を送っていません"
+        )
 
         await started.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let snap = await started.engine.snapshot()
         XCTAssertEqual(snap.lastError, "messages_db_reset")
+        XCTAssertNil(snap.holdNotice)
+        XCTAssertEqual(SendHoldStatus.menuLine(for: snap.holdNotice), "照合: なし")
         XCTAssertEqual(SendHoldStatus.text(for: snap.lastError), "なし")
         XCTAssertTrue(started.harness.log.records.contains { $0.code == "chats_failed" })
     }

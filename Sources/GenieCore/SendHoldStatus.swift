@@ -1,8 +1,12 @@
 import Foundation
 
-/// メニューの「最後のエラー」に出す、照合できずに送らなかった理由。
-/// 番号、メールアドレス、識別子は含めない。
+/// メニューの「照合」に出す、照合できずに送らなかった理由。
+/// 最後のエラーとは別の行。番号、メールアドレス、識別子は含めない。
 package enum SendHoldStatus {
+    package static func menuLine(for code: String?) -> String {
+        "照合: \(text(for: code))"
+    }
+
     package static func text(for code: String?) -> String {
         switch code {
         case "reply_held_empty_list":
