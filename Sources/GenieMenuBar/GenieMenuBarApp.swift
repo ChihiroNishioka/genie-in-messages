@@ -355,6 +355,8 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
             return "対応する転送が無い返事は送っていません"
         case "reply_chat_mismatch":
             return "返事のトークが転送先と違うため送っていません"
+        case "reply_chat_guid_mismatch":
+            return "トークの識別子が変わったため、返事を送っていません"
         case "watch_line_too_large":
             return "大きすぎる watch の行を処理できませんでした"
         case "deadletter_write_failed":

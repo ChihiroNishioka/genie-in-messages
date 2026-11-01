@@ -47,7 +47,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 4. 初回の送信で、Messages を操作してよいかの許可ダイアログが出る。Grok Bot 側で許可済みでも、このアプリからは別の許可になる。
 5. 同じ Apple ID のほかの Mac では動かさない。
 6. トークの許可は初期状態ですべてオフ。検索できるウィンドウで、オンにしたトークだけ転送する。
-7. Notion で内部連携を作り、このデータベースだけをその連携に共有する。データベース `875a3b9a-fa64-4631-88cf-1328c2bef05f`、データソース `1a7710fa-96a4-4fb3-9fa7-8c7eb2337513`。データソース ID を `config.json` の `notion_data_source_id` に書く。トークンはメニューの「Notion トークンを設定」から入れる。ファイルは `~/.config/genie-in-messages/notion-token`（0600）で、画面には出さない。
+7. Notion で内部連携を作り、このデータベースだけをその連携に共有する。ID の例はダミー（データベース `00000000-0000-4000-8000-000000000001`、データソース `00000000-0000-4000-8000-000000000002`）なので、自分の ID を `config.json` の `notion_data_source_id` に書く。トークンはメニューの「Notion トークンを設定」から入れる。ファイルは `~/.config/genie-in-messages/notion-token`（0600）で、画面には出さない。
 
 ## 返事の取得
 

@@ -132,7 +132,7 @@ final class WatchProcessTests: XCTestCase {
             XCTAssertFalse(result.stderrTail.contains(leaked), leaked)
         }
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.noteWatchEnded(result)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.lastError, "watch_exited")
@@ -210,7 +210,7 @@ final class WatchProcessTests: XCTestCase {
 
     func testPausedStopIsLoggedWithoutChangingTheMenuError() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.noteWatchEnded(WatchRunResult(
             exitCode: -1,
             signal: 15,
@@ -238,7 +238,7 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertNil(result.signal)
         XCTAssertEqual(result.lines, 0)
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.noteWatchEnded(result)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.lastError, "watch_start_failed")

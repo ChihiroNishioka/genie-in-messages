@@ -112,18 +112,18 @@ final class GenieController: @unchecked Sendable {
         }
         poller = Task.detached {
             var lastReply = Date.distantPast
-            var lastChats = Date()
+            var lastChats = Date.distantPast
             while !self.isStopped {
                 let loaded = (try? config.load()) ?? .productDefaults
                 await engine.refreshLock()
+                if Date().timeIntervalSince(lastChats) >= 30 {
+                    _ = await self.loadChats(reportError: false)
+                    lastChats = Date()
+                }
                 await engine.retryHolds()
                 if Date().timeIntervalSince(lastReply) >= loaded.replyPollIntervalSeconds {
                     await engine.pollReplies()
                     lastReply = Date()
-                }
-                if Date().timeIntervalSince(lastChats) >= 30 {
-                    _ = await self.loadChats(reportError: false)
-                    lastChats = Date()
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }

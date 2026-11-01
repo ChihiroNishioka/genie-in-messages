@@ -87,7 +87,31 @@ final class Harness {
         if cfg.webhookURL.isEmpty {
             cfg.webhookURL = "https://127.0.0.1/webhook"
         }
-        return try GenieEngine(
+        return try makeEngine(config: cfg)
+    }
+
+    /// 許可中の各トークを、保存してある guid で照合済みにしたエンジン。
+    /// 送信を試す既存テストはこちらを使う。
+    func opened() async throws -> GenieEngine {
+        let created = try engine()
+        await created.reconcileChats(verifiedChatList())
+        return created
+    }
+
+    func verifiedChatList() -> [ChatSummary] {
+        allow.ids.sorted().map { id in
+            let stored = allow.guids[id] ?? ""
+            return ChatSummary(
+                id: id,
+                title: "room",
+                isGroup: false,
+                guid: stored.isEmpty ? "verified-\(id)" : stored
+            )
+        }
+    }
+
+    private func makeEngine(config cfg: GenieConfig) throws -> GenieEngine {
+        try GenieEngine(
             configProvider: StaticConfig(config: cfg),
             initialConfig: cfg,
             stateStore: state,

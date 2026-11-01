@@ -191,7 +191,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testOnGroupReactsToAnotherMember() async throws {
         let harness = Harness()
         allow(harness, chat: 42, names: [phoneNational: "hana", "Hana@Example.com": "hana-mail"])
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let phoneResult = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-phone", chat: 42, fromMe: false, text: "\u{1FA94} hi",
             sender: phone, isGroup: true, participants: [phone, mail]
@@ -219,7 +219,7 @@ final class ChatMembershipEngineTests: XCTestCase {
 
     func testOffChatIgnoresOwnLamp() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 8, guid: "g-off", chat: 3, fromMe: true, text: "\u{1FA94} QXOFF91"
         ))
@@ -231,7 +231,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testSelfChatFalseSideStaysIgnored() async throws {
         let harness = Harness()
         allow(harness, chat: 7, names: [phone: "hana"])
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let text = "\u{1FA94} QXECHO91"
         let echo = await engine.ingestWatchLine(watchLine(
             id: 10, guid: "in", chat: 7, fromMe: false, text: text,
@@ -252,7 +252,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testUnknownChatShapeIgnoresTheFalseSide() async throws {
         let harness = Harness()
         allow(harness, chat: 7)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let echo = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "bare", chat: 7, fromMe: false, text: "\u{1FA94} hi", sender: phone
         ))
@@ -264,7 +264,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testDirectChatOtherPersonLamp() async throws {
         let harness = Harness()
         allow(harness, chat: 9)
-        let engine = try harness.engine()
+        let engine = try await harness.engine()
         await learnDeviceChats(engine)
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-dm", chat: 9, fromMe: false, text: "\u{1FA94} dm",
@@ -284,7 +284,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testNameMapDoesNotGateAndContactHandleIsDropped() async throws {
         let harness = Harness()
         allow(harness, chat: 42)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let unnamed = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-empty", chat: 42, fromMe: false, text: "\u{1FA94} hi",
             sender: phone, isGroup: true, participants: [phone]
@@ -305,7 +305,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testEmptySenderDropsHandleShapedContactNames() async throws {
         let harness = Harness()
         allow(harness, chat: 42)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let mailResult = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-mail-blank", chat: 42, fromMe: false, text: "\u{1FA94} mail",
             isGroup: true, participants: [mail], contactName: "hana@example.com"
@@ -332,7 +332,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testMappedNameWinsOverContactName() async throws {
         let harness = Harness()
         allow(harness, chat: 42, names: [phone: "hana"], selfName: "host")
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         _ = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-map", chat: 42, fromMe: false, text: "\u{1FA94} hi",
             sender: phoneNational, isGroup: true, participants: [phone], contactName: "other"
@@ -352,7 +352,7 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [42]
         harness.config = try JSONDecoder().decode(GenieConfig.self, from: old)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let other = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-old", chat: 42, fromMe: false, text: "\u{1FA94} QXOLD91",
             sender: phone, isGroup: true, participants: [phone]
@@ -369,7 +369,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testLampInTheMiddleTapbackAndAttachmentOnlyAreIgnored() async throws {
         let harness = Harness()
         allow(harness, chat: 42)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let middle = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-mid", chat: 42, fromMe: false, text: "see \u{1FA94} later",
             sender: phone, isGroup: true, participants: [phone]
@@ -401,7 +401,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testOtherMemberGenieMarkerDoesNotTrigger() async throws {
         let harness = Harness()
         allow(harness, chat: 42)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let marker = GenieConfig.productDefaults.marker
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-marker", chat: 42, fromMe: false, text: marker + " hello",
@@ -415,7 +415,7 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         allow(harness, chat: 42)
         harness.state.state.sentGUIDs = ["g-sent"]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let first = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-same", chat: 42, fromMe: false, text: "\u{1FA94} once",
             sender: phone, isGroup: true, participants: [phone]
@@ -437,7 +437,8 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testGroupGuidWithoutTheFlagStillAcceptsTheOtherSide() async throws {
         let harness = Harness()
         allow(harness, chat: 42)
-        let engine = try harness.engine()
+        harness.allow.guids[42] = "any;+;chat-fixture"
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-plus", chat: 42, fromMe: false, text: "\u{1FA94} hi",
             chatGUID: "any;+;chat-fixture", sender: phone
@@ -450,7 +451,7 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         allow(harness, chat: 42)
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "msg-1", chat: 42, fromMe: false, text: "\u{1FA94} hi",
             sender: phone, isGroup: true, participants: [phone]
@@ -491,7 +492,7 @@ final class ChatMembershipEngineTests: XCTestCase {
 
         let harness = Harness()
         harness.allow.ids = [7, 9, 42]
-        let engine = try harness.engine()
+        let engine = try await harness.engine()
         await engine.reconcileChats(parsed.chats)
 
         let echo = await engine.ingestWatchLine(watchLine(
@@ -531,7 +532,7 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [9]
         harness.config.selfChatIDs = [9]
-        let engine = try harness.engine()
+        let engine = try await harness.engine()
         await learnDeviceChats(engine)
         let echo = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "forced-false", chat: 9, fromMe: false, text: "\u{1FA94} QXFORCE91",
@@ -550,7 +551,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testUnreadableChatsStayOnTheSafeSide() async throws {
         let harness = Harness()
         allow(harness, chat: 9)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.noteChatsProblem(code: "chats_failed", updateMenu: true)
         await engine.noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
         let echo = await engine.ingestWatchLine(watchLine(
@@ -588,7 +589,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testWatchLineCallerIDIdentifiesSelfWithoutChats() async throws {
         let harness = Harness()
         harness.allow.ids = [7, 9]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let mine = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "out", chat: 7, fromMe: true, text: "\u{1FA94} mine",
             isGroup: false, participants: [phone], destinationCallerID: phoneNational
