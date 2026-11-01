@@ -23,6 +23,33 @@ final class StartupSendTests: XCTestCase {
         await same.engine.pollReplies()
         XCTAssertEqual(same.harness.sender.sent.map(\.chatID), [7])
     }
+
+    func testEmptyChatListDoesNotSend() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept")
+        await started.engine.reconcileChats([])
+        await started.engine.pollReplies()
+        XCTAssertEqual(started.harness.sender.sent.count, 0)
+    }
+
+    func testAllowedChatMissingFromTheListDoesNotSend() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept", chatsLimit: 1)
+        await started.engine.reconcileChats([
+            ChatSummary(id: 99, title: "other", isGroup: false, guid: "someone-else"),
+        ])
+        await started.engine.pollReplies()
+        XCTAssertEqual(started.harness.sender.sent.count, 0)
+    }
+
+    func testDifferentGuidDoesNotSendWhenTheDatabaseIsNotReset() async throws {
+        let started = try makeEngine(allowedGuid: "chat-kept")
+        await started.engine.reconcileChats([
+            ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-kept"),
+        ])
+        await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)
+        await started.engine.pollReplies()
+        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertFalse(started.harness.log.records.contains { $0.code == "messages_db_reset" })
+    }
 }
 
 private struct Started {
@@ -31,11 +58,14 @@ private struct Started {
     var replies: CountingReplies
 }
 
-private func makeEngine(allowedGuid: String) throws -> Started {
+private func makeEngine(allowedGuid: String, chatsLimit: Int? = nil) throws -> Started {
     let harness = Harness()
     harness.allow.ids = [7]
     harness.allow.guids = [7: allowedGuid]
     harness.config.replyFetchURL = "https://127.0.0.1/replies"
+    if let chatsLimit {
+        harness.config.chatsLimit = chatsLimit
+    }
     seedRoute(harness, guid: "origin", chat: 7)
     var config = harness.config
     if config.webhookURL.isEmpty {
