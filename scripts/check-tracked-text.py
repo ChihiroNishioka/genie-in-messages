@@ -32,13 +32,15 @@ FILE_SUFFIXES = {"png", "jpg", "jpeg", "gif", "svg", "icns", "py", "sh", "md", "
 UUID = re.compile(
     r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b"
 )
+# notion.so の URL に入る、ダッシュのない 32 桁。前後が十六進なら SHA-256 の一部なので対象外。
+UNDASHED_NOTION_ID = re.compile(r"(?i)(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])")
 TOKEN = re.compile(
     r"(?i)("
     r"\b(?:sk|rk)-[A-Za-z0-9]{20,}\b"
     r"|\bgh[pousr]_[A-Za-z0-9]{20,}\b"
     r"|\bgithub_pat_[A-Za-z0-9_]{20,}\b"
     r"|\bxox[baprs]-[A-Za-z0-9-]{10,}\b"
-    r"|\bntn_[A-Za-z0-9]{20,}\b"
+    r"|\b(?:ntn|secret)_[A-Za-z0-9]{20,}\b"
     r"|\bAKIA[0-9A-Z]{16}\b"
     r"|Bearer\s+[A-Za-z0-9\-._~+/]{24,}"
     r")"
@@ -97,7 +99,9 @@ def findings_in(text: str) -> set[str]:
         if domain in ALLOWED_EMAIL_DOMAINS or domain.endswith(".example"):
             continue
         found.add("email")
-    if any(notion_id_is_personal(item.group(0)) for item in UUID.finditer(text)):
+    dashed = [item.group(0) for item in UUID.finditer(text)]
+    undashed = [item.group(0) for item in UNDASHED_NOTION_ID.finditer(text)]
+    if any(notion_id_is_personal(item) for item in dashed + undashed):
         found.add("notion-id")
     if TOKEN.search(text):
         found.add("token")

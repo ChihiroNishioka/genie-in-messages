@@ -180,7 +180,10 @@ package actor GenieEngine {
     }
 
     /// `imsg chats` の失敗。標準出力も標準エラーも残さない。
+    /// 一覧を確かめられなかったので、そのあいだは返事を送らない。
     package func noteChatsProblem(code: String, updateMenu: Bool) {
+        directoryGUIDs = [:]
+        directoryChecked = false
         if updateMenu {
             lastError = code
         }
@@ -777,16 +780,21 @@ package actor GenieEngine {
         }
     }
 
-    /// 許可に残っている guid と、直近の一覧の guid がどちらもあって違うときは送らない。
+    /// そのトークの guid を一覧で確かめられたときだけ送る。
+    /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
-        guard let current = directoryGUIDs[chatID], !current.isEmpty else { return false }
-        guard let allowed = allowlist.entries.first(where: { $0.id == chatID }) else { return false }
-        if allowed.guid.isEmpty || allowed.guid == current { return false }
-        holds.removeAll { $0.replyID == replyID }
-        markReplyHandled(replyID)
-        lastError = "reply_chat_guid_mismatch"
-        log.record(level: .error, code: "reply_chat_guid_mismatch", chatID: chatID, guid: nil, rowid: nil)
-        persist()
+        let current = directoryGUIDs[chatID] ?? ""
+        let allowed = allowlist.entries.first { $0.id == chatID }?.guid ?? ""
+        if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
+            return false
+        }
+        if !current.isEmpty && !allowed.isEmpty && current != allowed {
+            holds.removeAll { $0.replyID == replyID }
+            markReplyHandled(replyID)
+            lastError = "reply_chat_guid_mismatch"
+            log.record(level: .error, code: "reply_chat_guid_mismatch", chatID: chatID, guid: nil, rowid: nil)
+            persist()
+        }
         return true
     }
 

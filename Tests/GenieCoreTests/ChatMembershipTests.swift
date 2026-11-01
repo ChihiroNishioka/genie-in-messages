@@ -264,7 +264,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testDirectChatOtherPersonLamp() async throws {
         let harness = Harness()
         allow(harness, chat: 9)
-        let engine = try await harness.opened()
+        let engine = try await harness.engine()
         await learnDeviceChats(engine)
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-dm", chat: 9, fromMe: false, text: "\u{1FA94} dm",
@@ -437,6 +437,7 @@ final class ChatMembershipEngineTests: XCTestCase {
     func testGroupGuidWithoutTheFlagStillAcceptsTheOtherSide() async throws {
         let harness = Harness()
         allow(harness, chat: 42)
+        harness.allow.guids[42] = "any;+;chat-fixture"
         let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g-plus", chat: 42, fromMe: false, text: "\u{1FA94} hi",
@@ -491,7 +492,7 @@ final class ChatMembershipEngineTests: XCTestCase {
 
         let harness = Harness()
         harness.allow.ids = [7, 9, 42]
-        let engine = try await harness.opened()
+        let engine = try await harness.engine()
         await engine.reconcileChats(parsed.chats)
 
         let echo = await engine.ingestWatchLine(watchLine(
@@ -531,7 +532,7 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [9]
         harness.config.selfChatIDs = [9]
-        let engine = try await harness.opened()
+        let engine = try await harness.engine()
         await learnDeviceChats(engine)
         let echo = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "forced-false", chat: 9, fromMe: false, text: "\u{1FA94} QXFORCE91",

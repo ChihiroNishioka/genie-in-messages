@@ -90,11 +90,24 @@ final class Harness {
         return try makeEngine(config: cfg)
     }
 
-    /// 一覧照合が終わったあとのエンジン。送信を試す既存テストはこちらを使う。
+    /// 許可中の各トークを、保存してある guid で照合済みにしたエンジン。
+    /// 送信を試す既存テストはこちらを使う。
     func opened() async throws -> GenieEngine {
         let created = try engine()
-        await created.reconcileChats([])
+        await created.reconcileChats(verifiedChatList())
         return created
+    }
+
+    func verifiedChatList() -> [ChatSummary] {
+        allow.ids.sorted().map { id in
+            let stored = allow.guids[id] ?? ""
+            return ChatSummary(
+                id: id,
+                title: "room",
+                isGroup: false,
+                guid: stored.isEmpty ? "verified-\(id)" : stored
+            )
+        }
     }
 
     private func makeEngine(config cfg: GenieConfig) throws -> GenieEngine {
