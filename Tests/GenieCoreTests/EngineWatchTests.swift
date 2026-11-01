@@ -5,7 +5,7 @@ final class EngineWatchTests: XCTestCase {
     func testSelfChatDoubleRecordNFDAndMarker() async throws {
         let harness = Harness()
         harness.allow.ids = [7]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let fixture = repoRoot().appendingPathComponent("Tests/GenieCoreTests/Fixtures/self-chat.ndjson")
         let text = try String(contentsOf: fixture, encoding: .utf8)
         for line in text.split(whereSeparator: \.isNewline) {
@@ -27,7 +27,7 @@ final class EngineWatchTests: XCTestCase {
     func testCreatedAtIsNotTheIdempotencyKey() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let created = "2026-10-26T01:00:00.000Z"
         _ = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "a", chat: 1, fromMe: true, text: "\u{1FA94} one", created: created
@@ -41,7 +41,7 @@ final class EngineWatchTests: XCTestCase {
     func testFalseSideCanArriveFirstAndIsIgnored() async throws {
         let harness = Harness()
         harness.allow.ids = [7]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let text = "\u{1FA94}\u{FE0F} hi"
         let first = await engine.ingestWatchLine(watchLine(
             id: 10, guid: "in", chat: 7, fromMe: false, text: text, created: "2026-10-26T01:00:00.074Z"
@@ -59,7 +59,7 @@ final class EngineWatchTests: XCTestCase {
     func testCursorDoesNotRewindOrMoveForEdits() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         _ = await engine.ingestWatchLine(watchLine(id: 50, guid: "n", chat: 1, fromMe: true, text: "plain"))
         _ = await engine.ingestWatchLine(watchLine(id: 40, guid: "older", chat: 1, fromMe: true, text: "older"))
         _ = await engine.ingestWatchLine(watchLine(
@@ -82,7 +82,7 @@ final class EngineWatchTests: XCTestCase {
         harness.state.state.fingerprints = [
             SentFingerprint(hash: hash, sentAt: harness.clock.current),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let duplicate = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "echo-guid", chat: 1, fromMe: true, text: text
         ))
@@ -101,7 +101,7 @@ final class EngineWatchTests: XCTestCase {
 
     func testAllowlistDefaultsOffAndStillAdvancesCursor() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 8, guid: "g", chat: 3, fromMe: true, text: "\u{1FA94} no"
         ))
@@ -115,7 +115,7 @@ final class EngineWatchTests: XCTestCase {
     func testPausedIngestDoesNotAdvance() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.setPaused(true)
         let result = await engine.ingestWatchLine(watchLine(
             id: 4, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} wait"
@@ -129,7 +129,7 @@ final class EngineWatchTests: XCTestCase {
     func testReactionAndMissingFromMeAreNotTriggers() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         _ = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "tap", chat: 1, fromMe: true, text: "\u{1FA94}", reaction: true
         ))
@@ -142,7 +142,7 @@ final class EngineWatchTests: XCTestCase {
     func testReplyPrefixDoesNotCallAgain() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let reply = GenieConfig.productDefaults.marker + " hi"
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "echo", chat: 1, fromMe: true, text: reply
@@ -154,7 +154,7 @@ final class EngineWatchTests: XCTestCase {
 
     func testNotJSONDoesNotLogTheLine() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine("this-is-not-json")
         XCTAssertEqual(result, .notJSON)
         assertNoBody(harness, "this-is-not-json")

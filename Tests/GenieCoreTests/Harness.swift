@@ -87,7 +87,18 @@ final class Harness {
         if cfg.webhookURL.isEmpty {
             cfg.webhookURL = "https://127.0.0.1/webhook"
         }
-        return try GenieEngine(
+        return try makeEngine(config: cfg)
+    }
+
+    /// 一覧照合が終わったあとのエンジン。送信を試す既存テストはこちらを使う。
+    func opened() async throws -> GenieEngine {
+        let created = try engine()
+        await created.reconcileChats([])
+        return created
+    }
+
+    private func makeEngine(config cfg: GenieConfig) throws -> GenieEngine {
+        try GenieEngine(
             configProvider: StaticConfig(config: cfg),
             initialConfig: cfg,
             stateStore: state,

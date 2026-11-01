@@ -22,6 +22,10 @@ package actor GenieEngine {
     /// watch の `destination_caller_id`。chats が読めなくても残る。
     private var watchHandleKeys: Set<String> = []
     private var directoryChats: [Int64: DirectoryChat] = [:]
+    /// 直近の一覧で見えた chat_id とその guid。空の guid は入れない。
+    private var directoryGUIDs: [Int64: String] = [:]
+    /// 起動後、最初の一覧照合が終わるまでは返事を取らない。
+    private var directoryChecked = false
     private var inFlightReplyIDs: Set<String> = []
 
     private struct DirectoryChat {
@@ -162,6 +166,12 @@ package actor GenieEngine {
         }
         directoryChats = facts
         directoryHandleKeys = SelfChat.ownHandleKeys(in: chats)
+        var guids: [Int64: String] = [:]
+        for chat in chats where !chat.guid.isEmpty {
+            guids[chat.id] = chat.guid
+        }
+        directoryGUIDs = guids
+        directoryChecked = true
         for chat in chats where !chat.guid.isEmpty {
             if observeChat(id: chat.id, guid: chat.guid) {
                 return
@@ -258,6 +268,8 @@ package actor GenieEngine {
     }
 
     package func pollReplies() async {
+        // 一覧と許可の guid を比べる前に取りに行くと、入れ替わった番号へ送ることがある。
+        guard directoryChecked else { return }
         if paused { return }
         refreshConfig()
         let notion = !config.notionDataSourceID.isEmpty
@@ -318,6 +330,7 @@ package actor GenieEngine {
     }
 
     package func retryHolds() async {
+        guard directoryChecked else { return }
         if paused { return }
         refreshConfig()
         let now = clock.now()
@@ -662,6 +675,7 @@ package actor GenieEngine {
             dropDisabled(replyID: replyID, chatID: chatID)
             return
         }
+        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) { return }
         let locked = await lock.state()
         noteLock(locked)
         refreshConfig()
@@ -673,6 +687,7 @@ package actor GenieEngine {
             dropDisabled(replyID: replyID, chatID: chatID)
             return
         }
+        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) { return }
         if locked == .locked {
             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
             hold(replyID: replyID, chatID: chatID, text: text, reason: .screenLocked, attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
@@ -712,6 +727,12 @@ package actor GenieEngine {
             releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             dropDisabled(replyID: replyID, chatID: chatID)
+            return
+        }
+        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+            releaseRate(chatID: chatID, at: reservedAt)
+            rollbackIntent(replyID: replyID)
+            persist()
             return
         }
         do {
@@ -754,6 +775,19 @@ package actor GenieEngine {
             lastError = "send_failed"
             log.record(level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil)
         }
+    }
+
+    /// 許可に残っている guid と、直近の一覧の guid がどちらもあって違うときは送らない。
+    private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
+        guard let current = directoryGUIDs[chatID], !current.isEmpty else { return false }
+        guard let allowed = allowlist.entries.first(where: { $0.id == chatID }) else { return false }
+        if allowed.guid.isEmpty || allowed.guid == current { return false }
+        holds.removeAll { $0.replyID == replyID }
+        markReplyHandled(replyID)
+        lastError = "reply_chat_guid_mismatch"
+        log.record(level: .error, code: "reply_chat_guid_mismatch", chatID: chatID, guid: nil, rowid: nil)
+        persist()
+        return true
     }
 
     private func dropDisabled(replyID: String, chatID: Int64) {

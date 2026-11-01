@@ -49,7 +49,7 @@ final class AllowlistOrderingTests: XCTestCase {
 
     func testTwoQuickTogglesReturnToOff() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         async let first: Void = engine.toggleChat(id: 21, guid: "g21")
         async let second: Void = engine.toggleChat(id: 21, guid: "g21")
         _ = await (first, second)
@@ -62,7 +62,7 @@ final class AllowlistOrderingTests: XCTestCase {
 
     func testOutsideToggleKeepsTheKnownGuid() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.reconcileChats([
             ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
         ])
@@ -77,7 +77,7 @@ final class AllowlistOrderingTests: XCTestCase {
 
     func testEnablingWithoutAKnownGuidIsLogged() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.toggleChat(id: 21, guid: "")
         let unknown = harness.log.records.filter { $0.code == "allowlist_guid_unknown" }
         XCTAssertEqual(unknown.count, 1)

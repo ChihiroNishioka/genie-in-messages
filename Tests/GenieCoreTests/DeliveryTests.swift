@@ -6,7 +6,7 @@ final class DeliveryTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.webhook.results = Array(repeating: .success(WebhookHTTPResult(statusCode: 503)), count: 5)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let marker = "UNIQUE_BODY_MARKER"
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} \(marker)"
@@ -27,7 +27,7 @@ final class DeliveryTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.webhook.results = [.success(WebhookHTTPResult(statusCode: 400))]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         _ = await engine.ingestWatchLine(watchLine(
             id: 3, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
@@ -46,7 +46,7 @@ final class DeliveryTests: XCTestCase {
             .success(WebhookHTTPResult(statusCode: 503)),
             .success(WebhookHTTPResult(statusCode: 200)),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
@@ -66,7 +66,7 @@ final class DeliveryTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.secrets = FileSecretProvider(paths: paths)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let marker = "body-marker-xyz"
         _ = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} \(marker)"
@@ -87,7 +87,7 @@ final class DeliveryTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.secrets = FileSecretProvider(paths: paths)
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         _ = await engine.ingestWatchLine(watchLine(id: 1, guid: "a", chat: 1, fromMe: true, text: "\u{1FA94} a"))
         try Data("beta\n".utf8).write(to: secretURL)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: secretURL.path)
@@ -107,7 +107,7 @@ final class DeliveryTests: XCTestCase {
                 nextCursor: "c1"
             ),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         var snap = await engine.snapshot()
@@ -138,7 +138,7 @@ final class DeliveryTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 1)
         var snap = await engine.snapshot()
@@ -166,7 +166,7 @@ final class DeliveryTests: XCTestCase {
             ReplyPage(replies: [routedReply("r1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
             ReplyPage(replies: [routedReply("r1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
@@ -193,7 +193,7 @@ final class DeliveryTests: XCTestCase {
         seedRoute(harness, guid: "gb", chat: 2)
         replies.append(routedReply("b1", chat: 2, text: "other", guid: "gb"))
         harness.replies.pages = [ReplyPage(replies: replies, nextCursor: "c")]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 5)
         XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
@@ -220,7 +220,7 @@ final class DeliveryTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r", chat: 9, text: "nope", guid: "g9")], nextCursor: "c"),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         let snap = await engine.snapshot()
@@ -236,7 +236,7 @@ final class DeliveryTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r", chat: 1, text: "hello", guid: "g")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         let text = try XCTUnwrap(harness.sender.sent.first?.text)
         XCTAssertTrue(text.hasPrefix(GenieConfig.productDefaults.marker))
@@ -264,6 +264,7 @@ final class DeliveryTests: XCTestCase {
             clock: harness.clock,
             log: harness.log
         )
+        await engine.reconcileChats([])
         func warnings() -> Int { harness.log.records.filter { $0.code == "marker_replaced" }.count }
         XCTAssertEqual(warnings(), 1)
         await engine.pollReplies()

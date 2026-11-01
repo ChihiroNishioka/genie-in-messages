@@ -6,7 +6,7 @@ final class ReviewFixesTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [1, 2]
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let forwarded = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "origin", chat: 1, fromMe: true, text: "\u{1FA94} ask"
         ))
@@ -50,7 +50,7 @@ final class ReviewFixesTests: XCTestCase {
                 nextCursor: "end"
             ),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         XCTAssertEqual(harness.state.state.replyCursor, "end")
@@ -66,7 +66,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r1", chat: 7, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         await engine.setChatEnabled(7, enabled: false)
@@ -85,7 +85,7 @@ final class ReviewFixesTests: XCTestCase {
             .success(WebhookHTTPResult(statusCode: 503)),
             .success(WebhookHTTPResult(statusCode: 200)),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         harness.clock.onSleep = {
             await engine.setChatEnabled(1, enabled: false)
         }
@@ -121,7 +121,7 @@ final class ReviewFixesTests: XCTestCase {
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "once", guid: "origin")], nextCursor: "c"),
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "once", guid: "origin")], nextCursor: "c"),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         harness.sender.onSend = {
             await engine.pollReplies()
             await engine.resumeRateLimit(chatID: 1)
@@ -143,7 +143,7 @@ final class ReviewFixesTests: XCTestCase {
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: "c"),
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: "c"),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 1)
         XCTAssertEqual(harness.state.deadLetters.first?.error, "send_failed")
@@ -160,7 +160,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "hello", guid: "origin")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         var sawPending = false
         harness.sender.onSend = {
             sawPending = !harness.state.state.pendingSends.isEmpty
@@ -180,7 +180,7 @@ final class ReviewFixesTests: XCTestCase {
         restarted.replies.pages = [
             ReplyPage(replies: [routedReply("r9", chat: 1, text: "again", guid: "origin")], nextCursor: nil),
         ]
-        let second = try restarted.engine()
+        let second = try await restarted.opened()
         XCTAssertEqual(restarted.state.deadLetters.first?.error, "send_interrupted")
         await second.pollReplies()
         XCTAssertTrue(restarted.sender.sent.isEmpty)
@@ -190,7 +190,7 @@ final class ReviewFixesTests: XCTestCase {
     func testPausedLineIsNotOvertakenInTheSameWatch() async throws {
         let harness = Harness()
         harness.allow.ids = [1]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         var first = true
         let results = await WatchApply.apply(lines: [
             watchLine(id: 10, guid: "a", chat: 1, fromMe: true, text: "\u{1FA94} one"),
@@ -216,7 +216,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.allow.ids = [1]
         harness.state.shouldFailDeadLetter = true
         harness.webhook.results = [.success(WebhookHTTPResult(statusCode: 400))]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 3, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
@@ -230,7 +230,7 @@ final class ReviewFixesTests: XCTestCase {
 
     func testChatGuidChangeClearsTheAllowlistAndCursor() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.setChatEnabled(4, guid: "chat-a", enabled: true)
         let first = await engine.ingestWatchLine(watchLine(
             id: 20, guid: "m", chat: 4, fromMe: true, text: "\u{1FA94} hi", chatGUID: "chat-a"
@@ -265,7 +265,7 @@ final class ReviewFixesTests: XCTestCase {
                 nextCursor: nil
             ),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 1)
         let snap = await engine.snapshot()
@@ -275,7 +275,7 @@ final class ReviewFixesTests: XCTestCase {
 
     func testAllowlistSaveFailureKeepsThePreviousValue() async throws {
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.setChatEnabled(3, guid: "g", enabled: true)
         harness.allow.failSave = true
         await engine.setChatEnabled(3, enabled: false)
@@ -294,7 +294,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r", chat: 1, text: "x", guid: "g")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "g", chat: 1, fromMe: true, text: "\u{1FA94} hi"
         ))
@@ -334,7 +334,7 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertEqual(early.append(head).first, .tooLarge(rowID: 7))
 
         let harness = Harness()
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         let noted = await engine.noteOversizedWatchLine(rowID: 42)
         XCTAssertEqual(noted, .skipped)
         XCTAssertEqual(harness.state.deadLetters.first?.error, "watch_line_too_large")
@@ -361,7 +361,7 @@ final class ReviewFixesTests: XCTestCase {
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         XCTAssertTrue(harness.state.deadLetters.isEmpty)
         XCTAssertTrue(harness.state.state.handledReplyIDs.contains("r1"))
         XCTAssertEqual(harness.state.state.pendingSends.map(\.replyID), ["r1"])
@@ -371,7 +371,7 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertTrue(harness.sender.sent.isEmpty)
 
         harness.state.shouldFailDeadLetter = false
-        let restarted = try harness.engine()
+        let restarted = try await harness.opened()
         XCTAssertEqual(harness.state.deadLetters.map(\.error), ["send_interrupted"])
         XCTAssertTrue(harness.state.state.pendingSends.isEmpty)
         await restarted.pollReplies()
@@ -389,7 +389,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "hello", guid: "origin")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         harness.lock.locked = false
@@ -415,7 +415,7 @@ final class ReviewFixesTests: XCTestCase {
             nextCursor: nil
         )
         harness.replies.pages = [page, page]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         harness.sender.onSend = {
             await engine.pollReplies()
         }
@@ -460,7 +460,7 @@ final class ReviewFixesTests: XCTestCase {
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 1)
         XCTAssertTrue(harness.state.deadLetters.isEmpty)
@@ -469,7 +469,7 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertEqual(harness.state.state.rateEvents.count, 1)
         XCTAssertTrue(harness.state.state.handledReplyIDs.contains("r1"))
         harness.state.shouldFailDeadLetter = false
-        let restarted = try harness.engine()
+        let restarted = try await harness.opened()
         XCTAssertEqual(harness.state.deadLetters.first?.error, "send_interrupted")
         XCTAssertTrue(harness.state.state.pendingSends.isEmpty)
         XCTAssertEqual(harness.state.state.rateEvents.count, 1)
@@ -487,7 +487,7 @@ final class ReviewFixesTests: XCTestCase {
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r", chat: 1, text: "hi", guid: "g")], nextCursor: nil),
         ]
-        let engine = try harness.engine()
+        let engine = try await harness.opened()
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 1)
         let snap = await engine.snapshot()

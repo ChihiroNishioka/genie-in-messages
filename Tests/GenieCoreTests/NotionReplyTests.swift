@@ -126,6 +126,7 @@ final class NotionReplyTests: XCTestCase {
             clock: harness.clock,
             log: harness.log
         )
+        await engine.reconcileChats([])
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         XCTAssertTrue(harness.log.records.contains { $0.code == "reply_unrouted" })
@@ -269,14 +270,14 @@ final class NotionReplyTests: XCTestCase {
             row("b", at: t1, guid: "gb", text: "two"),
         ])
         let source = makeSource(dataset, clock: harness.clock)
-        let engine = try makeEngine(harness, source: source)
+        let engine = try await makeEngine(harness, source: source)
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 2)
         dataset.rows.append(row("c", at: t2, guid: "gc", text: "three"))
         await engine.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 3)
         dataset.rows.append(row("d", at: t1, guid: "gd", text: "late"))
-        let restarted = try makeEngine(harness, source: source)
+        let restarted = try await makeEngine(harness, source: source)
         await restarted.pollReplies()
         XCTAssertEqual(harness.sender.sent.count, 4)
         XCTAssertEqual(harness.sender.sent.filter { $0.text.contains("late") }.count, 1)
@@ -344,7 +345,7 @@ final class NotionReplyTests: XCTestCase {
         seedRoute(harness, guid: "g-other", chat: 2)
         rows.append(row("other", at: otherAt, guid: "g-other", text: "other-chat", chat: 2))
         let dataset = DatasetNotion(rows: rows)
-        let engine = try makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
+        let engine = try await makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
         await engine.pollReplies()
         await engine.pollReplies()
         await engine.pollReplies()
@@ -356,7 +357,7 @@ final class NotionReplyTests: XCTestCase {
     }
 
     func testTwoHundredOneHoldsDoNotBlockAnotherChat() async throws {
-        let (harness, dataset, engine, origin) = try makeRateLimitedHolds(count: 202)
+        let (harness, dataset, engine, origin) = try await makeRateLimitedHolds(count: 202)
         for _ in 0..<3 {
             await engine.pollReplies()
         }
@@ -376,7 +377,7 @@ final class NotionReplyTests: XCTestCase {
     }
 
     func testRestartRebuildsHoldsWithoutResending() async throws {
-        let (harness, dataset, engine, origin) = try makeRateLimitedHolds(count: 202)
+        let (harness, dataset, engine, origin) = try await makeRateLimitedHolds(count: 202)
         for _ in 0..<3 {
             await engine.pollReplies()
         }
@@ -390,7 +391,7 @@ final class NotionReplyTests: XCTestCase {
 
         let againAt = ISO8601.string(from: origin.addingTimeInterval(500))
         dataset.rows.append(row("again", at: againAt, guid: "g-again", text: "other-again", chat: 2))
-        let restarted = try makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
+        let restarted = try await makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
         await restarted.pollReplies()
         XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
         XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 1)
@@ -477,24 +478,24 @@ final class NotionReplyTests: XCTestCase {
         XCTAssertGreaterThan(page.skipped, 0)
     }
 
-    func testRealDatabaseIDsAreNotInSource() throws {
-        let root = repoRoot().appendingPathComponent("Sources")
-        let banned = [
-            "875a3b9a-fa64-4631-88cf-1328c2bef05f",
-            "1a7710fa-96a4-4fb3-9fa7-8c7eb2337513",
-        ]
-        let files = try FileManager.default.subpathsOfDirectory(atPath: root.path)
-        for file in files where file.hasSuffix(".swift") {
-            let text = try String(contentsOf: root.appendingPathComponent(file), encoding: .utf8)
-            for id in banned {
-                XCTAssertFalse(text.contains(id), file)
-            }
-        }
+    func testPersonalIdentifiersStayOutOfDocsAndTests() throws {
+        let script = repoRoot().appendingPathComponent("scripts/check-tracked-text.py")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [script.path]
+        process.currentDirectoryURL = repoRoot()
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        XCTAssertEqual(process.terminationStatus, 0, output)
     }
 
     private func makeRateLimitedHolds(
         count: Int
-    ) throws -> (Harness, DatasetNotion, GenieEngine, Date) {
+    ) async throws -> (Harness, DatasetNotion, GenieEngine, Date) {
         let harness = Harness()
         harness.allow.ids = [1, 2]
         harness.config.notionDataSourceID = dataSource
@@ -514,12 +515,12 @@ final class NotionReplyTests: XCTestCase {
             rows.append(row(id, at: at, guid: guid, text: "held", chat: 1))
         }
         let dataset = DatasetNotion(rows: rows)
-        let engine = try makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
+        let engine = try await makeEngine(harness, source: makeSource(dataset, clock: harness.clock))
         return (harness, dataset, engine, origin)
     }
 
-    private func makeEngine(_ harness: Harness, source: NotionReplySource) throws -> GenieEngine {
-        try GenieEngine(
+    private func makeEngine(_ harness: Harness, source: NotionReplySource) async throws -> GenieEngine {
+        let engine = try GenieEngine(
             configProvider: StaticConfig(config: harness.config),
             initialConfig: harness.config,
             stateStore: harness.state,
@@ -532,6 +533,8 @@ final class NotionReplyTests: XCTestCase {
             clock: harness.clock,
             log: harness.log
         )
+        await engine.reconcileChats([])
+        return engine
     }
 
     private func makeSource(_ transport: any NotionTransport, clock: ManualClock) -> NotionReplySource {
