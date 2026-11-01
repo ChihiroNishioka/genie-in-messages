@@ -57,24 +57,6 @@ final class UnverifiedSendNoticeTests: XCTestCase {
     }
 }
 
-/// メニューの「最後のエラー」に出す短い文。番号や識別子は含めない。
-enum SendHoldStatus {
-    static func text(for code: String?) -> String {
-        switch code {
-        case "reply_held_empty_list":
-            return "トーク一覧が空のため、返事を送っていません"
-        case "reply_held_not_in_list":
-            return "一覧に無いトークのため、返事を送っていません"
-        case "chats_failed", "chats_parse_failed":
-            return "トーク一覧を読めないため、返事を送っていません"
-        case "reply_chat_guid_mismatch":
-            return "トークの識別子が変わったため、返事を送っていません"
-        default:
-            return "なし"
-        }
-    }
-}
-
 private func assertHeld(
     _ started: Started,
     code: String,

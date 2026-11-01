@@ -172,6 +172,7 @@ package actor GenieEngine {
         }
         directoryGUIDs = guids
         directoryChecked = true
+        clearRecoveredListError()
         for chat in chats where !chat.guid.isEmpty {
             if observeChat(id: chat.id, guid: chat.guid) {
                 return
@@ -184,16 +185,27 @@ package actor GenieEngine {
     package func noteChatsProblem(code: String, updateMenu: Bool) {
         directoryGUIDs = [:]
         directoryChecked = false
-        if updateMenu {
+        // 定期取得は updateMenu を false にする。一覧が読めないと返事を送れないので、メニューには出す。
+        if updateMenu || code == "chats_failed" || code == "chats_parse_failed" {
             lastError = code
         }
         log.record(
-            level: updateMenu ? .error : .warning,
+            level: .error,
             code: code,
             chatID: nil,
             guid: nil,
             rowid: nil
         )
+    }
+
+    /// 一覧を読み直せたら、一覧失敗の表示だけを消す。ほかのエラーは残す。
+    private func clearRecoveredListError() {
+        switch lastError {
+        case "chats_failed", "chats_parse_failed":
+            lastError = nil
+        default:
+            break
+        }
     }
 
     package func resumeRateLimit(chatID: Int64) async {
@@ -782,20 +794,41 @@ package actor GenieEngine {
 
     /// そのトークの guid を一覧で確かめられたときだけ送る。
     /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
+    /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
         let current = directoryGUIDs[chatID] ?? ""
         let allowed = allowlist.entries.first { $0.id == chatID }?.guid ?? ""
         if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
             return false
         }
+        let code = holdReasonCode(current: current, allowed: allowed)
         if !current.isEmpty && !allowed.isEmpty && current != allowed {
             holds.removeAll { $0.replyID == replyID }
             markReplyHandled(replyID)
-            lastError = "reply_chat_guid_mismatch"
-            log.record(level: .error, code: "reply_chat_guid_mismatch", chatID: chatID, guid: nil, rowid: nil)
             persist()
         }
+        noteHold(code)
         return true
+    }
+
+    private func holdReasonCode(current: String, allowed: String) -> String {
+        if !directoryChecked {
+            return "chats_failed"
+        }
+        if !current.isEmpty && !allowed.isEmpty && current != allowed {
+            return "reply_chat_guid_mismatch"
+        }
+        if directoryGUIDs.isEmpty {
+            return "reply_held_empty_list"
+        }
+        return "reply_held_not_in_list"
+    }
+
+    private func noteHold(_ code: String) {
+        let changed = lastError != code
+        lastError = code
+        guard changed else { return }
+        log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
     }
 
     private func dropDisabled(replyID: String, chatID: Int64) {

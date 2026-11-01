@@ -117,7 +117,7 @@ final class GenieController: @unchecked Sendable {
                 let loaded = (try? config.load()) ?? .productDefaults
                 await engine.refreshLock()
                 if Date().timeIntervalSince(lastChats) >= 30 {
-                    _ = await self.loadChats(reportError: false)
+                    _ = await self.loadChats(reportError: true)
                     lastChats = Date()
                 }
                 await engine.retryHolds()

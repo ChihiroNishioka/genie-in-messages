@@ -11,3 +11,10 @@
 - `Tests/GenieCoreTests/TrackedTextTests.swift` は、実行時に組み立てた架空の見本で、ダッシュなしの ID と `secret_` / `ntn_` のトークンを検出できることを見る。
 - `Tests/GenieCoreTests/NotionReplyTests.swift` の `testPersonalIdentifiersStayOutOfDocsAndTests` が、同じ検査を追跡ファイル全体に対して実行する。
 - `.github/workflows/ci.yml` の `secrets` ジョブが、同じ検査を CI で実行する。権限は `contents: read` だけ。
+
+照合できずに返事を送らなかったときは、黙って待たせない。一覧が空、一覧に無い、一覧の取得に失敗、guid が違う、のどれでも、メニューの最後のエラーとログに短い理由を出す。番号、メール、識別子は出さない。一覧の取得が失敗し続けても、メニューは変わる。送らない判断そのものは変えない。
+
+これを守るもの:
+
+- `Tests/GenieCoreTests/UnverifiedSendNoticeTests.swift` は、その4つの場合に送信が0回のまま、状態表示の文とログのコードが出て、ログに識別子が無いことを見る。
+- `Sources/GenieCore/SendHoldStatus.swift` がメニューに出す文で、メニューバーアプリも同じ関数を使う。
