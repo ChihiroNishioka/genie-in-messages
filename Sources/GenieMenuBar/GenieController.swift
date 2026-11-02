@@ -50,18 +50,11 @@ final class GenieController: @unchecked Sendable {
             timeout: loaded.chatsTimeoutSeconds
         )
         if result.exitCode != 0 || result.timedOut {
-            await engine.noteChatsProblem(code: "chats_failed", updateMenu: reportError)
-            return []
+            _ = reportError
+            return await engine.applyChatList(.failed)
         }
         let parsed = ChatListParser.parse(ndjson: result.stdout)
-        if parsed.failedLineCount > 0 {
-            await engine.noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
-        }
-        if parsed.chats.isEmpty && parsed.failedLineCount > 0 {
-            return []
-        }
-        await engine.reconcileChats(parsed.chats)
-        return parsed.chats
+        return await engine.applyChatList(.parsed(parsed))
     }
 
     private func start() {

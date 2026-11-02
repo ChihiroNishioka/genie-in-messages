@@ -41,6 +41,10 @@ package actor GenieEngine {
     private var guidMismatchOutstanding = false
     /// 一部の行だけ読めなかった表示は、その直後の読み直しでは消さない。
     private var keepParseNoticeOnce = false
+    /// 直前に記録した一覧失敗。表示が上書きされても、これと比べて重ねない。
+    private var lastLoggedListFailure: String?
+    /// この取得で、期限切れにして捨てた返事があった。
+    private var expiredReplyThisPass = false
     /// この取得で、まだ待っている返事があった。
     private var notedHoldThisPass = false
     private var loggedMarkerReplacement = false
@@ -182,7 +186,12 @@ package actor GenieEngine {
                 noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
             }
             if parsed.chats.isEmpty && parsed.failedLineCount > 0 {
+                // 照合まで進まないので、次の正常な取得にフラグを残さない。表示自体は残す。
+                keepParseNoticeOnce = false
                 return []
+            }
+            if parsed.failedLineCount == 0 {
+                lastLoggedListFailure = nil
             }
             reconcileChats(parsed.chats)
             return parsed.chats
@@ -222,13 +231,17 @@ package actor GenieEngine {
         // 定期取得は updateMenu を false にする。一覧が読めないと返事を送れないので、照合の表示には出す。
         if code == "chats_parse_failed" {
             keepParseNoticeOnce = true
-        }
-        if updateMenu || code == "chats_failed" || code == "chats_parse_failed" {
-            let changed = holdNotice != code
             holdNotice = code
-            // 同じ失敗が続くときは記録を重ねない。レベルは error。
-            guard changed else { return }
+        } else if code == "chats_failed" {
+            // 1回目では待っているように見せない。同じ失敗が続いたときだけ出す。
+            if lastLoggedListFailure == "chats_failed" {
+                holdNotice = code
+            }
+        } else if updateMenu {
+            holdNotice = code
         }
+        guard lastLoggedListFailure != code else { return }
+        lastLoggedListFailure = code
         log.record(
             level: .error,
             code: code,
@@ -254,9 +267,7 @@ package actor GenieEngine {
         case "chats_failed":
             holdNotice = nil
         case "chats_parse_failed":
-            if !keepingParse {
-                holdNotice = nil
-            }
+            break
         default:
             break
         }
@@ -275,10 +286,11 @@ package actor GenieEngine {
         return true
     }
 
-    /// 待っていた返事が期限切れでなくなったとき、その照合の表示だけを消す。
+    /// 期限切れで返事を捨てたとき、待っていた表示だけを消す。
+    /// 返事がこの回に見えなかったことや、一覧の解析失敗とは別にする。
     private func clearExpiredHoldNotice() {
         switch holdNotice {
-        case "reply_held_empty_list", "reply_held_not_in_list", "chats_failed", "chats_parse_failed":
+        case "reply_held_empty_list", "reply_held_not_in_list":
             holdNotice = nil
         default:
             break
@@ -379,6 +391,7 @@ package actor GenieEngine {
         guard directoryChecked else { return }
         if paused { return }
         notedHoldThisPass = false
+        expiredReplyThisPass = false
         refreshConfig()
         let notion = !config.notionDataSourceID.isEmpty
         let rawURL = config.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -424,7 +437,7 @@ package actor GenieEngine {
                     persist()
                 }
             }
-            if !notedHoldThisPass {
+            if expiredReplyThisPass && !notedHoldThisPass {
                 clearExpiredHoldNotice()
             }
         } catch ReplyFetchError.secretMode {
@@ -719,6 +732,7 @@ package actor GenieEngine {
         if clock.now().timeIntervalSince(created) > config.routeTTLSeconds {
             log.record(level: .info, code: "reply_too_old", chatID: reply.chatID, guid: nil, rowid: nil)
             markReplyHandled(reply.id)
+            expiredReplyThisPass = true
             persist()
             return
         }

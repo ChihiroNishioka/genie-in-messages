@@ -11,6 +11,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         ])
         await started.engine.setLastError("messages_db_reset")
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.lastError, "messages_db_reset")
         XCTAssertEqual(during.holdNotice, "chats_failed")
@@ -113,6 +114,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
     func testSuccessfulRereadClearsTheListFailureAndKeepsAnotherError() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
         await started.engine.setLastError("messages_db_reset")
+        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.lastError, "messages_db_reset")
