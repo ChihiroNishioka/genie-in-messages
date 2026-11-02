@@ -11,3 +11,14 @@
 - `Tests/GenieCoreTests/TrackedTextTests.swift` は、実行時に組み立てた架空の見本で、ダッシュなしの ID と `secret_` / `ntn_` のトークンを検出できることを見る。
 - `Tests/GenieCoreTests/NotionReplyTests.swift` の `testPersonalIdentifiersStayOutOfDocsAndTests` が、同じ検査を追跡ファイル全体に対して実行する。
 - `.github/workflows/ci.yml` の `secrets` ジョブが、同じ検査を CI で実行する。権限は `contents: read` だけ。
+
+照合できずに返事を送らなかったときは、黙って待たせない。一覧が空、一覧に無い、一覧の取得に失敗、guid が違う、のどれでも、メニューの「照合」の行とログに短い理由を出す。番号、メール、識別子は出さない。一覧の取得が失敗し続けても、メニューは変わる。送らない判断そのものは変えない。照合の行は最後のエラーとは別で、ほかのエラーを上書きしないし、消さない。
+
+表示が消えるときも、理由で違う。一覧が空、一覧に無い、一覧を読めないときは返事を捨てず、次の取得まで待つ。その表示は、待っていた返事が期限を過ぎて捨てられたとき、または一覧で許可したトークの guid を確かめられたときに消える。一覧を読めない表示は、一覧を読み直せたときにも消える。guid が違うときは、その返事をその場で捨てる。その表示は、あとから guid が一致したときに消え、期限切れでは消えない。捨てた返事の表示は、ほかの理由で上書きされても、guid が合うまで残す。
+
+これを守るもの:
+
+- `Tests/GenieCoreTests/UnverifiedSendNoticeTests.swift` は、その4つの場合に送信が0回のまま、照合の行の文とログのコードが出て、ログに識別子が無いことを見る。
+- `Tests/GenieCoreTests/HoldNoticeLifetimeTests.swift` は、照合の表示がほかのエラーを消さないこと、待っていた返事が期限切れになるか一覧が戻ると空一覧と一覧に無い表示が消えること、読み直すと一覧失敗の表示だけが消えほかのエラーは残ることを見る。
+- `Tests/GenieCoreTests/MismatchNoticeStickyTests.swift` は、不一致の表示が一覧の失敗のあと読み直しても、別の返事の表示で上書きされたあと期限が切れても、guid が合うまでは「照合: なし」にならないことを見る。guid が合えば消える。
+- `Sources/GenieCore/SendHoldStatus.swift` がメニューに出す文で、メニューバーアプリも同じ関数を使う。

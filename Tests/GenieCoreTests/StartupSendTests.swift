@@ -52,19 +52,22 @@ final class StartupSendTests: XCTestCase {
     }
 }
 
-private struct Started {
+struct Started {
     var harness: Harness
     var engine: GenieEngine
     var replies: CountingReplies
 }
 
-private func makeEngine(allowedGuid: String, chatsLimit: Int? = nil) throws -> Started {
+func makeEngine(allowedGuid: String, chatsLimit: Int? = nil, routeTTL: Double? = nil) throws -> Started {
     let harness = Harness()
     harness.allow.ids = [7]
     harness.allow.guids = [7: allowedGuid]
     harness.config.replyFetchURL = "https://127.0.0.1/replies"
     if let chatsLimit {
         harness.config.chatsLimit = chatsLimit
+    }
+    if let routeTTL {
+        harness.config.routeTTLSeconds = routeTTL
     }
     seedRoute(harness, guid: "origin", chat: 7)
     var config = harness.config
@@ -91,7 +94,7 @@ private func makeEngine(allowedGuid: String, chatsLimit: Int? = nil) throws -> S
     return Started(harness: harness, engine: engine, replies: replies)
 }
 
-private final class CountingReplies: ReplySource, @unchecked Sendable {
+final class CountingReplies: ReplySource, @unchecked Sendable {
     private let page: ReplyPage
     private(set) var fetches = 0
 

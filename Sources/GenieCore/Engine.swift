@@ -35,6 +35,12 @@ package actor GenieEngine {
     }
     private var screenLock: ScreenLockState = .unknown
     private var lastError: String?
+    /// 照合できずに送らなかった理由。最後のエラーとは別で、ほかのエラーを上書きしない。
+    private var holdNotice: String?
+    /// guid が違って捨てた返事がある。表示が上書きされても、guid が合うまで戻す。
+    private var guidMismatchOutstanding = false
+    /// この取得で、まだ待っている返事があった。
+    private var notedHoldThisPass = false
     private var loggedMarkerReplacement = false
 
     package init(
@@ -172,6 +178,7 @@ package actor GenieEngine {
         }
         directoryGUIDs = guids
         directoryChecked = true
+        clearRecoveredListError()
         for chat in chats where !chat.guid.isEmpty {
             if observeChat(id: chat.id, guid: chat.guid) {
                 return
@@ -184,16 +191,70 @@ package actor GenieEngine {
     package func noteChatsProblem(code: String, updateMenu: Bool) {
         directoryGUIDs = [:]
         directoryChecked = false
-        if updateMenu {
-            lastError = code
+        // 定期取得は updateMenu を false にする。一覧が読めないと返事を送れないので、照合の表示には出す。
+        if updateMenu || code == "chats_failed" || code == "chats_parse_failed" {
+            holdNotice = code
         }
         log.record(
-            level: updateMenu ? .error : .warning,
+            level: .error,
             code: code,
             chatID: nil,
             guid: nil,
             rowid: nil
         )
+    }
+
+    /// 一覧を読み直せたら、照合の表示だけを消す。最後のエラーは残す。
+    /// guid が違って捨てた返事の表示は、ほかの理由が消えたあと、guid が合うまで戻す。
+    private func clearRecoveredListError() {
+        if allowlistVerified() {
+            guidMismatchOutstanding = false
+            holdNotice = nil
+            return
+        }
+        switch holdNotice {
+        case "chats_failed", "chats_parse_failed":
+            holdNotice = nil
+        default:
+            break
+        }
+        restoreDiscardedGuidNotice()
+    }
+
+    /// 許可したトークの guid が、いまの一覧と一致している。
+    private func allowlistVerified() -> Bool {
+        guard directoryChecked else { return false }
+        for entry in allowlist.entries {
+            let current = directoryGUIDs[entry.id] ?? ""
+            if entry.guid.isEmpty || current.isEmpty || current != entry.guid {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// 待っていた返事が期限切れでなくなったとき、その照合の表示だけを消す。
+    private func clearExpiredHoldNotice() {
+        switch holdNotice {
+        case "reply_held_empty_list", "reply_held_not_in_list", "chats_failed", "chats_parse_failed":
+            holdNotice = nil
+        default:
+            break
+        }
+        restoreDiscardedGuidNotice()
+    }
+
+    /// 捨てた返事の表示は、ほかの理由で上書きされても、guid が合うまで残す。
+    private func restoreDiscardedGuidNotice() {
+        guard guidMismatchOutstanding else { return }
+        if allowlistVerified() {
+            guidMismatchOutstanding = false
+            holdNotice = nil
+            return
+        }
+        if holdNotice == nil {
+            holdNotice = "reply_chat_guid_mismatch"
+        }
     }
 
     package func resumeRateLimit(chatID: Int64) async {
@@ -217,6 +278,7 @@ package actor GenieEngine {
                 $0.reason == .screenLocked || $0.reason == .appleEventNotStarted
             }.count,
             lastError: lastError,
+            holdNotice: holdNotice,
             screenLocked: screenLock == .locked,
             screenLock: screenLock,
             replyFetchConfigured: !config.notionDataSourceID.isEmpty
@@ -274,6 +336,7 @@ package actor GenieEngine {
         // 一覧と許可の guid を比べる前に取りに行くと、入れ替わった番号へ送ることがある。
         guard directoryChecked else { return }
         if paused { return }
+        notedHoldThisPass = false
         refreshConfig()
         let notion = !config.notionDataSourceID.isEmpty
         let rawURL = config.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -318,6 +381,9 @@ package actor GenieEngine {
                     persisted.replyCursor = next
                     persist()
                 }
+            }
+            if !notedHoldThisPass {
+                clearExpiredHoldNotice()
             }
         } catch ReplyFetchError.secretMode {
             lastError = "reply_secret_mode"
@@ -782,20 +848,43 @@ package actor GenieEngine {
 
     /// そのトークの guid を一覧で確かめられたときだけ送る。
     /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
+    /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
         let current = directoryGUIDs[chatID] ?? ""
         let allowed = allowlist.entries.first { $0.id == chatID }?.guid ?? ""
         if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
             return false
         }
+        let code = holdReasonCode(current: current, allowed: allowed)
         if !current.isEmpty && !allowed.isEmpty && current != allowed {
             holds.removeAll { $0.replyID == replyID }
             markReplyHandled(replyID)
-            lastError = "reply_chat_guid_mismatch"
-            log.record(level: .error, code: "reply_chat_guid_mismatch", chatID: chatID, guid: nil, rowid: nil)
+            guidMismatchOutstanding = true
             persist()
         }
+        noteHold(code)
         return true
+    }
+
+    private func holdReasonCode(current: String, allowed: String) -> String {
+        if !directoryChecked {
+            return "chats_failed"
+        }
+        if !current.isEmpty && !allowed.isEmpty && current != allowed {
+            return "reply_chat_guid_mismatch"
+        }
+        if directoryGUIDs.isEmpty {
+            return "reply_held_empty_list"
+        }
+        return "reply_held_not_in_list"
+    }
+
+    private func noteHold(_ code: String) {
+        let changed = holdNotice != code
+        holdNotice = code
+        notedHoldThisPass = true
+        guard changed else { return }
+        log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
     }
 
     private func dropDisabled(replyID: String, chatID: Int64) {
