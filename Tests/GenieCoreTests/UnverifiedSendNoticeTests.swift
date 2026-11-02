@@ -10,7 +10,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         await assertHeld(
             started,
             code: "reply_held_empty_list",
-            status: "トーク一覧が空のため、返事を送っていません"
+            status: "トーク一覧が空のため、返事を待っています"
         )
     }
 
@@ -23,7 +23,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         await assertHeld(
             started,
             code: "reply_held_not_in_list",
-            status: "一覧に無いトークのため、返事を送っていません"
+            status: "一覧に無いトークのため、返事を待っています。chats_limit を増やすと入ることがあります"
         )
     }
 
@@ -37,10 +37,10 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         XCTAssertEqual(started.harness.sender.sent.count, 0)
         XCTAssertNil(snap.lastError)
         XCTAssertEqual(snap.holdNotice, "chats_failed")
-        XCTAssertEqual(SendHoldStatus.text(for: snap.holdNotice), "トーク一覧を読めないため、返事を送っていません")
+        XCTAssertEqual(SendHoldStatus.text(for: snap.holdNotice), "トーク一覧を読めないため、返事を待っています")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: snap.holdNotice),
-            "照合: トーク一覧を読めないため、返事を送っていません"
+            "照合: トーク一覧を読めないため、返事を待っています"
         )
         let notes = started.harness.log.records.filter { $0.code == "chats_failed" }
         XCTAssertFalse(notes.isEmpty)
@@ -57,7 +57,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         await assertHeld(
             started,
             code: "reply_chat_guid_mismatch",
-            status: "トークの識別子が変わったため、返事を送っていません"
+            status: "トークの識別子が変わったため、その返事は捨てました"
         )
     }
 }

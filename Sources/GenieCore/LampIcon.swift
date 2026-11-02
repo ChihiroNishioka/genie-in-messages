@@ -11,6 +11,7 @@ package enum LampAppearance: String, Sendable {
             || snap.heldLockCount > 0
             || !snap.haltedChatIDs.isEmpty
             || snap.lastError == "watch_start_failed"
+            || snap.holdNotice != nil
     }
 }
 

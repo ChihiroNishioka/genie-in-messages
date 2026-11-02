@@ -10,13 +10,13 @@ package enum SendHoldStatus {
     package static func text(for code: String?) -> String {
         switch code {
         case "reply_held_empty_list":
-            return "トーク一覧が空のため、返事を送っていません"
+            return "トーク一覧が空のため、返事を待っています"
         case "reply_held_not_in_list":
-            return "一覧に無いトークのため、返事を送っていません"
+            return "一覧に無いトークのため、返事を待っています。chats_limit を増やすと入ることがあります"
         case "chats_failed", "chats_parse_failed":
-            return "トーク一覧を読めないため、返事を送っていません"
+            return "トーク一覧を読めないため、返事を待っています"
         case "reply_chat_guid_mismatch":
-            return "トークの識別子が変わったため、返事を送っていません"
+            return "トークの識別子が変わったため、その返事は捨てました"
         default:
             return "なし"
         }

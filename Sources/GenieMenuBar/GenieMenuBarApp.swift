@@ -209,10 +209,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
 
     static func appearance(for snap: EngineSnapshot?) -> LampAppearance {
         guard let snap else { return .running }
-        let warning = snap.screenLock != .unlocked
-            || snap.heldLockCount > 0
-            || !snap.haltedChatIDs.isEmpty
-            || snap.lastError == "watch_start_failed"
+        let warning = LampAppearance.showsAttention(snap)
         if warning { return .warning }
         if snap.paused { return .paused }
         return .running

@@ -39,6 +39,8 @@ package actor GenieEngine {
     private var holdNotice: String?
     /// guid が違って捨てた返事がある。表示が上書きされても、guid が合うまで戻す。
     private var guidMismatchOutstanding = false
+    /// 一部の行だけ読めなかった表示は、その直後の読み直しでは消さない。
+    private var keepParseNoticeOnce = false
     /// この取得で、まだ待っている返事があった。
     private var notedHoldThisPass = false
     private var loggedMarkerReplacement = false
@@ -192,8 +194,14 @@ package actor GenieEngine {
         directoryGUIDs = [:]
         directoryChecked = false
         // 定期取得は updateMenu を false にする。一覧が読めないと返事を送れないので、照合の表示には出す。
+        if code == "chats_parse_failed" {
+            keepParseNoticeOnce = true
+        }
         if updateMenu || code == "chats_failed" || code == "chats_parse_failed" {
+            let changed = holdNotice != code
             holdNotice = code
+            // 同じ失敗が続くときは記録を重ねない。レベルは error。
+            guard changed else { return }
         }
         log.record(
             level: .error,
@@ -207,14 +215,22 @@ package actor GenieEngine {
     /// 一覧を読み直せたら、照合の表示だけを消す。最後のエラーは残す。
     /// guid が違って捨てた返事の表示は、ほかの理由が消えたあと、guid が合うまで戻す。
     private func clearRecoveredListError() {
+        let keepingParse = keepParseNoticeOnce && holdNotice == "chats_parse_failed"
+        keepParseNoticeOnce = false
         if allowlistVerified() {
             guidMismatchOutstanding = false
-            holdNotice = nil
+            if !keepingParse {
+                holdNotice = nil
+            }
             return
         }
         switch holdNotice {
-        case "chats_failed", "chats_parse_failed":
+        case "chats_failed":
             holdNotice = nil
+        case "chats_parse_failed":
+            if !keepingParse {
+                holdNotice = nil
+            }
         default:
             break
         }

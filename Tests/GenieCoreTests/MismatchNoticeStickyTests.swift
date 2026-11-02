@@ -15,7 +15,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: mismatched.holdNotice),
-            "照合: トークの識別子が変わったため、返事を送っていません"
+            "照合: トークの識別子が変わったため、その返事は捨てました"
         )
 
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
@@ -27,7 +27,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         XCTAssertEqual(reread.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: reread.holdNotice),
-            "照合: トークの識別子が変わったため、返事を送っていません"
+            "照合: トークの識別子が変わったため、その返事は捨てました"
         )
         XCTAssertNotEqual(SendHoldStatus.menuLine(for: reread.holdNotice), "照合: なし")
 
@@ -87,7 +87,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         XCTAssertEqual(restored.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: restored.holdNotice),
-            "照合: トークの識別子が変わったため、返事を送っていません"
+            "照合: トークの識別子が変わったため、その返事は捨てました"
         )
         XCTAssertNotEqual(SendHoldStatus.menuLine(for: restored.holdNotice), "照合: なし")
         XCTAssertTrue(harness.log.records.contains { record in
