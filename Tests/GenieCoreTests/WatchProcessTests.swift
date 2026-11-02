@@ -255,8 +255,7 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 0.2)
         XCTAssertTrue(box.wasUserStop())
         XCTAssertTrue(box.wasStopRequested())
-        let deadline = Date().addingTimeInterval(2)
-        while process.isRunning && Date() < deadline {}
+        process.waitUntilExit()
         XCTAssertFalse(process.isRunning)
         assertKilled(process)
         box.resetStop()
@@ -303,16 +302,11 @@ final class WatchProcessTests: XCTestCase {
     private func waitForReady(_ process: Process) throws {
         let pipe = try XCTUnwrap(process.standardOutput as? Pipe)
         let handle = pipe.fileHandleForReading
-        let deadline = Date().addingTimeInterval(2)
-        var buffer = Data()
-        while Date() < deadline {
-            let chunk = handle.availableData
-            if !chunk.isEmpty {
-                buffer.append(chunk)
-                if String(decoding: buffer, as: UTF8.self).contains("ready") { return }
-            }
+        let chunk = try handle.read(upToCount: 64) ?? Data()
+        let text = String(decoding: chunk, as: UTF8.self)
+        if !text.contains("ready") {
+            XCTFail("ready が来なかった: \(text)")
         }
-        XCTFail("ready が来なかった: \(String(decoding: buffer, as: UTF8.self))")
     }
 
     private func assertKilled(_ process: Process) {

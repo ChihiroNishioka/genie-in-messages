@@ -28,6 +28,9 @@ final class PollerCoverageTests: XCTestCase {
         XCTAssertEqual(first.steps.first, .lock)
         XCTAssertEqual(codeCount(harness, "chats_failed"), 1)
         XCTAssertEqual(harness.sender.sent.count, 0)
+        harness.clock.current = harness.clock.current.addingTimeInterval(2)
+        _ = await poller.tick()
+        XCTAssertEqual(reader.calls, 1)
         await poller.requestChatsRefresh()
         harness.clock.current = harness.clock.current.addingTimeInterval(2)
         _ = await poller.tick()
@@ -322,7 +325,7 @@ final class PollerCoverageTests: XCTestCase {
         XCTAssertEqual(harness.sender.sent.count, 1)
         let seen17 = await limited.snapshot().heldCount
         XCTAssertEqual(seen17, 1)
-        let armed = Flag()
+        let armed = LockedFlag(true)
         harness.lock.onState = {
             guard armed.value else { return }
             armed.value = false
@@ -667,15 +670,12 @@ final class PollerCoverageTests: XCTestCase {
         _ = await poller.tick()
         let seen42 = await engine.snapshot().holdNotice
         XCTAssertEqual(seen42, "chats_failed")
+        let arrived = Gate()
+        probe.arrived["chatsApplied"] = arrived
         probe.gates["chatsApplied"] = applied
+        let saw = expectGate(arrived, "applied")
         harness.clock.current = start.addingTimeInterval(92)
         let running = Task { await poller.tick() }
-        let saw = expectation(description: "applied")
-        let before = events.snapshot().filter { $0 == "chatsApplied" }.count
-        Task {
-            while events.snapshot().filter({ $0 == "chatsApplied" }).count <= before { await Task.yield() }
-            saw.fulfill()
-        }
         await fulfillment(of: [saw], timeout: 2)
         let seen43 = await engine.snapshot().holdNotice
         XCTAssertEqual(seen43, "reply_held_empty_list")
@@ -699,7 +699,7 @@ final class PollerCoverageTests: XCTestCase {
             entered.fulfill()
             await release.wait()
         }
-        let poller = makePoller(harness, engine, reader)
+        let poller = makePoller(harness, engine, reader, schedule: .production)
         let running = Task { await poller.tick() }
         await fulfillment(of: [entered], timeout: 2)
         let nested = await poller.tick()
@@ -763,17 +763,50 @@ final class PollerCoverageTests: XCTestCase {
     func testCancelDuringSleepStopsTheRun() async throws {
         let harness = Harness()
         let engine = try harness.engine()
-        let reader = ScriptedChatLists(script: [okList([])])
-        let poller = makePoller(harness, engine, reader, schedule: .production)
+        let reader = repeatingOk()
+        let poller = makePoller(
+            harness,
+            engine,
+            reader,
+            schedule: PollSchedule(tickSeconds: 2, chatsSeconds: 0, lastChatsAt: nil, lastRepliesAt: nil)
+        )
         let slot = TaskSlot()
+        let armed = Gate()
+        let second = Gate()
+        defer {
+            harness.stop.stop()
+            armed.open()
+            second.open()
+        }
+        let keep = reader.onRead
+        reader.onRead = {
+            await keep?()
+            if reader.calls >= 2 { second.open() }
+        }
         harness.clock.onSleep = {
-            while slot.task == nil { await Task.yield() }
+            await armed.wait()
             slot.task?.cancel()
         }
         let task = Task { await poller.run() }
         slot.task = task
-        await task.value
+        armed.open()
+        let outcome = await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                await task.value
+                return true
+            }
+            group.addTask {
+                await second.wait()
+                return false
+            }
+            let first = await group.next() ?? false
+            harness.stop.stop()
+            second.open()
+            return first
+        }
+        XCTAssertTrue(outcome)
         XCTAssertEqual(reader.calls, 1)
+        XCTAssertEqual(harness.clock.slept.count, 1)
     }
 
     func testStopDuringLockCheckReadsNothing() async throws {
@@ -804,13 +837,15 @@ final class PollerCoverageTests: XCTestCase {
         let ticking = Task { await poller.tick() }
         await fulfillment(of: [started], timeout: 2)
         let slot = TaskSlot()
+        let armed = Gate()
         harness.clock.onSleep = {
-            while slot.task == nil { await Task.yield() }
+            await armed.wait()
             slot.task?.cancel()
         }
-        var watched = false
-        let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) { watched = true }
+        let watched = LockedFlag()
+        let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) { watched.value = true }
         slot.task = tasks.poller
+        armed.open()
         let early = expectation(description: "initial stopped")
         Task {
             let value = await poller.waitForInitialChatList()
@@ -823,13 +858,13 @@ final class PollerCoverageTests: XCTestCase {
             supervisor.fulfill()
         }
         await fulfillment(of: [supervisor], timeout: 2)
-        XCTAssertFalse(watched)
+        XCTAssertFalse(watched.value)
         XCTAssertEqual(reader.calls, 1)
         release.open()
         _ = await ticking.value
         let seen47 = await poller.waitForInitialChatList()
         XCTAssertEqual(seen47, .stopped)
-        XCTAssertFalse(watched)
+        XCTAssertFalse(watched.value)
         _ = await tasks.poller.value
     }
 
@@ -848,15 +883,12 @@ final class PollerCoverageTests: XCTestCase {
         let beforeChats = await poller.latestChats()
         let beforeSchedule = await poller.currentSchedule().lastChatsAt
         let before = await engine.snapshot()
+        let arrived = Gate()
+        probe.arrived["chatsReadReturned"] = arrived
         probe.gates["chatsReadReturned"] = gate
+        let saw = expectGate(arrived, "returned")
         harness.clock.current = start.addingTimeInterval(30)
         let running = Task { await poller.tick() }
-        let saw = expectation(description: "returned")
-        let seen = events.snapshot().filter { $0 == "chatsReadReturned" }.count
-        Task {
-            while events.snapshot().filter({ $0 == "chatsReadReturned" }).count <= seen { await Task.yield() }
-            saw.fulfill()
-        }
         await fulfillment(of: [saw], timeout: 2)
         harness.stop.stop()
         gate.open()
@@ -1008,9 +1040,9 @@ final class PollerCoverageTests: XCTestCase {
             started.fulfill()
             await release.wait()
         }
-        var watched = false
+        let watched = LockedFlag()
         let poller = makePoller(harness, engine, reader, schedule: .production)
-        let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) { watched = true }
+        let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) { watched.value = true }
         await fulfillment(of: [started], timeout: 2)
         let early = expectation(description: "stopped first")
         Task {
@@ -1019,12 +1051,12 @@ final class PollerCoverageTests: XCTestCase {
         }
         harness.stop.stop()
         await fulfillment(of: [early], timeout: 2)
-        XCTAssertFalse(watched)
+        XCTAssertFalse(watched.value)
         release.open()
         _ = await tasks.poller.value
         _ = await tasks.supervisor.value
         XCTAssertEqual(reader.calls, 1)
-        XCTAssertFalse(watched)
+        XCTAssertFalse(watched.value)
         XCTAssertEqual(codeCount(harness, "chats_failed"), 0)
     }
 
@@ -1188,14 +1220,11 @@ final class PollerCoverageTests: XCTestCase {
         _ = await poller.tick()
         let seen67 = await engine.snapshot().holdNotice
         XCTAssertEqual(seen67, "chats_parse_failed")
+        let arrived = Gate()
+        probe.arrived["chatsApplied"] = arrived
         probe.gates["chatsApplied"] = applied
+        let saw = expectGate(arrived, "applied")
         let running = Task { await poller.tick() }
-        let saw = expectation(description: "applied")
-        let before = events.snapshot().filter { $0 == "chatsApplied" }.count
-        Task {
-            while events.snapshot().filter({ $0 == "chatsApplied" }).count <= before { await Task.yield() }
-            saw.fulfill()
-        }
         await fulfillment(of: [saw], timeout: 2)
         let seen68 = await engine.snapshot().holdNotice
         XCTAssertNil(seen68)
@@ -1204,6 +1233,165 @@ final class PollerCoverageTests: XCTestCase {
         let seen69 = await engine.snapshot().holdNotice
         XCTAssertNil(seen69)
         XCTAssertEqual(harness.sender.sent.count, 0)
+    }
+
+    func testHeldReplyReturnsWhenTheListBecomesUnchecked() async throws {
+        let pair = try prepared(ttl: 60)
+        let harness = pair.0
+        let engine = pair.1
+        harness.lock.locked = true
+        let start = harness.clock.current
+        harness.replies.pages = [ReplyPage(replies: [
+            routedReply("r-a", chat: 7, text: "one", guid: "origin"),
+            routedReply("r-b", chat: 7, text: "two", guid: "origin"),
+        ], nextCursor: nil)]
+        let kept = okList([room(7, "chat-kept")])
+        let reader = ScriptedChatLists(script: [kept, kept])
+        let poller = makePoller(harness, engine, reader)
+        _ = await poller.tick()
+        let held = await engine.snapshot()
+        XCTAssertEqual(held.heldCount, 2)
+        harness.lock.locked = false
+        await engine.noteLock(.unlocked)
+        final class Count: @unchecked Sendable {
+            private let lock = NSLock()
+            private var n = 0
+            func bump() -> Int {
+                lock.lock()
+                defer { lock.unlock() }
+                n += 1
+                return n
+            }
+        }
+        let phase = Count()
+        harness.lock.onState = {
+            if phase.bump() >= 2 {
+                harness.clock.current = start.addingTimeInterval(harness.config.routeTTLSeconds + 5)
+                _ = await engine.applyChatList(.failed)
+            }
+        }
+        harness.clock.current = start.addingTimeInterval(1)
+        _ = await poller.tick()
+        let snap = await engine.snapshot()
+        let inFlight = await engine.inFlightReplyCount()
+        XCTAssertEqual(snap.heldCount, 2)
+        XCTAssertEqual(inFlight, 0)
+        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(codeCount(harness, "reply_too_old"), 0)
+    }
+
+    func testPartialSuccessResolvesTheHoldLogAcrossADatabaseReset() async throws {
+        let pair = try prepared(ids: [7, 8])
+        let harness = pair.0
+        let engine = pair.1
+        let reader = ScriptedChatLists(script: [
+            okList([room(7, "chat-kept")]),
+            partial([room(7, "chat-kept")]),
+            okList([room(7, "chat-kept")]),
+        ])
+        harness.replies.pages = [
+            ReplyPage(replies: [routedReply("r-b", chat: 8, text: "wait", guid: "origin-b")], nextCursor: nil),
+        ]
+        harness.config.replyPollIntervalSeconds = 1
+        let poller = makePoller(harness, engine, reader)
+        _ = await poller.tick()
+        XCTAssertEqual(codeCount(harness, "reply_held_not_in_list"), 1)
+        await engine.setChatEnabled(7, guid: "chat-other", enabled: true)
+        _ = await poller.tick()
+        let reset = await engine.snapshot()
+        XCTAssertEqual(reset.lastError, "messages_db_reset")
+        await engine.setChatEnabled(8, guid: "chat-b", enabled: true)
+        _ = await engine.ingestWatchLine(watchLine(
+            id: 91,
+            guid: "origin-b",
+            chat: 8,
+            fromMe: true,
+            text: "\u{1FA94} again",
+            chatGUID: "chat-b"
+        ))
+        harness.replies.pages = [
+            ReplyPage(replies: [routedReply("r-b2", chat: 8, text: "again", guid: "origin-b")], nextCursor: nil),
+        ]
+        harness.clock.current = harness.clock.current.addingTimeInterval(2)
+        _ = await poller.tick()
+        XCTAssertEqual(codeCount(harness, "reply_held_not_in_list"), 2)
+    }
+
+    func testVerifiedChatDoesNotSendAfterEveryLineFails() async throws {
+        let pair = try prepared()
+        let harness = pair.0
+        let engine = pair.1
+        let reader = ScriptedChatLists(script: [
+            okList([room(7, "chat-kept")]),
+            .parsed(ChatListParse(chats: [], failedLineCount: 1)),
+        ])
+        harness.replies.pages = [
+            ReplyPage(replies: [], nextCursor: nil),
+            ReplyPage(replies: [routedReply("r-1", chat: 7, text: "hello", guid: "origin")], nextCursor: nil),
+        ]
+        harness.config.replyPollIntervalSeconds = 1
+        let poller = makePoller(harness, engine, reader)
+        _ = await poller.tick()
+        XCTAssertEqual(harness.sender.sent.count, 0)
+        harness.clock.current = harness.clock.current.addingTimeInterval(2)
+        _ = await poller.tick()
+        let afterRows = await engine.snapshot()
+        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(afterRows.holdNotice, "chats_parse_failed")
+    }
+
+    func testMismatchStaysBehindTheFailureNoticeAfterTheGrace() async throws {
+        let pair = try prepared(interval: 1)
+        let harness = pair.0
+        let engine = pair.1
+        let start = harness.clock.current
+        let kept = okList([room(7, "chat-kept")])
+        let reader = ScriptedChatLists(script: [kept, .failed])
+        let poller = makePoller(harness, engine, reader, schedule: .production)
+        _ = await poller.tick()
+        await engine.setChatEnabled(7, guid: "chat-other", enabled: true)
+        harness.replies.pages = [
+            ReplyPage(replies: [routedReply("r-mismatch", chat: 7, text: "hello", guid: "origin")], nextCursor: nil),
+        ]
+        harness.clock.current = start.addingTimeInterval(2)
+        _ = await poller.tick()
+        let mismatched = await engine.snapshot()
+        XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
+        await poller.requestChatsRefresh()
+        harness.clock.current = start.addingTimeInterval(4)
+        _ = await poller.tick()
+        harness.clock.current = start.addingTimeInterval(64)
+        let later = await engine.snapshot()
+        XCTAssertEqual(later.holdNotice, "chats_failed")
+    }
+
+    func testCancellingTheSupervisorDoesNotStartWatch() async throws {
+        let harness = Harness()
+        let engine = try harness.engine()
+        let release = Gate()
+        defer { release.open() }
+        let reader = ScriptedChatLists(script: [okList([])])
+        let started = Gate()
+        reader.onRead = {
+            started.open()
+            await release.wait()
+        }
+        let watched = LockedFlag()
+        let poller = makePoller(harness, engine, reader, schedule: .production)
+        let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) {
+            watched.value = true
+        }
+        await fulfillment(of: [expectGate(started, "read")], timeout: 2)
+        tasks.supervisor.cancel()
+        release.open()
+        _ = await tasks.supervisor.value
+        XCTAssertFalse(watched.value)
+    }
+
+    func testLessonsKeepTheDesignSentenceAndTheOldDistinction() throws {
+        let text = try String(contentsOf: repoRoot().appendingPathComponent("LESSONS.md"), encoding: .utf8)
+        XCTAssertTrue(text.contains("条件は1つずつ戻して、どれにも落ちるテストがあることを確かめる"))
+        XCTAssertTrue(text.contains("返事を取りに行って保留が見えなかったことと、一覧が戻ったことは別もの"))
     }
 
     private func assertLaunchOrder(_ read: ChatListRead) async throws {
@@ -1220,49 +1408,40 @@ final class PollerCoverageTests: XCTestCase {
             applied.open()
         }
         let reader = ScriptedChatLists(script: [read])
-        let readStarted = expectation(description: "read started")
+        let readStarted = Gate()
         reader.onRead = {
             events.append("read")
-            readStarted.fulfill()
+            readStarted.open()
             await release.wait()
         }
         let probe = RecordingProbe(log: events)
+        let registered = Gate()
+        let returnedArrived = Gate()
+        let appliedArrived = Gate()
+        probe.arrived["initialWaitRegistered"] = registered
+        probe.arrived["chatsReadReturned"] = returnedArrived
+        probe.arrived["chatsApplied"] = appliedArrived
         probe.gates["chatsReadReturned"] = returned
         probe.gates["chatsApplied"] = applied
         let poller = makePoller(harness, engine, reader, schedule: .production, probe: probe)
-        let saw = Flag()
-        saw.value = false
-        harness.clock.onSleep = {
-            while !saw.value && !harness.stop.isStopped { await Task.yield() }
-        }
+        let saw = LockedFlag()
+        let watchGate = Gate()
+        defer { watchGate.open() }
+        harness.clock.onSleep = { await watchGate.wait() }
         let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) {
             events.append("watch")
             saw.value = true
+            watchGate.open()
         }
-        let registered = expectation(description: "wait registered")
-        Task {
-            while !events.snapshot().contains("initialWaitRegistered") { await Task.yield() }
-            registered.fulfill()
-        }
-        await fulfillment(of: [registered, readStarted], timeout: 2)
+        await fulfillment(of: [expectGate(registered, "wait registered"), expectGate(readStarted, "read started")], timeout: 2)
         XCTAssertFalse(events.snapshot().contains("watch"))
         release.open()
-        let sawReturned = expectation(description: "read returned")
-        Task {
-            while !events.snapshot().contains("chatsReadReturned") { await Task.yield() }
-            sawReturned.fulfill()
-        }
-        await fulfillment(of: [sawReturned], timeout: 2)
+        await fulfillment(of: [expectGate(returnedArrived, "read returned")], timeout: 2)
         let seen70 = await poller.initialListResolved()
         XCTAssertFalse(seen70)
         XCTAssertFalse(saw.value)
         returned.open()
-        let sawApplied = expectation(description: "applied")
-        Task {
-            while !events.snapshot().contains("chatsApplied") { await Task.yield() }
-            sawApplied.fulfill()
-        }
-        await fulfillment(of: [sawApplied], timeout: 2)
+        await fulfillment(of: [expectGate(appliedArrived, "applied")], timeout: 2)
         let seen71 = await poller.initialListResolved()
         XCTAssertFalse(seen71)
         XCTAssertEqual(
@@ -1271,12 +1450,7 @@ final class PollerCoverageTests: XCTestCase {
         )
         XCTAssertFalse(saw.value)
         applied.open()
-        let sawWatch = expectation(description: "watch")
-        Task {
-            while !saw.value { await Task.yield() }
-            sawWatch.fulfill()
-        }
-        await fulfillment(of: [sawWatch], timeout: 2)
+        await fulfillment(of: [expectGate(watchGate, "watch")], timeout: 2)
         harness.stop.stop()
         let relevant = events.snapshot().filter { ["read", "chatsApplied", "watch"].contains($0) }
         let watchAt = relevant.firstIndex(of: "watch")
@@ -1290,15 +1464,17 @@ final class PollerCoverageTests: XCTestCase {
         _ = await tasks.poller.value
         _ = await tasks.supervisor.value
     }
+
+    private func expectGate(_ gate: Gate, _ name: String) -> XCTestExpectation {
+        let exp = expectation(description: name)
+        Task {
+            await gate.wait()
+            exp.fulfill()
+        }
+        return exp
+    }
 }
 
-private final class TaskSlot: @unchecked Sendable {
-    var task: Task<Void, Never>?
-}
-
-private final class Flag: @unchecked Sendable {
-    var value = true
-}
 
 private func room(_ id: Int64, _ guid: String) -> ChatSummary {
     ChatSummary(id: id, title: "room", isGroup: false, guid: guid)

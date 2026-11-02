@@ -12,9 +12,12 @@ iMessageの中に常駐する、アンビエント型のアシスタントbot「
 
 ```bash
 swift test
+python3 tools/check-mutants.py       # 壊し方。テストが通ったら失敗
 swift build --product GenieMenuBar   # macOS
 scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 ```
+
+壊し方の置き場所と、新しい条件には壊し方も足すことは `LESSONS.md` に書いてある。
 
 署名IDは Apple Development 証明書の名前を引数か `GENIE_CODESIGN_IDENTITY` で渡す。アドホック署名は使わない。証明書はリポジトリに置かない。
 

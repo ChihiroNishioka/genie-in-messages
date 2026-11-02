@@ -12,12 +12,12 @@
   {
     "name": "M6",
     "patch": "m6-partial-clear.patch",
-    "filter": "PollerCoverageTests.testPartialSuccessStillSends"
+    "filter": "PollerCoverageTests.testPartialSuccessResolvesTheHoldLogAcrossADatabaseReset"
   },
   {
     "name": "M10",
     "patch": "m10-all-rows-keep-directory.patch",
-    "filter": "PollerCoverageTests.testAllRowsFailureStaysThroughTheGrace"
+    "filter": "PollerCoverageTests.testVerifiedChatDoesNotSendAfterEveryLineFails"
   },
   {
     "name": "GREEN21",
@@ -32,6 +32,11 @@
   {
     "name": "GREEN30",
     "patch": "green30-mismatch-before-grace.patch",
-    "filter": "PollerCoverageTests.testMatchedGuidStaysClearThroughTheGrace"
+    "filter": "PollerCoverageTests.testMismatchStaysBehindTheFailureNoticeAfterTheGrace"
+  },
+  {
+    "name": "GREEN34",
+    "patch": "green34-drop-design-sentence.patch",
+    "filter": "PollerCoverageTests.testLessonsKeepTheDesignSentenceAndTheOldDistinction"
   }
 ]

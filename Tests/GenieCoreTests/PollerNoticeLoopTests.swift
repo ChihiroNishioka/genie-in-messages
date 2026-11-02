@@ -5,7 +5,7 @@ import XCTest
 final class PollerNoticeLoopTests: XCTestCase {
     func testPartialParseNoticeSurvivesTheReplyPollUntilTheListIsVerified() async throws {
         let started = try loopEngine()
-        await pollerPass(started, .parsed(ChatListParse(
+        await started.pass( .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 1
         )))
@@ -17,7 +17,7 @@ final class PollerNoticeLoopTests: XCTestCase {
             "照合: 一覧の一部の行を読めませんでした。許可したトークは一覧で確かめられました"
         )
 
-        await pollerPass(started, .parsed(ChatListParse(
+        await started.pass( .parsed(ChatListParse(
             chats: [ChatSummary(id: 8, title: "other", isGroup: false, guid: "someone-else")],
             failedLineCount: 0
         )))
@@ -25,7 +25,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         XCTAssertEqual(unverified.holdNotice, "chats_parse_failed")
         XCTAssertNotEqual(SendHoldStatus.menuLine(for: unverified.holdNotice), "照合: なし")
 
-        await pollerPass(started, .parsed(ChatListParse(
+        await started.pass( .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 0
         )))
@@ -45,8 +45,8 @@ final class PollerNoticeLoopTests: XCTestCase {
             chats: [ChatSummary(id: 8, title: "other", isGroup: false, guid: "someone-else")],
             failedLineCount: 1
         )
-        await pollerPass(started, .parsed(partial))
-        await pollerPass(started, .parsed(partial))
+        await started.pass( .parsed(partial))
+        await started.pass( .parsed(partial))
         let notes = started.harness.log.records.filter { $0.code == "chats_parse_failed" }
         XCTAssertEqual(notes.count, 1)
         XCTAssertEqual(started.harness.log.records.filter { $0.code == "reply_held_not_in_list" }.count, 1)
@@ -57,11 +57,11 @@ final class PollerNoticeLoopTests: XCTestCase {
 
     func testAllLinesFailingDoesNotKeepTheNoticeAfterACleanVerifiedRead() async throws {
         let started = try loopEngine()
-        await pollerPass(started, .parsed(ChatListParse(chats: [], failedLineCount: 1)))
+        await started.pass( .parsed(ChatListParse(chats: [], failedLineCount: 1)))
         let stuck = await started.engine.snapshot()
         XCTAssertEqual(stuck.holdNotice, "chats_parse_failed")
 
-        await pollerPass(started, .parsed(ChatListParse(
+        await started.pass( .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 0
         )))
@@ -73,7 +73,7 @@ final class PollerNoticeLoopTests: XCTestCase {
 
     func testOneStartupListFailureDoesNotSayAReplyIsWaiting() async throws {
         let started = try loopEngine()
-        await pollerPass(started, .failed)
+        await started.pass( .failed)
         let once = await started.engine.snapshot()
         XCTAssertNil(once.holdNotice)
         XCTAssertNotEqual(
@@ -83,7 +83,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         XCTAssertEqual(started.harness.sender.sent.count, 0)
 
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
-        await pollerPass(started, .failed)
+        await started.pass( .failed)
         let again = await started.engine.snapshot()
         XCTAssertEqual(again.holdNotice, "chats_failed")
         XCTAssertEqual(
@@ -157,39 +157,43 @@ private final class HeldChatLists: ChatListReading, @unchecked Sendable {
     func read() async -> ChatListRead { next }
 }
 
-private final class KeptPoller {
-    let reader = HeldChatLists()
-    let poller: GeniePoller
-    init(_ started: Started) {
-        poller = GeniePoller(
-            engine: started.engine,
-            reader: reader,
-            configProvider: StaticConfig(config: started.harness.config),
-            clock: started.harness.clock,
-            stop: started.harness.stop,
-            schedule: PollSchedule(tickSeconds: 2, chatsSeconds: 0, lastChatsAt: nil, lastRepliesAt: nil)
-        )
+private final class NoticeRun {
+    let harness: Harness
+    let engine: GenieEngine
+    private var kept: (reader: HeldChatLists, poller: GeniePoller)?
+
+    init(harness: Harness, engine: GenieEngine) {
+        self.harness = harness
+        self.engine = engine
     }
-}
 
-private var keptPollers: [ObjectIdentifier: KeptPoller] = [:]
-
-private func pollerPass(_ started: Started, _ read: ChatListRead) async {
-    let key = ObjectIdentifier(started.engine)
-    let kept = keptPollers[key] ?? KeptPoller(started)
-    keptPollers[key] = kept
-    let schedule = await kept.poller.currentSchedule()
-    if let last = schedule.lastRepliesAt {
-        let gap = started.harness.config.replyPollIntervalSeconds
-        if started.harness.clock.current.timeIntervalSince(last) < gap {
-            started.harness.clock.current = last.addingTimeInterval(gap)
+    func pass(_ read: ChatListRead) async {
+        if kept == nil {
+            let reader = HeldChatLists()
+            let poller = GeniePoller(
+                engine: engine,
+                reader: reader,
+                configProvider: StaticConfig(config: harness.config),
+                clock: harness.clock,
+                stop: harness.stop,
+                schedule: PollSchedule(tickSeconds: 2, chatsSeconds: 0, lastChatsAt: nil, lastRepliesAt: nil)
+            )
+            kept = (reader, poller)
         }
+        guard let kept else { return }
+        let schedule = await kept.poller.currentSchedule()
+        if let last = schedule.lastRepliesAt {
+            let gap = harness.config.replyPollIntervalSeconds
+            if harness.clock.current.timeIntervalSince(last) < gap {
+                harness.clock.current = last.addingTimeInterval(gap)
+            }
+        }
+        kept.reader.next = read
+        _ = await kept.poller.tick()
     }
-    kept.reader.next = read
-    _ = await kept.poller.tick()
 }
 
-private func loopEngine(routeTTL: Double? = nil) throws -> Started {
+private func loopEngine(routeTTL: Double? = nil) throws -> NoticeRun {
     let harness = Harness()
     harness.allow.ids = [7]
     harness.allow.guids = [7: "chat-kept"]
@@ -200,5 +204,5 @@ private func loopEngine(routeTTL: Double? = nil) throws -> Started {
     }
     seedRoute(harness, guid: "origin", chat: 7)
     let engine = try harness.engine()
-    return Started(harness: harness, engine: engine, replies: CountingReplies(page: ReplyPage(replies: [], nextCursor: nil)))
+    return NoticeRun(harness: harness, engine: engine)
 }

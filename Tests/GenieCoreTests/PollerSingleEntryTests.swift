@@ -64,7 +64,7 @@ final class PollerSingleEntryTests: XCTestCase {
         let engine = try harness.engine()
         harness.stop.stop()
         let reader = ScriptedChatLists(script: [.failed])
-        var watched = false
+        let watched = LockedFlag()
         let poller = GeniePoller(
             engine: engine,
             reader: reader,
@@ -73,14 +73,14 @@ final class PollerSingleEntryTests: XCTestCase {
             stop: harness.stop
         )
         let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) {
-            watched = true
+            watched.value = true
         }
         let initial = await poller.waitForInitialChatList()
         _ = await tasks.poller.value
         _ = await tasks.supervisor.value
         XCTAssertEqual(initial, .stopped)
         XCTAssertEqual(reader.calls, 0)
-        XCTAssertFalse(watched)
+        XCTAssertFalse(watched.value)
     }
 
     func testStoppingDuringTheChatReadDiscardsTheResult() async throws {
@@ -88,17 +88,20 @@ final class PollerSingleEntryTests: XCTestCase {
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
         let engine = try harness.engine()
         let reader = ScriptedChatLists(script: [.failed])
+        let events = EventLog()
         reader.onRead = { harness.stop.stop() }
         let poller = GeniePoller(
             engine: engine,
             reader: reader,
             configProvider: StaticConfig(config: harness.config),
             clock: harness.clock,
-            stop: harness.stop
+            stop: harness.stop,
+            probe: RecordingProbe(log: events)
         )
         let report = await poller.tick()
         XCTAssertEqual(report.steps, [.lock, .chats(.discardedAfterStop)])
         XCTAssertTrue(report.stoppedMidway)
+        XCTAssertFalse(events.snapshot().contains("chatsReadReturned"))
         XCTAssertEqual(harness.log.records.filter { $0.code == "chats_failed" }.count, 0)
     }
 
@@ -150,7 +153,7 @@ final class PollerSingleEntryTests: XCTestCase {
         for case let url as URL in enumerator {
             guard url.pathExtension == "swift" else { continue }
             let text = try String(contentsOf: url, encoding: .utf8)
-            if text.contains(taskSleep) || text.contains(threadSleep) {
+            if text.contains(taskSleep) || text.contains(threadSleep) || text.containsEmptySpin() {
                 offenders.append(url.lastPathComponent)
             }
         }
@@ -168,6 +171,14 @@ final class ScriptedChatLists: ChatListReading, @unchecked Sendable {
         await onRead?()
         if script.isEmpty { return .failed }
         return script.removeFirst()
+    }
+}
+
+private extension String {
+    /// 中身が空の while を探す。
+    func containsEmptySpin() -> Bool {
+        let pattern = "while[^{\\n]*\\{\\s*\\}"
+        return range(of: pattern, options: .regularExpression) != nil
     }
 }
 

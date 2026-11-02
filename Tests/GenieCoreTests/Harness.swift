@@ -278,18 +278,59 @@ final class MutableConfig: ConfigProviding, @unchecked Sendable {
 final class RecordingProbe: PollerProbe, @unchecked Sendable {
     let log: EventLog
     var gates: [String: Gate] = [:]
+    var arrived: [String: Gate] = [:]
     init(log: EventLog) { self.log = log }
     func chatsReadReturned() async {
         log.append("chatsReadReturned")
+        arrived["chatsReadReturned"]?.open()
         if let gate = gates["chatsReadReturned"] { await gate.wait() }
     }
     func chatsApplied() async {
         log.append("chatsApplied")
+        arrived["chatsApplied"]?.open()
         if let gate = gates["chatsApplied"] { await gate.wait() }
     }
     func initialWaitRegistered() async {
         log.append("initialWaitRegistered")
+        arrived["initialWaitRegistered"]?.open()
         if let gate = gates["initialWaitRegistered"] { await gate.wait() }
+    }
+}
+
+/// 複数のタスクから読み書きする印。ロックで守る。
+final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Bool
+    init(_ value: Bool = false) { stored = value }
+    var value: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
+        }
+        set {
+            lock.lock()
+            stored = newValue
+            lock.unlock()
+        }
+    }
+}
+
+/// 複数のタスクから読み書きする Task。ロックで守る。
+final class TaskSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Task<Void, Never>?
+    var task: Task<Void, Never>? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
+        }
+        set {
+            lock.lock()
+            stored = newValue
+            lock.unlock()
+        }
     }
 }
 
