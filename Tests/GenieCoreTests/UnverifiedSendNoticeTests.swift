@@ -5,7 +5,7 @@ import XCTest
 final class UnverifiedSendNoticeTests: XCTestCase {
     func testEmptyListShowsWhyTheReplyWasHeld() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([])
+        await started.engine.showChats([])
         await started.engine.pollReplies()
         await assertHeld(
             started,
@@ -16,7 +16,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
 
     func testChatMissingFromListShowsWhyTheReplyWasHeld() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 99, title: "other", isGroup: false, guid: "someone-else"),
         ])
         await started.engine.pollReplies()
@@ -29,10 +29,10 @@ final class UnverifiedSendNoticeTests: XCTestCase {
 
     func testFailedChatFetchShowsOnTheStatusEvenWhenTheCallerHidesIt() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
-        await started.engine.noteChatsProblem(code: "chats_failed")
+        await started.engine.applyChatList(.failed)
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
         let snap = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
@@ -50,7 +50,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
 
     func testDifferentGuidShowsWhyTheReplyWasHeldWithoutIdentifiers() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-kept"),
         ])
         await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)

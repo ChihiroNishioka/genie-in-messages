@@ -256,9 +256,7 @@ final class WatchProcessTests: XCTestCase {
         XCTAssertTrue(box.wasUserStop())
         XCTAssertTrue(box.wasStopRequested())
         let deadline = Date().addingTimeInterval(2)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.02)
-        }
+        while process.isRunning && Date() < deadline {}
         XCTAssertFalse(process.isRunning)
         assertKilled(process)
         box.resetStop()
@@ -312,8 +310,6 @@ final class WatchProcessTests: XCTestCase {
             if !chunk.isEmpty {
                 buffer.append(chunk)
                 if String(decoding: buffer, as: UTF8.self).contains("ready") { return }
-            } else {
-                Thread.sleep(forTimeInterval: 0.01)
             }
         }
         XCTFail("ready が来なかった: \(String(decoding: buffer, as: UTF8.self))")

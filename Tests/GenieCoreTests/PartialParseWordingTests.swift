@@ -15,6 +15,10 @@ final class PartialParseWordingTests: XCTestCase {
         )))
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "chats_parse_failed")
+        XCTAssertEqual(
+            SendHoldStatus.menuLine(for: snap.holdNotice),
+            "照合: 一覧の行を読めなかったため、照合できていません"
+        )
         XCTAssertFalse(SendHoldStatus.menuLine(for: snap.holdNotice).contains("返事を待っています"))
         XCTAssertEqual(harness.sender.sent.count, 0)
     }

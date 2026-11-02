@@ -3,9 +3,9 @@ import XCTest
 
 /// guid が違って捨てた返事の表示は、ほかの理由で上書きされても、guid が合うまで戻る。
 final class MismatchNoticeStickyTests: XCTestCase {
-    func testMismatchNoticeReturnsAfterTheListIsReread() async throws {
+    func testRereadWithADifferentAllowlistGuidResetsTheDatabase() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)
@@ -18,21 +18,19 @@ final class MismatchNoticeStickyTests: XCTestCase {
             "照合: トークの識別子が変わったため、その返事は捨てました"
         )
 
-        await started.engine.noteChatsProblem(code: "chats_failed")
-        await started.engine.reconcileChats([
+        await started.engine.applyChatList(.failed)
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let reread = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
-        XCTAssertEqual(reread.holdNotice, "reply_chat_guid_mismatch")
-        XCTAssertEqual(
-            SendHoldStatus.menuLine(for: reread.holdNotice),
-            "照合: トークの識別子が変わったため、その返事は捨てました"
-        )
-        XCTAssertNotEqual(SendHoldStatus.menuLine(for: reread.holdNotice), "照合: なし")
+        XCTAssertEqual(reread.lastError, "messages_db_reset")
+        XCTAssertEqual(reread.enabledChatIDs, [])
+        XCTAssertNil(reread.holdNotice)
+        XCTAssertEqual(SendHoldStatus.menuLine(for: reread.holdNotice), "照合: なし")
 
         await started.engine.setChatEnabled(7, guid: "chat-kept", enabled: true)
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let matched = await started.engine.snapshot()
@@ -59,7 +57,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
             ),
         ]
         let engine = try harness.engine()
-        await engine.reconcileChats([
+        await engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         await engine.setChatEnabled(7, guid: "chat-other", enabled: true)
@@ -68,7 +66,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         XCTAssertEqual(harness.sender.sent.count, 0)
         XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
 
-        await engine.reconcileChats([])
+        await engine.showChats([])
         await engine.pollReplies()
         let overwritten = await engine.snapshot()
         XCTAssertEqual(overwritten.holdNotice, "reply_held_empty_list")

@@ -33,7 +33,13 @@ final class PollerSingleEntryTests: XCTestCase {
         let harness = Harness()
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
         let engine = try harness.engine()
-        let reader = ScriptedChatLists(script: [])
+        let start = harness.clock.current
+        let ok = ChatListRead.parsed(ChatListParse(chats: [], failedLineCount: 0))
+        let reader = ScriptedChatLists(script: Array(repeating: ok, count: 8))
+        var chatAt: [TimeInterval] = []
+        var replyAt: [TimeInterval] = []
+        reader.onRead = { chatAt.append(harness.clock.current.timeIntervalSince(start)) }
+        harness.replies.onFetch = { replyAt.append(harness.clock.current.timeIntervalSince(start)) }
         let poller = GeniePoller(
             engine: engine,
             reader: reader,
@@ -42,14 +48,15 @@ final class PollerSingleEntryTests: XCTestCase {
             stop: harness.stop,
             schedule: .production
         )
-        let start = harness.clock.current
         harness.clock.onSleep = {
             if harness.clock.current.timeIntervalSince(start) > 120 {
                 harness.stop.stop()
             }
         }
         await poller.run()
-        XCTAssertEqual(reader.calls, 5)
+        XCTAssertEqual(chatAt, [0, 30, 60, 90, 120])
+        XCTAssertEqual(replyAt, Array(stride(from: 0, through: 120, by: 10)))
+        XCTAssertFalse(chatAt.contains(10))
     }
 
     func testStoppingBeforeLaunchDoesNotReadOrWatch() async throws {
@@ -116,20 +123,38 @@ final class PollerSingleEntryTests: XCTestCase {
                 offenders.append("\(name) applyChatList \(calls)")
             }
         }
+        let app = repoRoot().appendingPathComponent("Sources/GenieMenuBar")
+        let appFiles = try sourceFiles(in: app)
+        let direct = ["engine.retryHolds", "engine.pollReplies", "engine.refreshLock", "applyChatList(", "func loadChats(", "poller.run(", "waitForInitialChatList("]
+        for url in appFiles {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            for name in direct where text.contains(name) {
+                offenders.append("\(url.lastPathComponent) \(name)")
+            }
+            let launches = text.components(separatedBy: "GenieRuntimeLauncher.launch(").count - 1
+            if url.lastPathComponent == "GenieController.swift" && launches != 1 {
+                offenders.append("GenieController.swift launch \(launches)")
+            }
+        }
         XCTAssertEqual(offenders, [])
     }
 
     func testNewSchedulerTestsDoNotSleep() throws {
         let root = repoRoot().appendingPathComponent("Tests")
-        let names = [
-            "ListFailureGraceTests.swift",
-            "ListStateTransitionTests.swift",
-        ]
-        for name in names {
-            let text = try String(contentsOf: root.appendingPathComponent("GenieCoreTests").appendingPathComponent(name), encoding: .utf8)
-            XCTAssertFalse(text.contains("Task.sleep"))
-            XCTAssertFalse(text.contains("Thread.sleep"))
+        let taskSleep = "Task" + ".sleep"
+        let threadSleep = "Thread" + ".sleep"
+        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else {
+            return XCTFail("Tests を読めない")
         }
+        var offenders: [String] = []
+        for case let url as URL in enumerator {
+            guard url.pathExtension == "swift" else { continue }
+            let text = try String(contentsOf: url, encoding: .utf8)
+            if text.contains(taskSleep) || text.contains(threadSleep) {
+                offenders.append(url.lastPathComponent)
+            }
+        }
+        XCTAssertEqual(offenders, [])
     }
 }
 

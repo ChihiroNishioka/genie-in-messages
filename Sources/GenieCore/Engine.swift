@@ -103,6 +103,8 @@ package actor GenieEngine {
 
     package func inFlightReplyCount() -> Int { inFlightReplyIDs.count }
 
+    package func savedReplyCursor() -> String? { persisted.replyCursor }
+
     package static let chatsFailureNoticeSeconds: Double = 60
 
     package func isPaused() -> Bool { paused }
@@ -252,18 +254,6 @@ package actor GenieEngine {
                 lastFetchVerified = false
             }
         }
-    }
-
-    /// テストと古い呼び出し向け。取得失敗か解析失敗を、一覧の層に記録する。
-    package func noteChatsProblem(code: String) {
-        if code == "chats_parse_failed" {
-            parseProblem = .partial
-            directoryGUIDs = [:]
-            directoryChecked = false
-            logListCode(code)
-            return
-        }
-        noteFetchFailure()
     }
 
     private func noteFetchFailure() {
