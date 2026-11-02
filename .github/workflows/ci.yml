@@ -16,7 +16,7 @@ jobs:
         run: python3 scripts/check-tracked-text.py
 
   macos:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - name: Test
