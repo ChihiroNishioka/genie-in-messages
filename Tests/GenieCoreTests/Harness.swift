@@ -56,6 +56,7 @@ final class FakeLock: ScreenLockChecking, @unchecked Sendable {
 
 final class ScriptedReplies: ReplySource, @unchecked Sendable {
     var pages: [ReplyPage] = []
+    var onFetch: (() async -> Void)?
     func fetch(
         cursor: String?,
         skipping handledReplyIDs: Set<String> = [],
@@ -63,6 +64,7 @@ final class ScriptedReplies: ReplySource, @unchecked Sendable {
     ) async throws -> ReplyPage {
         _ = handledReplyIDs
         _ = replyIDs
+        await onFetch?()
         if pages.isEmpty {
             return ReplyPage(replies: [], nextCursor: cursor)
         }
@@ -72,6 +74,7 @@ final class ScriptedReplies: ReplySource, @unchecked Sendable {
 
 final class Harness {
     let clock = ManualClock()
+    let stop = StopSignal()
     let webhook = FakeWebhook()
     let sender = FakeSender()
     let lock = FakeLock()
@@ -122,7 +125,8 @@ final class Harness {
             secrets: secrets,
             lock: lock,
             clock: clock,
-            log: log
+            log: log,
+            stop: stop
         )
     }
 }

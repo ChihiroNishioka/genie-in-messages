@@ -32,8 +32,8 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         await started.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
-        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
-        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        await started.engine.noteChatsProblem(code: "chats_failed")
+        started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
         let snap = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
         XCTAssertNil(snap.lastError)

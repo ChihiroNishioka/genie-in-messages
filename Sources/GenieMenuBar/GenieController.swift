@@ -7,21 +7,37 @@ final class GenieController: @unchecked Sendable {
     private let paths: ConfigPaths
     private let config: FileConfigProvider
     private let box = ProcessBox()
+    private let stop: StopSignal
+    private let chatPoller: GeniePoller
     private var supervisor: Task<Void, Never>?
     private var poller: Task<Void, Never>?
-    private var stopped = false
-    private let stateLock = NSLock()
 
     init(paths: ConfigPaths) throws {
         let built = try RuntimeBuilder.make(paths: paths)
         engine = built.engine
         logURL = built.logURL
         config = built.config
+        stop = built.stop
         self.paths = paths
+        chatPoller = GeniePoller(
+            engine: built.engine,
+            reader: ImsgChatListReader(config: built.config),
+            configProvider: built.config,
+            clock: SystemClock(),
+            stop: built.stop
+        )
         if let note = built.note {
             Task { await self.engine.setLastError(note) }
         }
         start()
+    }
+
+    func requestChatsRefresh() {
+        Task { await chatPoller.requestChatsRefresh() }
+    }
+
+    func latestChats() async -> [ChatSummary] {
+        await chatPoller.latestChats()
     }
 
     func pause() async {
@@ -34,43 +50,26 @@ final class GenieController: @unchecked Sendable {
     }
 
     func shutdown() {
-        stateLock.lock()
-        stopped = true
-        stateLock.unlock()
+        stop.stop()
         box.stopForUserAndWait()
         supervisor?.cancel()
         poller?.cancel()
-    }
-
-    func loadChats(reportError: Bool) async -> [ChatSummary] {
-        let loaded = (try? config.load()) ?? .productDefaults
-        let result = await ProcessRunner.run(
-            executable: loaded.imsgExecutable,
-            arguments: ImsgCommand.chatsArguments(limit: loaded.chatsLimit),
-            timeout: loaded.chatsTimeoutSeconds
-        )
-        if result.exitCode != 0 || result.timedOut {
-            _ = reportError
-            return await engine.applyChatList(.failed)
-        }
-        let parsed = ChatListParser.parse(ndjson: result.stdout)
-        return await engine.applyChatList(.parsed(parsed))
     }
 
     private func start() {
         let box = self.box
         let engine = self.engine
         let config = self.config
-        supervisor = Task.detached {
-            _ = await self.loadChats(reportError: true)
+        let stop = self.stop
+        let launched = GenieRuntimeLauncher.launch(poller: chatPoller, stop: stop) {
             var delay = 1.0
-            while !self.isStopped {
+            while !stop.isStopped {
                 if await engine.isPaused() {
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     continue
                 }
                 box.resetStop()
-                if self.isStopped { continue }
+                if stop.isStopped { continue }
                 if await engine.isPaused() { continue }
                 let cursor = await engine.snapshot().cursorRowID
                 let loaded = (try? config.load()) ?? .productDefaults
@@ -91,7 +90,7 @@ final class GenieController: @unchecked Sendable {
                 }
                 let pausedNow = await engine.isPaused()
                 let userStop = box.wasUserStop() || pausedNow
-                let quitting = self.isStopped
+                let quitting = stop.isStopped
                 await engine.noteWatchEnded(outcome, updateMenu: !userStop && !quitting)
                 if userStop || quitting { continue }
                 let ran = Date().timeIntervalSince(started)
@@ -103,24 +102,8 @@ final class GenieController: @unchecked Sendable {
                 delay = min(30, max(1, delay * 2))
             }
         }
-        poller = Task.detached {
-            var lastReply = Date.distantPast
-            var lastChats = Date.distantPast
-            while !self.isStopped {
-                let loaded = (try? config.load()) ?? .productDefaults
-                await engine.refreshLock()
-                if Date().timeIntervalSince(lastChats) >= 30 {
-                    _ = await self.loadChats(reportError: true)
-                    lastChats = Date()
-                }
-                await engine.retryHolds()
-                if Date().timeIntervalSince(lastReply) >= loaded.replyPollIntervalSeconds {
-                    await engine.pollReplies()
-                    lastReply = Date()
-                }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-            }
-        }
+        poller = launched.poller
+        supervisor = launched.supervisor
         let caffeinate = Process()
         caffeinate.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
         caffeinate.arguments = ["-i", "-s", "-w", String(ProcessInfo.processInfo.processIdentifier)]
@@ -133,11 +116,6 @@ final class GenieController: @unchecked Sendable {
         }
     }
 
-    private var isStopped: Bool {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return stopped
-    }
 }
 
 enum RuntimeBuilder {
@@ -146,6 +124,7 @@ enum RuntimeBuilder {
         var config: FileConfigProvider
         var logURL: URL
         var note: String?
+        var stop: StopSignal
     }
 
     static func make(paths: ConfigPaths) throws -> Built {
@@ -160,26 +139,28 @@ enum RuntimeBuilder {
         }
         let log = FileGenieLog(url: logURL)
         var note: String?
-        let engine = try openEngine(paths: paths, config: config, log: log, note: &note)
-        return Built(engine: engine, config: config, logURL: logURL, note: note)
+        let stop = StopSignal()
+        let engine = try openEngine(paths: paths, config: config, log: log, stop: stop, note: &note)
+        return Built(engine: engine, config: config, logURL: logURL, note: note, stop: stop)
     }
 
     private static func openEngine(
         paths: ConfigPaths,
         config: FileConfigProvider,
         log: FileGenieLog,
+        stop: StopSignal,
         note: inout String?
     ) throws -> GenieEngine {
         do {
-            return try build(paths: paths, config: config, log: log)
+            return try build(paths: paths, config: config, log: log, stop: stop)
         } catch is StateError {
             try FileStateStore.quarantine(paths.stateFile)
             note = "state_reset"
-            return try openAllowlist(paths: paths, config: config, log: log, note: &note)
+            return try openAllowlist(paths: paths, config: config, log: log, stop: stop, note: &note)
         } catch is AllowlistError {
             try FileAllowlistStore.quarantine(paths.allowlistFile)
             note = "allowlist_reset"
-            return try build(paths: paths, config: config, log: log)
+            return try build(paths: paths, config: config, log: log, stop: stop)
         }
     }
 
@@ -187,21 +168,23 @@ enum RuntimeBuilder {
         paths: ConfigPaths,
         config: FileConfigProvider,
         log: FileGenieLog,
+        stop: StopSignal,
         note: inout String?
     ) throws -> GenieEngine {
         do {
-            return try build(paths: paths, config: config, log: log)
+            return try build(paths: paths, config: config, log: log, stop: stop)
         } catch is AllowlistError {
             try FileAllowlistStore.quarantine(paths.allowlistFile)
             note = "allowlist_reset"
-            return try build(paths: paths, config: config, log: log)
+            return try build(paths: paths, config: config, log: log, stop: stop)
         }
     }
 
     private static func build(
         paths: ConfigPaths,
         config: FileConfigProvider,
-        log: FileGenieLog
+        log: FileGenieLog,
+        stop: StopSignal
     ) throws -> GenieEngine {
         let loaded = try config.load()
         let secrets = FileSecretProvider(paths: paths)
@@ -216,15 +199,11 @@ enum RuntimeBuilder {
             webhook: URLSessionWebhook(),
             secrets: secrets,
             lock: probe,
-            log: log
+            log: log,
+            stop: stop
         )
         probe.observe { state in
-            Task {
-                await engine.noteLock(state)
-                if state == .unlocked {
-                    await engine.retryHolds()
-                }
-            }
+            Task { await engine.noteLock(state) }
         }
         return engine
     }

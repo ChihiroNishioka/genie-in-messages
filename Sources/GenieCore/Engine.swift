@@ -14,6 +14,7 @@ package actor GenieEngine {
     private let lock: any ScreenLockChecking
     private let clock: any GenieClock
     private let log: any GenieLog
+    private let stop: StopSignal
 
     private var paused = false
     private var holds: [HeldSend] = []
@@ -35,14 +36,18 @@ package actor GenieEngine {
     }
     private var screenLock: ScreenLockState = .unknown
     private var lastError: String?
-    /// 照合できずに送らなかった理由。最後のエラーとは別で、ほかのエラーを上書きしない。
-    private var holdNotice: String?
-    /// guid が違って捨てた返事がある。表示が上書きされても、guid が合うまで戻す。
+    /// 取得障害の開始時刻。最初の失敗で置き、成功するまで上書きしない。
+    private var listFetchFailingSince: Date?
+    private var parseProblem: ParseProblem?
+    /// 直近の取得成功で、許可したトークを確かめられたか。失敗のあいだは前の値を保つ。
+    private var lastFetchVerified = false
+    /// 一覧が空、または一覧に無い、で待っている返事。
+    private var transientHold: String?
+    /// guid が違って捨てた返事がある。確かめられるまで残す。
     private var guidMismatchOutstanding = false
-    /// 一部の行だけ読めなかった表示は、その直後の読み直しでは消さない。
-    private var keepParseNoticeOnce = false
-    /// 直前に記録した一覧失敗。表示が上書きされても、これと比べて重ねない。
-    private var lastLoggedListFailure: String?
+    private var noticeLog = NoticeLogGate()
+    /// 間隔を待たずに、次の tick で返事を取る。
+    private var replyPollWanted = false
     /// この取得で、期限切れにして捨てた返事があった。
     private var expiredReplyThisPass = false
     /// この取得で、まだ待っている返事があった。
@@ -60,7 +65,8 @@ package actor GenieEngine {
         secrets: any SecretProviding,
         lock: any ScreenLockChecking,
         clock: any GenieClock = SystemClock(),
-        log: any GenieLog
+        log: any GenieLog,
+        stop: StopSignal = StopSignal()
     ) throws {
         self.configProvider = configProvider
         self.config = initialConfig.sanitized()
@@ -75,6 +81,7 @@ package actor GenieEngine {
         self.lock = lock
         self.clock = clock
         self.log = log
+        self.stop = stop
         var loaded = persisted
         Self.settleInterrupted(state: &loaded, store: stateStore, log: log, now: clock.now(), window: config.rateLimitWindowSeconds)
         persisted = loaded
@@ -85,8 +92,18 @@ package actor GenieEngine {
     }
 
     package func setPaused(_ paused: Bool) {
+        let wasPaused = self.paused
         self.paused = paused
+        if wasPaused && !paused {
+            replyPollWanted = true
+        }
     }
+
+    package func isReplyPollWanted() -> Bool { replyPollWanted }
+
+    package func inFlightReplyCount() -> Int { inFlightReplyIDs.count }
+
+    package static let chatsFailureNoticeSeconds: Double = 60
 
     package func isPaused() -> Bool { paused }
 
@@ -167,38 +184,41 @@ package actor GenieEngine {
         )
     }
 
-    /// メニューの定期処理の1周。一覧を反映してから、保留の再送と返事の取得をする。
-    package func runPollerPass(_ read: ChatListRead) async -> [ChatSummary] {
-        let chats = applyChatList(read)
-        await retryHolds()
-        await pollReplies()
-        return chats
-    }
-
-    /// `loadChats` がプロセスの結果を受け取ったあとと同じ順で一覧を反映する。
-    package func applyChatList(_ read: ChatListRead) -> [ChatSummary] {
+    /// 一覧の読み取り結果を反映する。止まっていたら、状態を変えずに捨てる。
+    package func applyChatList(_ read: ChatListRead) -> ChatListApplyResult {
+        if stop.isStopped { return .discarded }
         switch read {
         case .failed:
-            noteChatsProblem(code: "chats_failed", updateMenu: true)
-            return []
+            noteFetchFailure()
+            return .applied([])
         case .parsed(let parsed):
-            if parsed.failedLineCount > 0 {
-                noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
-            }
+            noteFetchSuccess()
             if parsed.chats.isEmpty && parsed.failedLineCount > 0 {
-                // 照合まで進まないので、次の正常な取得にフラグを残さない。表示自体は残す。
-                keepParseNoticeOnce = false
-                return []
-            }
-            if parsed.failedLineCount == 0 {
-                lastLoggedListFailure = nil
+                parseProblem = .allRows
+                lastFetchVerified = false
+                directoryGUIDs = [:]
+                directoryChecked = false
+                logListCode("chats_parse_failed")
+                return .applied([])
             }
             reconcileChats(parsed.chats)
-            return parsed.chats
+            let verified = allowlistVerified()
+            lastFetchVerified = verified
+            if parsed.failedLineCount > 0 {
+                parseProblem = .partial
+                if verified { clearWaitingLayers() }
+                logListCode("chats_parse_failed")
+            } else if verified {
+                parseProblem = nil
+                noticeLog.resolve(["chats_parse_failed"])
+                clearWaitingLayers()
+            }
+            return .applied(parsed.chats)
         }
     }
 
     package func reconcileChats(_ chats: [ChatSummary]) {
+        noteFetchSuccess()
         var facts: [Int64: DirectoryChat] = [:]
         for chat in chats {
             facts[chat.id] = DirectoryChat(
@@ -214,64 +234,63 @@ package actor GenieEngine {
             guids[chat.id] = chat.guid
         }
         directoryGUIDs = guids
+        let becameChecked = !directoryChecked
         directoryChecked = true
-        clearRecoveredListError()
+        if becameChecked { replyPollWanted = true }
+        var reset = false
         for chat in chats where !chat.guid.isEmpty {
             if observeChat(id: chat.id, guid: chat.guid) {
-                return
+                reset = true
+                break
+            }
+        }
+        if !reset {
+            if allowlistVerified() {
+                lastFetchVerified = true
+                clearWaitingLayers()
+            } else {
+                lastFetchVerified = false
             }
         }
     }
 
-    /// `imsg chats` の失敗。標準出力も標準エラーも残さない。
-    /// 一覧を確かめられなかったので、そのあいだは返事を送らない。
-    package func noteChatsProblem(code: String, updateMenu: Bool) {
-        directoryGUIDs = [:]
-        directoryChecked = false
-        // 定期取得は updateMenu を false にする。一覧が読めないと返事を送れないので、照合の表示には出す。
+    /// テストと古い呼び出し向け。取得失敗か解析失敗を、一覧の層に記録する。
+    package func noteChatsProblem(code: String) {
         if code == "chats_parse_failed" {
-            keepParseNoticeOnce = true
-            holdNotice = code
-        } else if code == "chats_failed" {
-            // 1回目では待っているように見せない。同じ失敗が続いたときだけ出す。
-            if lastLoggedListFailure == "chats_failed" {
-                holdNotice = code
-            }
-        } else if updateMenu {
-            holdNotice = code
-        }
-        guard lastLoggedListFailure != code else { return }
-        lastLoggedListFailure = code
-        log.record(
-            level: .error,
-            code: code,
-            chatID: nil,
-            guid: nil,
-            rowid: nil
-        )
-    }
-
-    /// 一覧を読み直せたら、照合の表示だけを消す。最後のエラーは残す。
-    /// guid が違って捨てた返事の表示は、ほかの理由が消えたあと、guid が合うまで戻す。
-    private func clearRecoveredListError() {
-        let keepingParse = keepParseNoticeOnce && holdNotice == "chats_parse_failed"
-        keepParseNoticeOnce = false
-        if allowlistVerified() {
-            guidMismatchOutstanding = false
-            if !keepingParse {
-                holdNotice = nil
-            }
+            parseProblem = .partial
+            directoryGUIDs = [:]
+            directoryChecked = false
+            logListCode(code)
             return
         }
-        switch holdNotice {
-        case "chats_failed":
-            holdNotice = nil
-        case "chats_parse_failed":
-            break
-        default:
-            break
+        noteFetchFailure()
+    }
+
+    private func noteFetchFailure() {
+        if listFetchFailingSince == nil {
+            listFetchFailingSince = clock.now()
         }
-        restoreDiscardedGuidNotice()
+        directoryGUIDs = [:]
+        directoryChecked = false
+        logListCode("chats_failed")
+    }
+
+    private func noteFetchSuccess() {
+        if listFetchFailingSince != nil {
+            listFetchFailingSince = nil
+            noticeLog.resolve(["chats_failed"])
+        }
+    }
+
+    private func clearWaitingLayers() {
+        if let code = transientHold {
+            transientHold = nil
+            noticeLog.resolve([code])
+        }
+        if guidMismatchOutstanding {
+            guidMismatchOutstanding = false
+            noticeLog.resolve(["reply_chat_guid_mismatch"])
+        }
     }
 
     /// 許可したトークの guid が、いまの一覧と一致している。
@@ -286,29 +305,34 @@ package actor GenieEngine {
         return true
     }
 
-    /// 期限切れで返事を捨てたとき、待っていた表示だけを消す。
-    /// 返事がこの回に見えなかったことや、一覧の解析失敗とは別にする。
+    /// 期限切れで返事を捨てたとき、一時的な保留だけを消す。
     private func clearExpiredHoldNotice() {
-        switch holdNotice {
-        case "reply_held_empty_list", "reply_held_not_in_list":
-            holdNotice = nil
-        default:
-            break
-        }
-        restoreDiscardedGuidNotice()
+        guard let code = transientHold else { return }
+        transientHold = nil
+        noticeLog.resolve([code])
     }
 
-    /// 捨てた返事の表示は、ほかの理由で上書きされても、guid が合うまで残す。
-    private func restoreDiscardedGuidNotice() {
-        guard guidMismatchOutstanding else { return }
-        if allowlistVerified() {
-            guidMismatchOutstanding = false
-            holdNotice = nil
-            return
+    private func composedHoldNotice(now: Date) -> String? {
+        if let since = listFetchFailingSince,
+           now.timeIntervalSince(since) >= Self.chatsFailureNoticeSeconds {
+            return "chats_failed"
         }
-        if holdNotice == nil {
-            holdNotice = "reply_chat_guid_mismatch"
+        switch parseProblem {
+        case .allRows:
+            return "chats_parse_failed"
+        case .partial:
+            return lastFetchVerified ? "chats_parse_partial_ok" : "chats_parse_failed"
+        case nil:
+            break
         }
+        if let transientHold { return transientHold }
+        if guidMismatchOutstanding { return "reply_chat_guid_mismatch" }
+        return nil
+    }
+
+    private func logListCode(_ code: String) {
+        guard noticeLog.shouldLog(code) else { return }
+        log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
     }
 
     package func resumeRateLimit(chatID: Int64) async {
@@ -332,7 +356,7 @@ package actor GenieEngine {
                 $0.reason == .screenLocked || $0.reason == .appleEventNotStarted
             }.count,
             lastError: lastError,
-            holdNotice: holdNotice,
+            holdNotice: composedHoldNotice(now: clock.now()),
             screenLocked: screenLock == .locked,
             screenLock: screenLock,
             replyFetchConfigured: !config.notionDataSourceID.isEmpty
@@ -386,21 +410,23 @@ package actor GenieEngine {
         return .skipped
     }
 
-    package func pollReplies() async {
+    @discardableResult
+    package func pollReplies() async -> ReplyPollOutcome {
+        if stop.isStopped { return .skippedStopped }
         // 一覧と許可の guid を比べる前に取りに行くと、入れ替わった番号へ送ることがある。
-        guard directoryChecked else { return }
-        if paused { return }
+        guard directoryChecked else { return .skippedUnchecked }
+        if paused { return .skippedPaused }
         notedHoldThisPass = false
         expiredReplyThisPass = false
         refreshConfig()
         let notion = !config.notionDataSourceID.isEmpty
         let rawURL = config.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if !notion {
-            if rawURL.isEmpty { return }
+            if rawURL.isEmpty { return finishReplyPoll(.notConfigured) }
             guard EndpointURL.https(rawURL) != nil else {
                 lastError = "url_not_https"
                 log.record(level: .error, code: "url_not_https", chatID: nil, guid: nil, rowid: nil)
-                return
+                return finishReplyPoll(.fetchFailed)
             }
         }
         do {
@@ -410,6 +436,7 @@ package actor GenieEngine {
                 skipping: Set(persisted.handledReplyIDs),
                 holding: holding
             )
+            if stop.isStopped { return .skippedStopped }
             if page.skipped > 0 {
                 log.record(level: .error, code: "reply_bad_entry", chatID: nil, guid: nil, rowid: nil)
             }
@@ -417,9 +444,19 @@ package actor GenieEngine {
             if freshCount > config.replyPageLimit {
                 log.record(level: .error, code: "reply_page_over_limit", chatID: nil, guid: nil, rowid: nil)
             }
+            var stoppedDuring = false
             for reply in page.replies {
+                if stop.isStopped {
+                    stoppedDuring = true
+                    break
+                }
                 await deliverReply(reply)
+                if stop.isStopped {
+                    stoppedDuring = true
+                    break
+                }
             }
+            if stoppedDuring { return .skippedStopped }
             let unhandled = page.replies.filter { reply in
                 !reply.id.isEmpty && !persisted.handledReplyIDs.contains(reply.id)
             }
@@ -440,20 +477,35 @@ package actor GenieEngine {
             if expiredReplyThisPass && !notedHoldThisPass {
                 clearExpiredHoldNotice()
             }
+            return finishReplyPoll(.fetched)
         } catch ReplyFetchError.secretMode {
             lastError = "reply_secret_mode"
             log.record(level: .error, code: "reply_secret_mode", chatID: nil, guid: nil, rowid: nil)
+            return finishReplyPoll(.fetchFailed)
         } catch ReplyFetchError.notionToken(let error) {
             let code = notionTokenCode(error)
             lastError = code
             log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
+            return finishReplyPoll(.fetchFailed)
         } catch {
             lastError = "reply_fetch_failed"
             log.record(level: .error, code: "reply_fetch_failed", chatID: nil, guid: nil, rowid: nil)
+            return finishReplyPoll(.fetchFailed)
         }
     }
 
+    private func finishReplyPoll(_ outcome: ReplyPollOutcome) -> ReplyPollOutcome {
+        switch outcome {
+        case .fetched, .fetchFailed, .notConfigured:
+            replyPollWanted = false
+        case .skippedUnchecked, .skippedPaused, .skippedStopped:
+            break
+        }
+        return outcome
+    }
+
     package func retryHolds() async {
+        if stop.isStopped { return }
         guard directoryChecked else { return }
         if paused { return }
         refreshConfig()
@@ -469,7 +521,15 @@ package actor GenieEngine {
             ready.append(hold)
         }
         holds = kept
-        for hold in ready {
+        for (index, hold) in ready.enumerated() {
+            if stop.isStopped {
+                let remaining = Array(ready[index...])
+                holds.append(contentsOf: remaining)
+                for item in remaining {
+                    inFlightReplyIDs.remove(item.replyID)
+                }
+                return
+            }
             if clock.now().timeIntervalSince(hold.createdAt) > config.routeTTLSeconds {
                 inFlightReplyIDs.remove(hold.replyID)
                 markReplyHandled(hold.replyID)
@@ -763,7 +823,7 @@ package actor GenieEngine {
             persist()
             return
         }
-        if paused { return }
+        if paused || stop.isStopped { return }
         await performSend(
             replyID: reply.id,
             chatID: chatID,
@@ -792,7 +852,7 @@ package actor GenieEngine {
         defer { inFlightReplyIDs.remove(replyID) }
 
         refreshConfig()
-        if paused {
+        if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
@@ -804,7 +864,7 @@ package actor GenieEngine {
         let locked = await lock.state()
         noteLock(locked)
         refreshConfig()
-        if paused {
+        if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, text: text, reason: pauseReason, attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
@@ -841,7 +901,7 @@ package actor GenieEngine {
             hold(replyID: replyID, chatID: chatID, text: text, reason: .appleEventNotStarted, attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        if paused {
+        if paused || stop.isStopped {
             releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             persist()
@@ -911,6 +971,11 @@ package actor GenieEngine {
         if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
             return false
         }
+        if !directoryChecked {
+            let code = parseProblem == .allRows ? "chats_parse_failed" : "chats_failed"
+            logListCode(code)
+            return true
+        }
         let code = holdReasonCode(current: current, allowed: allowed)
         if !current.isEmpty && !allowed.isEmpty && current != allowed {
             holds.removeAll { $0.replyID == replyID }
@@ -936,11 +1001,19 @@ package actor GenieEngine {
     }
 
     private func noteHold(_ code: String) {
-        let changed = holdNotice != code
-        holdNotice = code
         notedHoldThisPass = true
-        guard changed else { return }
-        log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
+        if code == "reply_chat_guid_mismatch" {
+            guidMismatchOutstanding = true
+            logListCode(code)
+            return
+        }
+        guard code == "reply_held_empty_list" || code == "reply_held_not_in_list" else { return }
+        if transientHold == code { return }
+        if let previous = transientHold {
+            noticeLog.resolve([previous])
+        }
+        transientHold = code
+        logListCode(code)
     }
 
     private func dropDisabled(replyID: String, chatID: Int64) {
