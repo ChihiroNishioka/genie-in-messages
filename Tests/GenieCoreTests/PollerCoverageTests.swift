@@ -1214,6 +1214,7 @@ final class PollerCoverageTests: XCTestCase {
         let returned = Gate()
         let applied = Gate()
         defer {
+            harness.stop.stop()
             release.open()
             returned.open()
             applied.open()
@@ -1229,10 +1230,14 @@ final class PollerCoverageTests: XCTestCase {
         probe.gates["chatsReadReturned"] = returned
         probe.gates["chatsApplied"] = applied
         let poller = makePoller(harness, engine, reader, schedule: .production, probe: probe)
-        var watched = false
+        let saw = Flag()
+        saw.value = false
+        harness.clock.onSleep = {
+            while !saw.value && !harness.stop.isStopped { await Task.yield() }
+        }
         let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) {
             events.append("watch")
-            watched = true
+            saw.value = true
         }
         let registered = expectation(description: "wait registered")
         Task {
@@ -1250,7 +1255,7 @@ final class PollerCoverageTests: XCTestCase {
         await fulfillment(of: [sawReturned], timeout: 2)
         let seen70 = await poller.initialListResolved()
         XCTAssertFalse(seen70)
-        XCTAssertFalse(watched)
+        XCTAssertFalse(saw.value)
         returned.open()
         let sawApplied = expectation(description: "applied")
         Task {
@@ -1264,11 +1269,11 @@ final class PollerCoverageTests: XCTestCase {
             events.snapshot().filter { $0 == "read" || $0 == "chatsApplied" },
             ["read", "chatsApplied"]
         )
-        XCTAssertFalse(watched)
+        XCTAssertFalse(saw.value)
         applied.open()
         let sawWatch = expectation(description: "watch")
         Task {
-            while !watched { await Task.yield() }
+            while !saw.value { await Task.yield() }
             sawWatch.fulfill()
         }
         await fulfillment(of: [sawWatch], timeout: 2)
