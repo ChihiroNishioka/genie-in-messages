@@ -59,6 +59,9 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         }
         notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
         super.init()
+        if let controller {
+            LampIcon.menuLampLogger = FileGenieLog(url: controller.logURL)
+        }
         begin()
     }
 

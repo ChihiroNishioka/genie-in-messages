@@ -123,11 +123,43 @@ package enum LampIcon {
             return hit
         }
         cacheLock.unlock()
-        let loaded = decodeStoredPNG(menuLampURL(pixelHeight: pixelHeight, appearance: appearance))
+        let loaded = loadedMenuLamp(pixelHeight: pixelHeight, appearance: appearance)
         cacheLock.lock()
         cache[key] = loaded
         cacheLock.unlock()
         return loaded
+    }
+
+    private static func loadedMenuLamp(pixelHeight: Int, appearance: LampAppearance) -> (width: Int, height: Int, pixels: [UInt8]) {
+        let loaded = decodeStoredPNG(menuLampURL(pixelHeight: pixelHeight, appearance: appearance))
+        if loaded.height > 0, !loaded.pixels.isEmpty {
+            return loaded
+        }
+        menuLampLogger?.record(
+            level: .error,
+            code: "menu_lamp_missing",
+            chatID: nil,
+            guid: nil,
+            rowid: nil,
+            detail: nil
+        )
+        FileHandle.standardError.write(Data("menu_lamp_missing\n".utf8))
+        return fallbackRaster(pixelHeight)
+    }
+
+    /// 承認した印では無い。メニューが空にならないための黒い印。
+    private static func fallbackRaster(_ pixelHeight: Int) -> (width: Int, height: Int, pixels: [UInt8]) {
+        let side = max(pixelHeight, 1)
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let thickness = max(2, side / 9)
+        let x0 = max(0, side / 2 - thickness / 2)
+        let x1 = min(side, x0 + thickness)
+        for y in 0..<side {
+            for x in x0..<x1 {
+                pixels[(y * side + x) * 4 + 3] = 255
+            }
+        }
+        return (side, side, pixels)
     }
 
     private static func encodePNG(width: Int, height: Int, rgba: [UInt8]) -> Data {
