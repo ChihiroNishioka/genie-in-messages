@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
++++ b/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
+@@ -13,7 +13,6 @@
+         snap.screenLock != .unlocked
+             || snap.heldLockCount > 0
+             || !snap.haltedChatIDs.isEmpty
+-            || snap.lastError == "watch_start_failed"
+             || snap.holdNotice != nil
+     }
+ }

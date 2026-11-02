@@ -33,9 +33,10 @@ fi
 stage_app() {
   local config="$1"
   local app="$2"
-  swift build -c "${config}" --product GenieMenuBar
+  # swift test が使っている .build とは別に置く。
+  swift build --build-path "${ROOT}/.build-assemble" -c "${config}" --product GenieMenuBar
   local bin_dir
-  bin_dir="$(swift build -c "${config}" --show-bin-path)"
+  bin_dir="$(swift build --build-path "${ROOT}/.build-assemble" -c "${config}" --show-bin-path)"
   rm -rf "${app}"
   mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources/MenuLamp"
   cp "${bin_dir}/GenieMenuBar" "${app}/Contents/MacOS/GenieMenuBar"

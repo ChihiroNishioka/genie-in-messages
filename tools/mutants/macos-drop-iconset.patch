@@ -1,0 +1,14 @@
+--- a/scripts/make-app-icon.py	2026-11-02 17:27:52.977068245 +0000
++++ b/scripts/make-app-icon.py	2026-11-02 17:27:52.977068245 +0000
+@@ -498,11 +498,6 @@
+     write_png(master, width, width, pixels)
+     written: dict[str, bytes] = {}
+     src = pixels
+-    for name, side in ICONSET:
+-        rendered = render(src, width, side)
+-        destination = iconset / name
+-        write_png(destination, side, side, rendered)
+-        written[name] = destination.read_bytes()
+     parts = [(kind, written[name]) for kind, name, _ in ICNS_ENTRIES]
+     icns_path.write_bytes(pack_icns(parts))
+     print(text)

@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
++++ b/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
+@@ -63,8 +63,8 @@
+         let stem: String
+         switch appearance {
+         case .running: stem = "lamp"
+-        case .paused: stem = "lamp-paused"
+-        case .warning: stem = "lamp-warning"
++        case .paused: stem = "lamp-warning"
++        case .warning: stem = "lamp-paused"
+         }
+         let name = "\(stem)@\(scale)x"
+         if let bundled = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "MenuLamp"),

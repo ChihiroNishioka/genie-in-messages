@@ -1,0 +1,13 @@
+--- a/scripts/assemble-app.sh	2026-11-02 17:27:52.985068257 +0000
++++ b/scripts/assemble-app.sh	2026-11-02 17:27:52.985068257 +0000
+@@ -41,10 +41,6 @@
+   cp "${bin_dir}/GenieMenuBar" "${app}/Contents/MacOS/GenieMenuBar"
+   cp "${ROOT}/AppBundle/Info.plist" "${app}/Contents/Info.plist"
+   cp "${ROOT}/AppBundle/AppIcon.icns" "${app}/Contents/Resources/AppIcon.icns"
+-  cp "${ROOT}/AppBundle/MenuLamp"/lamp@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp@3x.png \
+-    "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \
+-    "${ROOT}/AppBundle/MenuLamp"/lamp-warning@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@3x.png \
+-    "${app}/Contents/Resources/MenuLamp/"
+   chmod 755 "${app}/Contents/MacOS/GenieMenuBar"
+ }
+ 
