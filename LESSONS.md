@@ -44,3 +44,5 @@ Finder のアイコンは、ランプの金色と雲を残し、背景だけを�
 - `scripts/make-app-icon.py` が背景を黒にし、金色のランプを角丸の内側に収める。
 - `Tests/GenieCoreTests/LampIconTests.swift` が画素、状態、SPEC.md の60行目、スクショを見る。
 - `Sources/GenieCore/LampIcon.swift` の `appearance(for:)` と `statusLabel(for:)` を、メニューバーも使う。
+
+CI の macOS は Xcode をはっきり選ぶ。イメージの標準に任せると、Linux と Swift の版がずれる。
