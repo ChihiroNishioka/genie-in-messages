@@ -5,19 +5,19 @@ import XCTest
 final class PollerNoticeLoopTests: XCTestCase {
     func testPartialParseNoticeSurvivesTheReplyPollUntilTheListIsVerified() async throws {
         let started = try loopEngine()
-        await started.engine.runPollerPass(.parsed(ChatListParse(
+        await pollerPass(started, .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 1
         )))
         let afterPoll = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
-        XCTAssertEqual(afterPoll.holdNotice, "chats_parse_failed")
+        XCTAssertEqual(afterPoll.holdNotice, "chats_parse_partial_ok")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: afterPoll.holdNotice),
-            "照合: トーク一覧を読めないため、返事を待っています"
+            "照合: 一覧の一部の行を読めませんでした。許可したトークは一覧で確かめられました"
         )
 
-        await started.engine.runPollerPass(.parsed(ChatListParse(
+        await pollerPass(started, .parsed(ChatListParse(
             chats: [ChatSummary(id: 8, title: "other", isGroup: false, guid: "someone-else")],
             failedLineCount: 0
         )))
@@ -25,7 +25,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         XCTAssertEqual(unverified.holdNotice, "chats_parse_failed")
         XCTAssertNotEqual(SendHoldStatus.menuLine(for: unverified.holdNotice), "照合: なし")
 
-        await started.engine.runPollerPass(.parsed(ChatListParse(
+        await pollerPass(started, .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 0
         )))
@@ -45,8 +45,8 @@ final class PollerNoticeLoopTests: XCTestCase {
             chats: [ChatSummary(id: 8, title: "other", isGroup: false, guid: "someone-else")],
             failedLineCount: 1
         )
-        await started.engine.runPollerPass(.parsed(partial))
-        await started.engine.runPollerPass(.parsed(partial))
+        await pollerPass(started, .parsed(partial))
+        await pollerPass(started, .parsed(partial))
         let notes = started.harness.log.records.filter { $0.code == "chats_parse_failed" }
         XCTAssertEqual(notes.count, 1)
         XCTAssertEqual(notes.first?.level, "error")
@@ -56,7 +56,7 @@ final class PollerNoticeLoopTests: XCTestCase {
 
     func testAllLinesFailingDoesNotKeepTheNoticeAfterACleanVerifiedRead() async throws {
         let started = try loopEngine()
-        await started.engine.runPollerPass(.parsed(ChatListParse(chats: [], failedLineCount: 1)))
+        await pollerPass(started, .parsed(ChatListParse(chats: [], failedLineCount: 1)))
         let stuck = await started.engine.snapshot()
         XCTAssertEqual(stuck.holdNotice, "chats_parse_failed")
 
@@ -77,7 +77,7 @@ final class PollerNoticeLoopTests: XCTestCase {
 
     func testOneStartupListFailureDoesNotSayAReplyIsWaiting() async throws {
         let started = try loopEngine()
-        await started.engine.runPollerPass(.failed)
+        await pollerPass(started, .failed)
         let once = await started.engine.snapshot()
         XCTAssertNil(once.holdNotice)
         XCTAssertNotEqual(
@@ -86,7 +86,8 @@ final class PollerNoticeLoopTests: XCTestCase {
         )
         XCTAssertEqual(started.harness.sender.sent.count, 0)
 
-        await started.engine.runPollerPass(.failed)
+        started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
+        await pollerPass(started, .failed)
         let again = await started.engine.snapshot()
         XCTAssertEqual(again.holdNotice, "chats_failed")
         XCTAssertEqual(
@@ -101,7 +102,7 @@ final class PollerNoticeLoopTests: XCTestCase {
 
     func testMatchedGuidDoesNotRestoreTheOldMismatchNotice() async throws {
         let started = try loopEngine(routeTTL: 60)
-        await started.engine.runPollerPass(.parsed(ChatListParse(
+        await pollerPass(started, .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 0
         )))
@@ -115,7 +116,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
 
         await started.engine.setChatEnabled(7, guid: "chat-kept", enabled: true)
-        await started.engine.runPollerPass(.parsed(ChatListParse(
+        await pollerPass(started, .parsed(ChatListParse(
             chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
             failedLineCount: 0
         )))
@@ -126,12 +127,12 @@ final class PollerNoticeLoopTests: XCTestCase {
         started.harness.replies.pages = [
             ReplyPage(replies: [routedReply("r-later", chat: 7, text: "later", guid: "origin")], nextCursor: nil),
         ]
-        await started.engine.runPollerPass(.parsed(ChatListParse(chats: [], failedLineCount: 0)))
+        await pollerPass(started, .parsed(ChatListParse(chats: [], failedLineCount: 0)))
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(120)
         started.harness.replies.pages = [
             ReplyPage(replies: [routedReply("r-later", chat: 7, text: "later", guid: "origin")], nextCursor: nil),
         ]
-        await started.engine.runPollerPass(.parsed(ChatListParse(chats: [], failedLineCount: 0)))
+        await pollerPass(started, .parsed(ChatListParse(chats: [], failedLineCount: 0)))
         let after = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
         XCTAssertNil(after.holdNotice)
@@ -140,11 +141,28 @@ final class PollerNoticeLoopTests: XCTestCase {
     }
 }
 
+private func pollerPass(_ started: Started, _ read: ChatListRead) async {
+    let reader = ScriptedChatLists(script: [read])
+    let poller = GeniePoller(
+        engine: started.engine,
+        reader: reader,
+        configProvider: StaticConfig(config: started.harness.config),
+        clock: started.harness.clock,
+        stop: started.harness.stop,
+        schedule: PollSchedule(tickSeconds: 2, chatsSeconds: 0, lastChatsAt: nil, lastRepliesAt: nil)
+    )
+    _ = await poller.tick()
+    started.harness.clock.current = started.harness.clock.current.addingTimeInterval(
+        started.harness.config.replyPollIntervalSeconds
+    )
+}
+
 private func loopEngine(routeTTL: Double? = nil) throws -> Started {
     let harness = Harness()
     harness.allow.ids = [7]
     harness.allow.guids = [7: "chat-kept"]
     harness.config.replyFetchURL = "https://127.0.0.1/replies"
+    harness.config.replyPollIntervalSeconds = 1
     if let routeTTL {
         harness.config.routeTTLSeconds = routeTTL
     }

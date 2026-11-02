@@ -26,7 +26,7 @@ enum AllowlistPanel {
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        Task { await model.refreshChats(reportError: true) }
+        Task { await model.refreshChats() }
     }
 }
 
@@ -50,7 +50,7 @@ struct AllowlistView: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($searchFocused)
                 Button("一覧を更新") {
-                    Task { await model.refreshChats(reportError: true) }
+                    Task { await model.refreshChats() }
                 }
             }
             if rows.isEmpty {

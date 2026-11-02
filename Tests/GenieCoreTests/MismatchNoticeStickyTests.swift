@@ -18,7 +18,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
             "照合: トークの識別子が変わったため、その返事は捨てました"
         )
 
-        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        await started.engine.noteChatsProblem(code: "chats_failed")
         await started.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])

@@ -45,7 +45,6 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     private let controller: GenieController?
     private let paths = ConfigPaths.default()
     private var refreshTask: Task<Void, Never>?
-    private var lastChatRefresh = Date.distantPast
     private var statusItem: NSStatusItem?
     @Published var notionTokenLabel = "未設定"
 
@@ -89,7 +88,10 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     func onAppear() {
-        Task { await refreshChats(reportError: true) }
+        Task {
+            controller?.requestChatsRefresh()
+            await refresh()
+        }
     }
 
     func togglePause() {
@@ -120,10 +122,10 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
-    func refreshChats(reportError: Bool = true) async {
+    func refreshChats() async {
         guard let controller else { return }
-        chats = await controller.loadChats(reportError: reportError)
-        lastChatRefresh = Date()
+        controller.requestChatsRefresh()
+        chats = await controller.latestChats()
     }
 
     func toggleLoginItem() {
@@ -195,10 +197,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         phase = Self.phaseText(snap)
         symbol = Self.symbol(for: snap)
         applyStatusItem()
-        if Date().timeIntervalSince(lastChatRefresh) >= 30 {
-            chats = await controller.loadChats(reportError: true)
-            lastChatRefresh = Date()
-        }
+        chats = await controller.latestChats()
     }
 
     private static func phaseText(_ snap: EngineSnapshot) -> String {
@@ -355,7 +354,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
             return "返事のトークが転送先と違うため送っていません"
         case "reply_chat_guid_mismatch":
             return SendHoldStatus.text(for: code)
-        case "reply_held_empty_list", "reply_held_not_in_list", "chats_failed", "chats_parse_failed":
+        case "reply_held_empty_list", "reply_held_not_in_list", "chats_failed", "chats_parse_failed", "chats_parse_partial_ok":
             return SendHoldStatus.text(for: code)
         case "watch_line_too_large":
             return "大きすぎる watch の行を処理できませんでした"

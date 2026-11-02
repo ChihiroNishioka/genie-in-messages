@@ -552,8 +552,8 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         allow(harness, chat: 9)
         let engine = try await harness.opened()
-        await engine.noteChatsProblem(code: "chats_failed", updateMenu: true)
-        await engine.noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
+        await engine.noteChatsProblem(code: "chats_failed")
+        await engine.noteChatsProblem(code: "chats_parse_failed")
         let echo = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "unread", chat: 9, fromMe: false, text: "\u{1FA94} QXMISS91",
             sender: other, isGroup: false, participants: [other]
@@ -577,7 +577,7 @@ final class ChatMembershipEngineTests: XCTestCase {
             sender: other, isGroup: false, participants: [other]
         ))
         XCTAssertEqual(after, .delivered)
-        await engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        await engine.noteChatsProblem(code: "chats_failed")
         let kept = await engine.ingestWatchLine(watchLine(
             id: 3, guid: "kept", chat: 9, fromMe: false, text: "\u{1FA94} kept",
             sender: other, isGroup: false, participants: [other]

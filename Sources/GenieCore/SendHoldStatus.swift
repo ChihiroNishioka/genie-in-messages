@@ -15,6 +15,8 @@ package enum SendHoldStatus {
             return "一覧に無いトークのため、返事を待っています。chats_limit を増やすと入ることがあります"
         case "chats_failed", "chats_parse_failed":
             return "トーク一覧を読めないため、返事を待っています"
+        case "chats_parse_partial_ok":
+            return "一覧の一部の行を読めませんでした。許可したトークは一覧で確かめられました"
         case "reply_chat_guid_mismatch":
             return "トークの識別子が変わったため、その返事は捨てました"
         default:
