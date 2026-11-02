@@ -35,6 +35,12 @@ struct UnlockedScreen: ScreenLockChecking {
     func state() async -> ScreenLockState { .unlocked }
 }
 
+/// ポーラーが1回で見る、トーク一覧の読み方。
+package enum ChatListRead: Equatable {
+    case failed
+    case parsed(ChatListParse)
+}
+
 package struct EngineSnapshot: Equatable {
     package var paused: Bool
     package var cursorRowID: Int64

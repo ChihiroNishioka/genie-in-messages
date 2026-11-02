@@ -33,6 +33,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
+        await started.engine.noteChatsProblem(code: "chats_failed", updateMenu: false)
         let snap = await started.engine.snapshot()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
         XCTAssertNil(snap.lastError)
