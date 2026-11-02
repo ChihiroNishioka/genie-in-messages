@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/Engine.swift b/Sources/GenieCore/Engine.swift
+index e8d0dd1..ed35bb9 100644
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -208,7 +208,6 @@ package actor GenieEngine {
+             lastFetchVerified = verified
+             if parsed.failedLineCount > 0 {
+                 parseProblem = .partial
+-                if verified { clearWaitingLayers() }
+                 logListCode("chats_parse_failed")
+             } else if verified {
+                 parseProblem = nil

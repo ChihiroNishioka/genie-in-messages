@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/GeniePoller.swift b/Sources/GenieCore/GeniePoller.swift
+index fefa148..9e77925 100644
+--- a/Sources/GenieCore/GeniePoller.swift
++++ b/Sources/GenieCore/GeniePoller.swift
+@@ -121,7 +121,6 @@ package actor GeniePoller {
+     }
+ 
+     package func requestChatsRefresh() {
+-        if refreshInFlight { return }
+         pendingRefresh = true
+     }
+ 
