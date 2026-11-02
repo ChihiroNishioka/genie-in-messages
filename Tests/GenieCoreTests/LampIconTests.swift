@@ -1215,15 +1215,20 @@ final class LampIconTests: XCTestCase {
     }
 
     private func relativeFiles(_ root: URL) throws -> Set<String> {
-        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else {
+        let base = root.resolvingSymlinksInPath()
+        guard let items = FileManager.default.enumerator(at: base, includingPropertiesForKeys: [.isRegularFileKey]) else {
             return []
         }
         var names = Set<String>()
+        let prefix = base.path.hasSuffix("/") ? base.path : base.path + "/"
         for case let url as URL in items {
-            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            let file = url.resolvingSymlinksInPath()
+            let values = try file.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
-            let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
-            names.insert(String(url.path.dropFirst(prefix.count)))
+            let path = file.path
+            if path.hasPrefix(prefix) {
+                names.insert(String(path.dropFirst(prefix.count)))
+            }
         }
         return names
     }
