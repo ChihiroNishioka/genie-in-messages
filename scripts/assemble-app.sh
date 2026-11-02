@@ -40,6 +40,8 @@ cp "${ROOT}/AppBundle/Info.plist" "${APP}/Contents/Info.plist"
 cp "${ROOT}/AppBundle/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 mkdir -p "${APP}/Contents/Resources/MenuLamp"
 cp "${ROOT}/AppBundle/MenuLamp"/lamp@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp@3x.png \
+  "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \
+  "${ROOT}/AppBundle/MenuLamp"/lamp-warning@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@3x.png \
   "${APP}/Contents/Resources/MenuLamp/"
 chmod 755 "${APP}/Contents/MacOS/GenieMenuBar"
 

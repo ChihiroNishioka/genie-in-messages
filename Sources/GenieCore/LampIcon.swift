@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 
 package enum LampAppearance: String, Sendable {
     case running
@@ -15,41 +18,30 @@ package enum LampAppearance: String, Sendable {
     }
 }
 
-/// メニューバー用のランプ。原本は `scripts/make-menu-icon.py` が抜いた透過 PNG。
-/// 高さは 18pt。幅は絵の比率。一時停止と要対応の印だけ、この画像の上に重ねる。
-/// template 画像にはしない。
+/// メニューバー用のランプ。原本は `scripts/make-menu-icon.py` が抜いた白黒の template。
+/// 高さは 18pt。幅は絵の自然な幅で、倍率はその整数倍。状態は雲・縦棒・「!」の形で描き分ける。
 package enum LampIcon {
     package static let menuPointSize = 18
     package static let menuScales = [1, 2, 3]
-    package static let menuImageIsTemplate = false
+    package static let menuImageIsTemplate = true
+
+    package static func appearance(for snapshot: EngineSnapshot?) -> LampAppearance {
+        guard let snapshot else { return .running }
+        if LampAppearance.showsAttention(snapshot) { return .warning }
+        if snapshot.paused { return .paused }
+        return .running
+    }
+
+    package static func statusLabel(for appearance: LampAppearance) -> String {
+        switch appearance {
+        case .running: return "ジーニー 監視中"
+        case .paused: return "ジーニー 一時停止"
+        case .warning: return "ジーニー 要確認"
+        }
+    }
 
     package static func rgba(pixelHeight: Int, appearance: LampAppearance) -> (width: Int, height: Int, pixels: [UInt8]) {
-        let base = baseRaster(pixelHeight: pixelHeight)
-        guard appearance != .running else { return base }
-        let width = base.width
-        let height = base.height
-        var pixels = base.pixels
-        let pixel = 1.0 / Double(max(height, 1))
-        for y in 0..<height {
-            for x in 0..<width {
-                let u = (Double(x) + 0.5) / Double(width)
-                let v = (Double(y) + 0.5) / Double(height)
-                let mark = badge(u: u, v: v, pixel: pixel, appearance: appearance)
-                let index = (y * width + x) * 4
-                let under = (
-                    Double(pixels[index]) / 255,
-                    Double(pixels[index + 1]) / 255,
-                    Double(pixels[index + 2]) / 255,
-                    Double(pixels[index + 3]) / 255
-                )
-                let mixed = over(mark, under)
-                pixels[index] = byte(mixed.0)
-                pixels[index + 1] = byte(mixed.1)
-                pixels[index + 2] = byte(mixed.2)
-                pixels[index + 3] = byte(mixed.3)
-            }
-        }
-        return (width, height, pixels)
+        baseRaster(pixelHeight: pixelHeight, appearance: appearance)
     }
 
     package static func png(pixelHeight: Int, appearance: LampAppearance) -> Data {
@@ -57,22 +49,15 @@ package enum LampIcon {
         return encodePNG(width: raster.width, height: raster.height, rgba: raster.pixels)
     }
 
-    /// メニューバー風の下地の上に載せ、必要なら最近傍で拡大する。
-    package static func flattenedPNG(
-        pixelHeight: Int,
-        appearance: LampAppearance,
-        background: (UInt8, UInt8, UInt8),
-        magnification: Int = 1
-    ) -> Data {
-        let source = rgba(pixelHeight: pixelHeight, appearance: appearance)
-        let flat = flatten(source.pixels, background: background)
-        let scale = max(1, magnification)
-        let sized = scale == 1 ? flat : nearest(flat, width: source.width, height: source.height, scale: scale)
-        return encodePNG(width: source.width * scale, height: source.height * scale, rgba: sized)
-    }
-
-    package static func menuLampURL(pixelHeight: Int) -> URL {
-        let name = "lamp@\(pixelHeight / menuPointSize)x"
+    package static func menuLampURL(pixelHeight: Int, appearance: LampAppearance) -> URL {
+        let scale = max(pixelHeight, 1) / menuPointSize
+        let stem: String
+        switch appearance {
+        case .running: stem = "lamp"
+        case .paused: stem = "lamp-paused"
+        case .warning: stem = "lamp-warning"
+        }
+        let name = "\(stem)@\(scale)x"
         if let bundled = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "MenuLamp"),
            FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
@@ -84,126 +69,66 @@ package enum LampIcon {
             .appendingPathComponent("AppBundle/MenuLamp/\(name).png")
     }
 
-    private static let cacheLock = NSLock()
-    private static var cache: [Int: (width: Int, height: Int, pixels: [UInt8])] = [:]
+    #if canImport(AppKit)
+    package static func menuImage(for appearance: LampAppearance) -> NSImage {
+        imageLock.lock()
+        if let cached = imageCache[appearance] {
+            imageLock.unlock()
+            return cached
+        }
+        imageLock.unlock()
+        let point = CGFloat(menuPointSize)
+        let image = NSImage()
+        var size = NSSize(width: point, height: point)
+        for scale in menuScales {
+            let raster = rgba(pixelHeight: menuPointSize * scale, appearance: appearance)
+            guard raster.height > 0, let rep = NSBitmapImageRep(data: png(pixelHeight: menuPointSize * scale, appearance: appearance)) else {
+                continue
+            }
+            let width = point * CGFloat(raster.width) / CGFloat(raster.height)
+            rep.size = NSSize(width: width, height: point)
+            image.addRepresentation(rep)
+            size = rep.size
+        }
+        image.size = size
+        image.isTemplate = menuImageIsTemplate
+        imageLock.lock()
+        imageCache[appearance] = image
+        imageLock.unlock()
+        return image
+    }
 
-    private static func baseRaster(pixelHeight: Int) -> (width: Int, height: Int, pixels: [UInt8]) {
+    package static func applyStatus(to button: NSButton, snapshot: EngineSnapshot?) {
+        let state = appearance(for: snapshot)
+        let image = menuImage(for: state)
+        image.isTemplate = menuImageIsTemplate
+        button.image = image
+        let label = statusLabel(for: state)
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+    }
+    #endif
+
+    private static let cacheLock = NSLock()
+    private static var cache: [String: (width: Int, height: Int, pixels: [UInt8])] = [:]
+    #if canImport(AppKit)
+    private static let imageLock = NSLock()
+    private static var imageCache: [LampAppearance: NSImage] = [:]
+    #endif
+
+    private static func baseRaster(pixelHeight: Int, appearance: LampAppearance) -> (width: Int, height: Int, pixels: [UInt8]) {
+        let key = "\(pixelHeight)-\(appearance.rawValue)"
         cacheLock.lock()
-        if let hit = cache[pixelHeight] {
+        if let hit = cache[key] {
             cacheLock.unlock()
             return hit
         }
         cacheLock.unlock()
-        let loaded = decodeStoredPNG(menuLampURL(pixelHeight: pixelHeight))
+        let loaded = decodeStoredPNG(menuLampURL(pixelHeight: pixelHeight, appearance: appearance))
         cacheLock.lock()
-        cache[pixelHeight] = loaded
+        cache[key] = loaded
         cacheLock.unlock()
         return loaded
-    }
-
-    private static func badge(
-        u: Double,
-        v: Double,
-        pixel: Double,
-        appearance: LampAppearance
-    ) -> (Double, Double, Double, Double) {
-        let cx = 0.80
-        let cy = 0.80
-        let disk = circle(u, v, cx, cy, 0.145)
-        let plate = cover(disk, pixel)
-        let rim = max(0, cover(disk - 0.012, pixel) - plate)
-        var pixelColor = over((0.09, 0.10, 0.12, plate), (0.02, 0.02, 0.02, rim))
-        switch appearance {
-        case .paused:
-            let barL = rounded(u, v, cx - 0.04, cy, 0.022, 0.055, 0.012)
-            let barR = rounded(u, v, cx + 0.04, cy, 0.022, 0.055, 0.012)
-            let bars = max(cover(barL, pixel), cover(barR, pixel))
-            pixelColor = over((1, 1, 1, bars), pixelColor)
-        case .warning:
-            let red = cover(circle(u, v, cx, cy, 0.125), pixel)
-            pixelColor = over((0.78, 0.14, 0.11, red), pixelColor)
-            let stem = rounded(u, v, cx, cy - 0.02, 0.016, 0.045, 0.01)
-            let dot = circle(u, v, cx, cy + 0.055, 0.018)
-            let mark = max(cover(stem, pixel), cover(dot, pixel))
-            pixelColor = over((1, 1, 1, mark), pixelColor)
-        case .running:
-            break
-        }
-        return pixelColor
-    }
-
-    private static func over(
-        _ src: (Double, Double, Double, Double),
-        _ dst: (Double, Double, Double, Double)
-    ) -> (Double, Double, Double, Double) {
-        let sourceAlpha = src.3
-        let destAlpha = dst.3
-        let outAlpha = sourceAlpha + destAlpha * (1 - sourceAlpha)
-        guard outAlpha > 0 else { return (0, 0, 0, 0) }
-        return (
-            (src.0 * sourceAlpha + dst.0 * destAlpha * (1 - sourceAlpha)) / outAlpha,
-            (src.1 * sourceAlpha + dst.1 * destAlpha * (1 - sourceAlpha)) / outAlpha,
-            (src.2 * sourceAlpha + dst.2 * destAlpha * (1 - sourceAlpha)) / outAlpha,
-            outAlpha
-        )
-    }
-
-    private static func circle(_ x: Double, _ y: Double, _ cx: Double, _ cy: Double, _ r: Double) -> Double {
-        hypot(x - cx, y - cy) - r
-    }
-
-    private static func rounded(
-        _ x: Double,
-        _ y: Double,
-        _ cx: Double,
-        _ cy: Double,
-        _ hx: Double,
-        _ hy: Double,
-        _ radius: Double
-    ) -> Double {
-        let dx = abs(x - cx) - hx
-        let dy = abs(y - cy) - hy
-        return hypot(max(dx, 0), max(dy, 0)) + min(max(dx, dy), 0) - radius
-    }
-
-    private static func cover(_ distance: Double, _ pixel: Double) -> Double {
-        let width = max(pixel, 0.0008)
-        let t = sat(0.5 - distance / width)
-        return t * t * (3 - 2 * t)
-    }
-
-    private static func sat(_ value: Double) -> Double { min(1, max(0, value)) }
-
-    private static func byte(_ value: Double) -> UInt8 {
-        UInt8(min(255, max(0, Int((value * 255).rounded()))))
-    }
-
-    private static func flatten(_ pixels: [UInt8], background: (UInt8, UInt8, UInt8)) -> [UInt8] {
-        var out = [UInt8](repeating: 255, count: pixels.count)
-        for index in stride(from: 0, to: pixels.count, by: 4) {
-            let alpha = Int(pixels[index + 3])
-            out[index] = UInt8((Int(pixels[index]) * alpha + Int(background.0) * (255 - alpha)) / 255)
-            out[index + 1] = UInt8((Int(pixels[index + 1]) * alpha + Int(background.1) * (255 - alpha)) / 255)
-            out[index + 2] = UInt8((Int(pixels[index + 2]) * alpha + Int(background.2) * (255 - alpha)) / 255)
-        }
-        return out
-    }
-
-    private static func nearest(_ pixels: [UInt8], width: Int, height: Int, scale: Int) -> [UInt8] {
-        let outWidth = width * scale
-        let outHeight = height * scale
-        var out = [UInt8](repeating: 0, count: outWidth * outHeight * 4)
-        for y in 0..<outHeight {
-            for x in 0..<outWidth {
-                let from = ((y / scale) * width + (x / scale)) * 4
-                let to = (y * outWidth + x) * 4
-                out[to] = pixels[from]
-                out[to + 1] = pixels[from + 1]
-                out[to + 2] = pixels[from + 2]
-                out[to + 3] = pixels[from + 3]
-            }
-        }
-        return out
     }
 
     private static func encodePNG(width: Int, height: Int, rgba: [UInt8]) -> Data {
