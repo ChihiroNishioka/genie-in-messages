@@ -37,6 +37,8 @@ package actor GenieEngine {
     private var lastError: String?
     /// 照合できずに送らなかった理由。最後のエラーとは別で、ほかのエラーを上書きしない。
     private var holdNotice: String?
+    /// guid が違って捨てた返事がある。表示が上書きされても、guid が合うまで戻す。
+    private var guidMismatchOutstanding = false
     /// この取得で、まだ待っている返事があった。
     private var notedHoldThisPass = false
     private var loggedMarkerReplacement = false
@@ -203,8 +205,10 @@ package actor GenieEngine {
     }
 
     /// 一覧を読み直せたら、照合の表示だけを消す。最後のエラーは残す。
+    /// guid が違って捨てた返事の表示は、ほかの理由が消えたあと、guid が合うまで戻す。
     private func clearRecoveredListError() {
         if allowlistVerified() {
+            guidMismatchOutstanding = false
             holdNotice = nil
             return
         }
@@ -214,6 +218,7 @@ package actor GenieEngine {
         default:
             break
         }
+        restoreDiscardedGuidNotice()
     }
 
     /// 許可したトークの guid が、いまの一覧と一致している。
@@ -235,6 +240,20 @@ package actor GenieEngine {
             holdNotice = nil
         default:
             break
+        }
+        restoreDiscardedGuidNotice()
+    }
+
+    /// 捨てた返事の表示は、ほかの理由で上書きされても、guid が合うまで残す。
+    private func restoreDiscardedGuidNotice() {
+        guard guidMismatchOutstanding else { return }
+        if allowlistVerified() {
+            guidMismatchOutstanding = false
+            holdNotice = nil
+            return
+        }
+        if holdNotice == nil {
+            holdNotice = "reply_chat_guid_mismatch"
         }
     }
 
@@ -840,6 +859,7 @@ package actor GenieEngine {
         if !current.isEmpty && !allowed.isEmpty && current != allowed {
             holds.removeAll { $0.replyID == replyID }
             markReplyHandled(replyID)
+            guidMismatchOutstanding = true
             persist()
         }
         noteHold(code)
