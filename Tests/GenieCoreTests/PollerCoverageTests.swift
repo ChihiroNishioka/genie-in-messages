@@ -1429,6 +1429,7 @@ final class PollerCoverageTests: XCTestCase {
             events.append("watch")
             saw.value = true
             watchGate.open()
+            harness.stop.stop()
         }
         await fulfillment(of: [expectGate(registered, "wait registered"), expectGate(readStarted, "read started")], timeout: 2)
         XCTAssertFalse(events.snapshot().contains("watch"))
