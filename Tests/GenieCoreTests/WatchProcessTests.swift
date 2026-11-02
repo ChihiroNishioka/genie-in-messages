@@ -302,10 +302,21 @@ final class WatchProcessTests: XCTestCase {
     private func waitForReady(_ process: Process) throws {
         let pipe = try XCTUnwrap(process.standardOutput as? Pipe)
         let handle = pipe.fileHandleForReading
-        let chunk = try handle.read(upToCount: 64) ?? Data()
-        let text = String(decoding: chunk, as: UTF8.self)
-        if !text.contains("ready") {
-            XCTFail("ready が来なかった: \(text)")
+        let ready = DispatchSemaphore(value: 0)
+        let saw = LockedFlag()
+        handle.readabilityHandler = { file in
+            let chunk = file.availableData
+            if chunk.isEmpty { return }
+            if String(decoding: chunk, as: UTF8.self).contains("ready") {
+                file.readabilityHandler = nil
+                saw.value = true
+                ready.signal()
+            }
+        }
+        let result = ready.wait(timeout: .now() + 2)
+        handle.readabilityHandler = nil
+        if result == .timedOut || !saw.value {
+            XCTFail("ready が来なかった")
         }
     }
 
