@@ -790,21 +790,18 @@ final class PollerCoverageTests: XCTestCase {
         let task = Task { await poller.run() }
         slot.task = task
         armed.open()
-        let outcome = await withTaskGroup(of: Bool.self) { group in
-            group.addTask {
-                await task.value
-                return true
-            }
-            group.addTask {
-                await second.wait()
-                return false
-            }
-            let first = await group.next() ?? false
-            harness.stop.stop()
-            second.open()
-            return first
+        let ended = expectation(description: "run ended")
+        let extra = expectation(description: "second read")
+        extra.isInverted = true
+        Task {
+            await task.value
+            ended.fulfill()
         }
-        XCTAssertTrue(outcome)
+        Task {
+            await second.wait()
+            extra.fulfill()
+        }
+        await fulfillment(of: [ended, extra], timeout: 2)
         XCTAssertEqual(reader.calls, 1)
         XCTAssertEqual(harness.clock.slept.count, 1)
     }
