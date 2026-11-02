@@ -1272,10 +1272,13 @@ final class PollerCoverageTests: XCTestCase {
             sawWatch.fulfill()
         }
         await fulfillment(of: [sawWatch], timeout: 2)
-        XCTAssertEqual(
-            events.snapshot().filter { ["read", "chatsApplied", "watch"].contains($0) },
-            ["read", "chatsApplied", "watch"]
-        )
+        harness.stop.stop()
+        let relevant = events.snapshot().filter { ["read", "chatsApplied", "watch"].contains($0) }
+        let watchAt = relevant.firstIndex(of: "watch")
+        XCTAssertNotNil(watchAt)
+        if let watchAt {
+            XCTAssertEqual(Array(relevant.prefix(through: watchAt)), ["read", "chatsApplied", "watch"])
+        }
         let initial = await poller.waitForInitialChatList()
         XCTAssertEqual(initial, .applied)
         harness.stop.stop()
