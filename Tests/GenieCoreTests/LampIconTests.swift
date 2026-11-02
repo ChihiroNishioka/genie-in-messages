@@ -5,7 +5,7 @@ import AppKit
 #endif
 
 /// メニューバーの印と Finder のアイコンを、できた画像の画素で測る。
-/// 縁のぼかしは許す。描画は alpha が 128 以上の画素。余白は alpha が 0 より大きい画素で測る。
+/// 承認した印は alpha が 0 か 255。描画は alpha が 128 以上。余白は alpha が 255 の画素で測る。
 /// 色は黒だけで、幅は @1x の自然な幅を整数倍する。引き伸ばさない。
 final class LampIconTests: XCTestCase {
     private let appearances: [LampAppearance] = [.running, .paused, .warning]
@@ -63,6 +63,14 @@ final class LampIconTests: XCTestCase {
         for file in menuFiles() + referenceFiles() {
             let image = tryDecode(file)
             XCTAssertGreaterThan(image.width, 0, file.lastPathComponent)
+            var alphas = Set<UInt8>()
+            for index in stride(from: 3, to: image.pixels.count, by: 4) {
+                alphas.insert(image.pixels[index])
+                XCTAssertEqual(image.pixels[index - 3], 0)
+                XCTAssertEqual(image.pixels[index - 2], 0)
+                XCTAssertEqual(image.pixels[index - 1], 0)
+            }
+            XCTAssertEqual(alphas, Set([0, 255]), file.lastPathComponent)
             var colored = 0
             for index in stride(from: 0, to: image.pixels.count, by: 4) {
                 if image.pixels[index] != 0 || image.pixels[index + 1] != 0 || image.pixels[index + 2] != 0 {
@@ -86,24 +94,25 @@ final class LampIconTests: XCTestCase {
     }
 
     func testMenuWidthsFollowThePicture() {
-        let base = LampIcon.rgba(pixelHeight: 18, appearance: .running)
-        XCTAssertGreaterThan(base.width, 0)
         for scale in [1, 2, 3] {
             for appearance in appearances {
-                let image = LampIcon.rgba(pixelHeight: 18 * scale, appearance: appearance)
-                XCTAssertEqual(image.width, base.width * scale, "\(appearance) @\(scale)")
                 let file = tryDecode(menuURL(scale: scale, appearance: appearance))
-                XCTAssertEqual(file.width, base.width * scale)
+                XCTAssertEqual(file.width, 21 * scale, "\(appearance) @\(scale)")
+                XCTAssertEqual(file.height, 18 * scale, "\(appearance) @\(scale)")
+                let image = LampIcon.rgba(pixelHeight: 18 * scale, appearance: appearance)
+                XCTAssertEqual(image.width, file.width)
+                XCTAssertEqual(image.height, file.height)
+                XCTAssertEqual(image.pixels, file.pixels, "\(appearance) @\(scale)")
             }
-            let reference = tryDecode(referenceURL(scale: scale))
-            XCTAssertEqual(reference.width, base.width * scale)
+            let reference = tryDecode(approvedReferenceURL(scale: scale))
+            XCTAssertEqual(reference.width, 21 * scale)
             XCTAssertEqual(reference.height, 18 * scale)
         }
     }
 
     func testMenuHasNoPadding() {
         for image in rasters() {
-            let bounds = bounds(of: image.pixels, width: image.width, height: image.height) { $0 > 0 }
+            let bounds = bounds(of: image.pixels, width: image.width, height: image.height) { $0 == 255 }
             XCTAssertEqual(bounds.minX, 0, image.name)
             XCTAssertEqual(bounds.minY, 0, image.name)
             XCTAssertEqual(bounds.maxX, image.width - 1, image.name)
@@ -139,8 +148,9 @@ final class LampIconTests: XCTestCase {
 
     func testLampMatchesTheApprovedMask() {
         for scale in [1, 2, 3] {
-            let reference = drawn(tryDecode(referenceURL(scale: scale)).pixels, width: tryDecode(referenceURL(scale: scale)).width)
-            let width = tryDecode(referenceURL(scale: scale)).width
+            let approved = tryDecode(approvedReferenceURL(scale: scale))
+            let reference = drawn(approved.pixels, width: approved.width)
+            let width = approved.width
             let height = 18 * scale
             for appearance in appearances {
                 let image = LampIcon.rgba(pixelHeight: height, appearance: appearance)
@@ -238,9 +248,9 @@ final class LampIconTests: XCTestCase {
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         var sheets: [(String, Data)] = []
         let menu = try menuSheet()
-        let menuURL = temp.appendingPathComponent("menu-bar-marks.png")
-        try menu.write(to: menuURL)
-        let menuRead = try Data(contentsOf: menuURL)
+        let menuFile = temp.appendingPathComponent("menu-bar-marks.png")
+        try menu.write(to: menuFile)
+        let menuRead = try Data(contentsOf: menuFile)
         XCTAssertEqual(menuRead, menu)
         XCTAssertEqual(Array(menuRead.prefix(8)), [137, 80, 78, 71, 13, 10, 26, 10])
         sheets.append(("menu-bar-marks.png", menu))
@@ -277,8 +287,31 @@ final class LampIconTests: XCTestCase {
             }
         }
 
-        let artifacts = URL(fileURLWithPath: "/opt/cursor/artifacts")
-        if (try? FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)) != nil {
+        let saved = decode(menuRead)
+        let file36 = tryDecode(self.menuURL(scale: 2, appearance: .running))
+        XCTAssertEqual(file36.width, 42)
+        XCTAssertEqual(file36.height, 36)
+        let expected36 = composite(file36.pixels, width: file36.width, height: file36.height, background: light, ink: 0)
+        let rowTop = 6 + 18 + 6 + (18 * 8) + 6
+        XCTAssertEqual(saved.height > rowTop + 36, true)
+        var sheetMismatch = 0
+        for y in 0..<36 {
+            for x in 0..<42 {
+                let src = (y * 42 + x) * 4
+                let dst = ((rowTop + y) * saved.width + (6 + x)) * 4
+                if saved.pixels[dst] != expected36[src]
+                    || saved.pixels[dst + 1] != expected36[src + 1]
+                    || saved.pixels[dst + 2] != expected36[src + 2] {
+                    sheetMismatch += 1
+                }
+            }
+        }
+        XCTAssertEqual(sheetMismatch, 0, "保存した 36px の行")
+
+        let artifactsParent = URL(fileURLWithPath: "/opt/cursor")
+        if FileManager.default.fileExists(atPath: artifactsParent.path) {
+            let artifacts = artifactsParent.appendingPathComponent("artifacts")
+            try FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)
             for (name, data) in sheets {
                 let url = artifacts.appendingPathComponent(name)
                 try data.write(to: url)
@@ -341,19 +374,137 @@ final class LampIconTests: XCTestCase {
         #endif
     }
 
-    func testMenuPngMatchesTheScript() throws {
-        let files = menuFiles() + referenceFiles()
-        let before = try files.map { try Data(contentsOf: $0) }
-        let result = try runPython(script: repoRoot().appendingPathComponent("scripts/make-menu-icon.py"), arguments: [])
-        XCTAssertEqual(result.status, 0, result.err + result.out)
-        let after = try files.map { try Data(contentsOf: $0) }
-        XCTAssertEqual(after, before)
-        for scale in [1, 2, 3] {
-            let image = LampIcon.rgba(pixelHeight: 18 * scale, appearance: .running)
-            XCTAssertGreaterThan(image.width, 0)
-            XCTAssertEqual(image.pixels.count, image.width * image.height * 4)
+    func testFreshScriptMatchesTheApprovedFiles() throws {
+        let hashes = try approvedHashes()
+        let menuOut = FileManager.default.temporaryDirectory.appendingPathComponent("genie-menu-out-\(UUID().uuidString)", isDirectory: true)
+        let finderOut = FileManager.default.temporaryDirectory.appendingPathComponent("genie-finder-out-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: menuOut)
+            try? FileManager.default.removeItem(at: finderOut)
+        }
+        try FileManager.default.createDirectory(at: menuOut, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: finderOut, withIntermediateDirectories: true)
+        let menu = try runPython(
+            script: repoRoot().appendingPathComponent("scripts/make-menu-icon.py"),
+            arguments: ["--out", menuOut.path]
+        )
+        XCTAssertEqual(menu.status, 0, menu.err + menu.out)
+        let finder = try runPython(
+            script: repoRoot().appendingPathComponent("scripts/make-app-icon.py"),
+            arguments: ["--out", finderOut.path]
+        )
+        XCTAssertEqual(finder.status, 0, finder.err + finder.out)
+        let menuNames = try relativeFiles(menuOut)
+        XCTAssertEqual(menuNames, Set([
+            "lamp@1x.png", "lamp@2x.png", "lamp@3x.png",
+            "lamp-paused@1x.png", "lamp-paused@2x.png", "lamp-paused@3x.png",
+            "lamp-warning@1x.png", "lamp-warning@2x.png", "lamp-warning@3x.png",
+            "reference/lamp@1x.png", "reference/lamp@2x.png", "reference/lamp@3x.png",
+        ]))
+        let finderNames = try relativeFiles(finderOut)
+        XCTAssertEqual(finderNames, Set([
+            "AppIcon.icns", "FinderLamp-1024.png",
+            "AppIcon.iconset/icon_16x16.png", "AppIcon.iconset/icon_16x16@2x.png",
+            "AppIcon.iconset/icon_32x32.png", "AppIcon.iconset/icon_32x32@2x.png",
+            "AppIcon.iconset/icon_128x128.png", "AppIcon.iconset/icon_128x128@2x.png",
+            "AppIcon.iconset/icon_256x256.png", "AppIcon.iconset/icon_256x256@2x.png",
+            "AppIcon.iconset/icon_512x512.png", "AppIcon.iconset/icon_512x512@2x.png",
+        ]))
+        for name in menuNames {
+            let data = try Data(contentsOf: menuOut.appendingPathComponent(name))
+            XCTAssertEqual(try sha256Hex(data), hashes["AppBundle/MenuLamp/\(name)"], name)
+        }
+        for name in finderNames {
+            let data = try Data(contentsOf: finderOut.appendingPathComponent(name))
+            XCTAssertEqual(try sha256Hex(data), hashes["AppBundle/\(name)"], name)
         }
     }
+
+    func testApprovedBytesMatchTheFrozenHashes() throws {
+        let hashes = try approvedHashes()
+        XCTAssertGreaterThan(hashes.count, 20)
+        for (rel, digest) in hashes {
+            let data = try Data(contentsOf: repoRoot().appendingPathComponent(rel))
+            XCTAssertEqual(try sha256Hex(data), digest, rel)
+        }
+    }
+
+    func testPausedAndWarningUseTheApprovedFiles() throws {
+        let pausedFile = tryDecode(menuURL(scale: 1, appearance: .paused))
+        let warningFile = tryDecode(menuURL(scale: 1, appearance: .warning))
+        let paused = LampIcon.rgba(pixelHeight: 18, appearance: .paused)
+        let warning = LampIcon.rgba(pixelHeight: 18, appearance: .warning)
+        XCTAssertEqual(paused.pixels, pausedFile.pixels)
+        XCTAssertEqual(warning.pixels, warningFile.pixels)
+        XCTAssertNotEqual(paused.pixels, warning.pixels)
+    }
+
+    func testEachAttentionConditionShowsWarning() {
+        XCTAssertEqual(LampIcon.appearance(for: snapshot(lastError: "watch_start_failed")), .warning)
+        XCTAssertEqual(LampIcon.appearance(for: snapshot(heldLockCount: 1)), .warning)
+        XCTAssertEqual(LampIcon.appearance(for: snapshot(paused: true, lastError: "watch_start_failed")), .warning)
+        XCTAssertEqual(LampIcon.appearance(for: snapshot(paused: true, heldLockCount: 1)), .warning)
+    }
+
+    func testMissingMenuLampLogsAndShowsAMark() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("genie-missing-lamp-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let previousRoot = LampIcon.menuLampRoot
+        let previousLog = LampIcon.menuLampLogger
+        defer {
+            LampIcon.menuLampRoot = previousRoot
+            LampIcon.menuLampLogger = previousLog
+        }
+        LampIcon.menuLampRoot = root
+        let logURL = root.appendingPathComponent("missing.log")
+        LampIcon.menuLampLogger = FileGenieLog(url: logURL)
+        let image = LampIcon.rgba(pixelHeight: 18, appearance: .running)
+        XCTAssertEqual(image.height, 18)
+        XCTAssertGreaterThan(image.width, 0)
+        XCTAssertFalse(image.pixels.isEmpty)
+        var opaque = 0
+        for index in stride(from: 3, to: image.pixels.count, by: 4) where image.pixels[index] == 255 {
+            opaque += 1
+        }
+        XCTAssertGreaterThan(opaque, 0)
+        let text = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
+        XCTAssertTrue(text.contains("menu_lamp_missing"), text)
+        #if canImport(AppKit)
+        let button = NSButton()
+        MenuBarStatus.apply(to: button, snapshot: nil)
+        XCTAssertTrue(button.image?.isTemplate == true)
+        XCTAssertGreaterThan(button.image?.size.width ?? 0, 0)
+        #endif
+    }
+
+    #if os(macOS)
+    func testAssembleCopiesEveryMenuLamp() throws {
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("genie-stage-\(UUID().uuidString).app", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dest) }
+        let result = try runCommand(
+            executable: URL(fileURLWithPath: "/bin/bash"),
+            arguments: [
+                repoRoot().appendingPathComponent("scripts/assemble-app.sh").path,
+                "--stage-only",
+                dest.path,
+            ]
+        )
+        XCTAssertEqual(result.status, 0, result.err + result.out)
+        let hashes = try approvedHashes()
+        let names = [
+            "lamp@1x.png", "lamp@2x.png", "lamp@3x.png",
+            "lamp-paused@1x.png", "lamp-paused@2x.png", "lamp-paused@3x.png",
+            "lamp-warning@1x.png", "lamp-warning@2x.png", "lamp-warning@3x.png",
+        ]
+        for name in names {
+            let data = try Data(contentsOf: dest.appendingPathComponent("Contents/Resources/MenuLamp/\(name)"))
+            XCTAssertEqual(try sha256Hex(data), hashes["AppBundle/MenuLamp/\(name)"], name)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("Contents/MacOS/GenieMenuBar").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("Contents/Resources/AppIcon.icns").path))
+    }
+    #endif
 
     func testFinderIconSet() throws {
         let root = repoRoot()
@@ -406,19 +557,18 @@ final class LampIconTests: XCTestCase {
         let independent = Double(measured["clearance_milli"] ?? 0) / 1000
         XCTAssertGreaterThan(independent, 0.5)
         XCTAssertEqual(scriptClearance, independent, accuracy: 0.02, check.out)
+        XCTAssertEqual(measured["clearance_milli"], 1615)
         _ = temp
     }
 
-    func testFinderMatchesTheScript() throws {
-        let root = repoRoot()
-        var files = iconFiles()
-        files.append(root.appendingPathComponent("AppBundle/AppIcon.icns"))
-        files.append(root.appendingPathComponent("AppBundle/FinderLamp-1024.png"))
-        let before = try files.map { try Data(contentsOf: $0) }
-        let result = try runPython(script: root.appendingPathComponent("scripts/make-app-icon.py"), arguments: [])
-        XCTAssertEqual(result.status, 0, result.err + result.out)
-        let after = try files.map { try Data(contentsOf: $0) }
-        XCTAssertEqual(after, before)
+    func testMenuBarStatusSetsATemplateImage() {
+        #if canImport(AppKit)
+        let button = NSButton()
+        MenuBarStatus.apply(to: button, snapshot: nil)
+        XCTAssertEqual(button.image?.isTemplate, true)
+        XCTAssertGreaterThan(button.image?.size.width ?? 0, 0)
+        XCTAssertEqual(button.imagePosition, .imageOnly)
+        #endif
     }
 
     func testSpecMenuLine() throws {
@@ -426,7 +576,7 @@ final class LampIconTests: XCTestCase {
         let line = text.split(separator: "\n", omittingEmptySubsequences: false).first { $0.hasPrefix("- メニュー表示:") }
         let menu = String(line ?? "")
         XCTAssertFalse(menu.isEmpty)
-        for word in ["template", "isTemplate", "黒と透明", "18pt", "@1x/@2x/@3x", "形", "背景は黒", "824", "185", "切らず"] {
+        for word in ["template", "isTemplate", "黒と透明", "18pt", "@1x/@2x/@3x", "形", "背景は黒", "824", "185", "切らず", "0 か 255", "21", "42", "63"] {
             XCTAssertTrue(menu.contains(word), word)
         }
         for word in ["金色のランプ", "色のまま出し", "template にはしない", "赤い印", "絵の縁の色"] {
@@ -741,7 +891,7 @@ final class LampIconTests: XCTestCase {
             (.running, light, 0), (.paused, light, 0), (.warning, light, 0),
             (.running, dark, 255), (.paused, dark, 255), (.warning, dark, 255),
         ]
-        let rows: [(Int, Int)] = [(18, 1), (18, 8), (54, 1), (54, 4)]
+        let rows: [(Int, Int)] = [(18, 1), (18, 8), (36, 1), (36, 4), (54, 1), (54, 4)]
         var rowHeights: [Int] = []
         var rowWidths: [[Int]] = []
         var cellWidth = 0
@@ -790,15 +940,20 @@ final class LampIconTests: XCTestCase {
         return png(width: width, height: height, pixels: canvas)
     }
 
-    private func snapshot(paused: Bool = false, holdNotice: String? = nil) -> EngineSnapshot {
+    private func snapshot(
+        paused: Bool = false,
+        holdNotice: String? = nil,
+        lastError: String? = nil,
+        heldLockCount: Int = 0
+    ) -> EngineSnapshot {
         EngineSnapshot(
             paused: paused,
             cursorRowID: 0,
             enabledChatIDs: [],
             haltedChatIDs: [],
             heldCount: 0,
-            heldLockCount: 0,
-            lastError: nil,
+            heldLockCount: heldLockCount,
+            lastError: lastError,
             holdNotice: holdNotice,
             screenLocked: false,
             screenLock: .unlocked,
@@ -838,6 +993,10 @@ final class LampIconTests: XCTestCase {
 
     private func referenceURL(scale: Int) -> URL {
         repoRoot().appendingPathComponent("AppBundle/MenuLamp/reference/lamp@\(scale)x.png")
+    }
+
+    private func approvedReferenceURL(scale: Int) -> URL {
+        repoRoot().appendingPathComponent("Tests/GenieCoreTests/Fixtures/approved-menu-reference/lamp@\(scale)x.png")
     }
 
     private func tryDecode(_ url: URL) -> (width: Int, height: Int, pixels: [UInt8]) {
@@ -994,18 +1153,79 @@ final class LampIconTests: XCTestCase {
     }
 
     private func runPython(script: URL, arguments: [String]) throws -> PythonResult {
+        try runCommand(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [script.path] + arguments)
+    }
+
+    private func runCommand(executable: URL, arguments: [String]) throws -> PythonResult {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [script.path] + arguments
-        let output = Pipe()
-        let errors = Pipe()
+        process.executableURL = executable
+        process.arguments = arguments
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("genie-cmd-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let outURL = directory.appendingPathComponent("out")
+        let errURL = directory.appendingPathComponent("err")
+        FileManager.default.createFile(atPath: outURL.path, contents: nil)
+        FileManager.default.createFile(atPath: errURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: outURL)
+        let errors = try FileHandle(forWritingTo: errURL)
         process.standardOutput = output
         process.standardError = errors
         try process.run()
         process.waitUntilExit()
-        let out = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let err = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        return PythonResult(status: process.terminationStatus, out: out, err: err)
+        try output.close()
+        try errors.close()
+        let outData = try Data(contentsOf: outURL)
+        let errData = try Data(contentsOf: errURL)
+        return PythonResult(
+            status: process.terminationStatus,
+            out: String(data: outData, encoding: .utf8) ?? "",
+            err: String(data: errData, encoding: .utf8) ?? ""
+        )
+    }
+
+    private func approvedHashes() throws -> [String: String] {
+        let text = try String(
+            contentsOf: repoRoot().appendingPathComponent("Tests/GenieCoreTests/Fixtures/approved-hashes.txt"),
+            encoding: .utf8
+        )
+        var map: [String: String] = [:]
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+            guard parts.count == 2 else { continue }
+            map[String(parts[1])] = String(parts[0])
+        }
+        return map
+    }
+
+    private func sha256Hex(_ data: Data) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = ["-c", "import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())"]
+        let input = Pipe()
+        let output = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        try process.run()
+        try input.fileHandleForWriting.write(contentsOf: data)
+        try input.fileHandleForWriting.close()
+        let digest = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return (String(data: digest, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func relativeFiles(_ root: URL) throws -> Set<String> {
+        guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            return []
+        }
+        var names = Set<String>()
+        for case let url as URL in items {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else { continue }
+            let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+            names.insert(String(url.path.dropFirst(prefix.count)))
+        }
+        return names
     }
 
     private func runMeasure(screenshots: URL?) throws -> [String: Int] {

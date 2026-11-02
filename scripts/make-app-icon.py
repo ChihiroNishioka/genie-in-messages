@@ -9,6 +9,7 @@
 
 使い方:
   scripts/make-app-icon.py            # iconset と icns を書く
+  scripts/make-app-icon.py --out DIR  # 空の DIR に同じファイルを書く
   scripts/make-app-icon.py --check-fit  # 取っ手・フタ・雲の範囲が角丸の内側か
 """
 
@@ -486,19 +487,26 @@ def main() -> None:
     if "--check-fit" in sys.argv:
         print(text)
         return
-    MASKED.mkdir(parents=True, exist_ok=True)
-    write_png(MASTER, width, width, pixels)
+    out = ROOT / "AppBundle"
+    args = sys.argv[1:]
+    if "--out" in args:
+        out = Path(args[args.index("--out") + 1])
+    iconset = out / "AppIcon.iconset"
+    master = out / "FinderLamp-1024.png"
+    icns_path = out / "AppIcon.icns"
+    iconset.mkdir(parents=True, exist_ok=True)
+    write_png(master, width, width, pixels)
     written: dict[str, bytes] = {}
     src = pixels
     for name, side in ICONSET:
         rendered = render(src, width, side)
-        destination = MASKED / name
+        destination = iconset / name
         write_png(destination, side, side, rendered)
         written[name] = destination.read_bytes()
     parts = [(kind, written[name]) for kind, name, _ in ICNS_ENTRIES]
-    ICNS_PATH.write_bytes(pack_icns(parts))
+    icns_path.write_bytes(pack_icns(parts))
     print(text)
-    print(f"wrote {MASKED} and {ICNS_PATH} ({ICNS_PATH.stat().st_size} bytes)")
+    print(f"wrote {iconset} and {icns_path} ({icns_path.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":

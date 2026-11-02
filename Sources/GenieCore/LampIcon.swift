@@ -24,6 +24,15 @@ package enum LampIcon {
     package static let menuPointSize = 18
     package static let menuScales = [1, 2, 3]
     package static let menuImageIsTemplate = true
+    package static let approvedMenuWidths = [1: 21, 2: 42, 3: 63]
+    /// メニュー画像の置き場所。通常は AppBundle/MenuLamp。
+    package static var menuLampRoot: URL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("AppBundle/MenuLamp")
+    /// 画像が無いときの記録先。アプリが起動時にセットする。
+    package static var menuLampLogger: (any GenieLog)?
 
     package static func appearance(for snapshot: EngineSnapshot?) -> LampAppearance {
         guard let snapshot else { return .running }
@@ -62,21 +71,11 @@ package enum LampIcon {
            FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
         }
-        return URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("AppBundle/MenuLamp/\(name).png")
+        return menuLampRoot.appendingPathComponent("\(name).png")
     }
 
     #if canImport(AppKit)
     package static func menuImage(for appearance: LampAppearance) -> NSImage {
-        imageLock.lock()
-        if let cached = imageCache[appearance] {
-            imageLock.unlock()
-            return cached
-        }
-        imageLock.unlock()
         let point = CGFloat(menuPointSize)
         let image = NSImage()
         var size = NSSize(width: point, height: point)
@@ -92,9 +91,6 @@ package enum LampIcon {
         }
         image.size = size
         image.isTemplate = menuImageIsTemplate
-        imageLock.lock()
-        imageCache[appearance] = image
-        imageLock.unlock()
         return image
     }
 
@@ -107,17 +103,20 @@ package enum LampIcon {
         button.toolTip = label
         button.setAccessibilityLabel(label)
     }
+
+    package enum MenuBarStatus {
+        package static func apply(to button: NSButton, snapshot: EngineSnapshot?) {
+            LampIcon.applyStatus(to: button, snapshot: snapshot)
+            button.imagePosition = .imageOnly
+        }
+    }
     #endif
 
     private static let cacheLock = NSLock()
     private static var cache: [String: (width: Int, height: Int, pixels: [UInt8])] = [:]
-    #if canImport(AppKit)
-    private static let imageLock = NSLock()
-    private static var imageCache: [LampAppearance: NSImage] = [:]
-    #endif
 
     private static func baseRaster(pixelHeight: Int, appearance: LampAppearance) -> (width: Int, height: Int, pixels: [UInt8]) {
-        let key = "\(pixelHeight)-\(appearance.rawValue)"
+        let key = "\(menuLampRoot.path)|\(pixelHeight)|\(appearance.rawValue)"
         cacheLock.lock()
         if let hit = cache[key] {
             cacheLock.unlock()

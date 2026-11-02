@@ -8,12 +8,15 @@
 通常は雲、一時停止は縦棒2本、要対応は「!」。ランプ本体は3状態で同じ画素。
 承認した型は AppBundle/MenuLamp/reference/ に書く。
 
-使い方: scripts/make-menu-icon.py
+使い方:
+  scripts/make-menu-icon.py
+  scripts/make-menu-icon.py --out DIR
 """
 
 from __future__ import annotations
 
 import struct
+import sys
 import zlib
 from collections import deque
 from pathlib import Path
@@ -476,6 +479,10 @@ def stamp(base: list[list[int]], extra: list[tuple[int, int]]) -> list[list[int]
 
 
 def main() -> None:
+    out_dir = OUT_DIR
+    args = sys.argv[1:]
+    if "--out" in args:
+        out_dir = Path(args[args.index("--out") + 1])
     side, height, rgb = read_rgb(SOURCE)
     if side != SIDE or height != SIDE:
         raise SystemExit(f"1024px の原本が必要です（実際は {side}x{height}）")
@@ -497,16 +504,17 @@ def main() -> None:
         "lamp-paused": stamp(lamp, pause_bars(frame_cells(lamp), len(lamp[0]))),
         "lamp-warning": stamp(lamp, warning_mark(frame_cells(lamp), len(lamp[0]))),
     }
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    REFERENCE.mkdir(parents=True, exist_ok=True)
+    reference_dir = out_dir / "reference"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    reference_dir.mkdir(parents=True, exist_ok=True)
     for scale in (1, 2, 3):
         for name, grid in states.items():
             scaled = scale_grid(grid, scale)
-            path = OUT_DIR / f"{name}@{scale}x.png"
+            path = out_dir / f"{name}@{scale}x.png"
             write_png(path, len(scaled[0]), len(scaled), to_png(scaled))
             print(f"wrote {path.name} {len(scaled[0])}x{len(scaled)}")
         reference = scale_grid(lamp, scale)
-        path = REFERENCE / f"lamp@{scale}x.png"
+        path = reference_dir / f"lamp@{scale}x.png"
         write_png(path, len(reference[0]), len(reference), to_png(reference))
         print(f"wrote reference/{path.name} {len(reference[0])}x{len(reference)}")
 

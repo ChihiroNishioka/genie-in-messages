@@ -337,7 +337,11 @@ def measure(root: Path) -> dict[str, int]:
     for i in range(3, len(master), 4):
         if master[i] != 255:
             opaque += 1
-    box = mask_bbox(master, 1024)
+    mask_path = root / "Tests/GenieCoreTests/Fixtures/finder-content-mask-1024.png"
+    mask_w, mask_h, mask_src = read_png(mask_path)
+    if mask_w != 1024 or mask_h != 1024:
+        raise SystemExit("mask size")
+    box = mask_bbox(mask_src, 1024)
     src_w = box[2] - box[0] + 1
     src_h = box[3] - box[1] + 1
     counts = {
@@ -362,7 +366,7 @@ def measure(root: Path) -> dict[str, int]:
         placed = fit_side(side)
         left = (side - placed) / 2.0
         scaled = box_average(master, 1024, placed, False)
-        mask = box_average(master, 1024, placed, True)
+        mask = box_average(mask_src, 1024, placed, True)
         bits = [0] * (side * side)
         dilated = bytearray(side * side)
         min_x = min_y = side
