@@ -22,3 +22,5 @@
 - `Tests/GenieCoreTests/HoldNoticeLifetimeTests.swift` は、照合の表示がほかのエラーを消さないこと、待っていた返事が期限切れになるか一覧が戻ると空一覧と一覧に無い表示が消えること、読み直すと一覧失敗の表示だけが消えほかのエラーは残ることを見る。
 - `Tests/GenieCoreTests/MismatchNoticeStickyTests.swift` は、不一致の表示が一覧の失敗のあと読み直しても、別の返事の表示で上書きされたあと期限が切れても、guid が合うまでは「照合: なし」にならないことを見る。guid が合えば消える。
 - `Sources/GenieCore/SendHoldStatus.swift` がメニューに出す文で、メニューバーアプリも同じ関数を使う。
+- 一覧に無いときは、設定の `chats_limit` を増やすと、そのトークが一覧に入ることがある。
+- `Tests/GenieCoreTests/NoticePolishTests.swift` は、一部の行だけ読めなかった表示がその取得では残ること、同じ一覧失敗のログが重ならないこと、待っているのか捨てたのかが文言で分かること、照合の表示でランプが要対応になることを見る。

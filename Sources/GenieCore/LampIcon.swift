@@ -4,6 +4,15 @@ package enum LampAppearance: String, Sendable {
     case running
     case paused
     case warning
+
+    /// メニューバーのランプを要対応にするか。照合で止まっているときも含む。
+    package static func showsAttention(_ snap: EngineSnapshot) -> Bool {
+        snap.screenLock != .unlocked
+            || snap.heldLockCount > 0
+            || !snap.haltedChatIDs.isEmpty
+            || snap.lastError == "watch_start_failed"
+            || snap.holdNotice != nil
+    }
 }
 
 /// メニューバー用のランプ。原本は `scripts/make-menu-icon.py` が抜いた透過 PNG。

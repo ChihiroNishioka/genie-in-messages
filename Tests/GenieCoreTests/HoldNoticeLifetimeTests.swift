@@ -16,14 +16,14 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(during.holdNotice, "chats_failed")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: during.holdNotice),
-            "照合: トーク一覧を読めないため、返事を送っていません"
+            "照合: トーク一覧を読めないため、返事を待っています"
         )
         let notes = started.harness.log.records.filter { $0.code == "chats_failed" }
         XCTAssertFalse(notes.isEmpty)
         XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
         XCTAssertEqual(
             SendHoldStatus.text(for: "chats_failed"),
-            "トーク一覧を読めないため、返事を送っていません"
+            "トーク一覧を読めないため、返事を待っています"
         )
 
         let saved = try makeEngine(allowedGuid: "chat-kept")
@@ -39,7 +39,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(afterSave.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: afterSave.holdNotice),
-            "照合: トークの識別子が変わったため、返事を送っていません"
+            "照合: トークの識別子が変わったため、その返事は捨てました"
         )
         let mismatch = saved.harness.log.records.filter { $0.code == "reply_chat_guid_mismatch" }
         XCTAssertFalse(mismatch.isEmpty)
@@ -47,7 +47,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertTrue(saved.harness.log.records.contains { $0.code == "state_save_failed" })
         XCTAssertEqual(
             SendHoldStatus.text(for: "reply_chat_guid_mismatch"),
-            "トークの識別子が変わったため、返事を送っていません"
+            "トークの識別子が変わったため、その返事は捨てました"
         )
     }
 
@@ -60,7 +60,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(waiting.holdNotice, "reply_held_empty_list")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: waiting.holdNotice),
-            "照合: トーク一覧が空のため、返事を送っていません"
+            "照合: トーク一覧が空のため、返事を待っています"
         )
         XCTAssertEqual(expired.harness.sender.sent.count, 0)
 
@@ -80,7 +80,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(emptyHeld.holdNotice, "reply_held_empty_list")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: emptyHeld.holdNotice),
-            "照合: トーク一覧が空のため、返事を送っていません"
+            "照合: トーク一覧が空のため、返事を待っています"
         )
         await empty.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
@@ -99,7 +99,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(missingHeld.holdNotice, "reply_held_not_in_list")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: missingHeld.holdNotice),
-            "照合: 一覧に無いトークのため、返事を送っていません"
+            "照合: 一覧に無いトークのため、返事を待っています。chats_limit を増やすと入ることがあります"
         )
         await missing.engine.reconcileChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
@@ -119,7 +119,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(during.holdNotice, "chats_failed")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: during.holdNotice),
-            "照合: トーク一覧を読めないため、返事を送っていません"
+            "照合: トーク一覧を読めないため、返事を待っています"
         )
 
         await started.engine.reconcileChats([
