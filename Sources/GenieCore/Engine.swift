@@ -163,6 +163,32 @@ package actor GenieEngine {
         )
     }
 
+    /// メニューの定期処理の1周。一覧を反映してから、保留の再送と返事の取得をする。
+    package func runPollerPass(_ read: ChatListRead) async -> [ChatSummary] {
+        let chats = applyChatList(read)
+        await retryHolds()
+        await pollReplies()
+        return chats
+    }
+
+    /// `loadChats` がプロセスの結果を受け取ったあとと同じ順で一覧を反映する。
+    package func applyChatList(_ read: ChatListRead) -> [ChatSummary] {
+        switch read {
+        case .failed:
+            noteChatsProblem(code: "chats_failed", updateMenu: true)
+            return []
+        case .parsed(let parsed):
+            if parsed.failedLineCount > 0 {
+                noteChatsProblem(code: "chats_parse_failed", updateMenu: false)
+            }
+            if parsed.chats.isEmpty && parsed.failedLineCount > 0 {
+                return []
+            }
+            reconcileChats(parsed.chats)
+            return parsed.chats
+        }
+    }
+
     package func reconcileChats(_ chats: [ChatSummary]) {
         var facts: [Int64: DirectoryChat] = [:]
         for chat in chats {
