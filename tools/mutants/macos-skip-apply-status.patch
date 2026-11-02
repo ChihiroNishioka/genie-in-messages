@@ -1,5 +1,5 @@
---- a/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
-+++ b/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
+--- a/Sources/GenieCore/LampIcon.swift
++++ b/Sources/GenieCore/LampIcon.swift
 @@ -106,7 +106,6 @@
  
      package enum MenuBarStatus {

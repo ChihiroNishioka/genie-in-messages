@@ -1,5 +1,5 @@
---- a/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
-+++ b/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.981068252 +0000
+--- a/Sources/GenieCore/LampIcon.swift
++++ b/Sources/GenieCore/LampIcon.swift
 @@ -135,16 +135,7 @@
          if loaded.height > 0, !loaded.pixels.isEmpty {
              return loaded

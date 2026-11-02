@@ -1,5 +1,5 @@
---- a/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.977068245 +0000
-+++ b/Sources/GenieCore/LampIcon.swift	2026-11-02 17:27:52.977068245 +0000
+--- a/Sources/GenieCore/LampIcon.swift
++++ b/Sources/GenieCore/LampIcon.swift
 @@ -90,14 +90,12 @@
              size = rep.size
          }

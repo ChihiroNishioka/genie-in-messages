@@ -1,5 +1,5 @@
---- a/scripts/make-app-icon.py	2026-11-02 17:27:52.977068245 +0000
-+++ b/scripts/make-app-icon.py	2026-11-02 17:27:52.977068245 +0000
+--- a/scripts/make-app-icon.py
++++ b/scripts/make-app-icon.py
 @@ -498,11 +498,6 @@
      write_png(master, width, width, pixels)
      written: dict[str, bytes] = {}

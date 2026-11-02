@@ -472,7 +472,7 @@ final class LampIconTests: XCTestCase {
         XCTAssertTrue(text.contains("menu_lamp_missing"), text)
         #if canImport(AppKit)
         let button = NSButton()
-        MenuBarStatus.apply(to: button, snapshot: nil)
+        LampIcon.MenuBarStatus.apply(to: button, snapshot: nil)
         XCTAssertTrue(button.image?.isTemplate == true)
         XCTAssertGreaterThan(button.image?.size.width ?? 0, 0)
         #endif
@@ -564,7 +564,7 @@ final class LampIconTests: XCTestCase {
     func testMenuBarStatusSetsATemplateImage() {
         #if canImport(AppKit)
         let button = NSButton()
-        MenuBarStatus.apply(to: button, snapshot: nil)
+        LampIcon.MenuBarStatus.apply(to: button, snapshot: nil)
         XCTAssertEqual(button.image?.isTemplate, true)
         XCTAssertGreaterThan(button.image?.size.width ?? 0, 0)
         XCTAssertEqual(button.imagePosition, .imageOnly)

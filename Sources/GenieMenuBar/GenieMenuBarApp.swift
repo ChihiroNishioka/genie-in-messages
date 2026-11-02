@@ -211,7 +211,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
 
     private func applyStatusItem() {
         guard let button = statusItem?.button else { return }
-        MenuBarStatus.apply(to: button, snapshot: snapshot)
+        LampIcon.MenuBarStatus.apply(to: button, snapshot: snapshot)
         let image = button.image ?? NSImage()
         statusItem?.length = image.size.width > 0 ? image.size.width : NSStatusItem.squareLength
     }

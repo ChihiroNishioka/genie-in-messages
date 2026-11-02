@@ -1,5 +1,5 @@
---- a/scripts/assemble-app.sh	2026-11-02 17:27:52.985068257 +0000
-+++ b/scripts/assemble-app.sh	2026-11-02 17:27:52.985068257 +0000
+--- a/scripts/assemble-app.sh
++++ b/scripts/assemble-app.sh
 @@ -41,10 +41,6 @@
    cp "${bin_dir}/GenieMenuBar" "${app}/Contents/MacOS/GenieMenuBar"
    cp "${ROOT}/AppBundle/Info.plist" "${app}/Contents/Info.plist"

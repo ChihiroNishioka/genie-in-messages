@@ -25,11 +25,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "codesign は macOS で実行します。" >&2
-  exit 2
-fi
-
 stage_app() {
   local config="$1"
   local app="$2"
@@ -50,6 +45,10 @@ stage_app() {
 }
 
 if [[ -n "${STAGE_ONLY}" ]]; then
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "codesign は macOS で実行します。" >&2
+    exit 2
+  fi
   stage_app debug "${STAGE_ONLY}"
   echo "Staged ${STAGE_ONLY}"
   exit 0
@@ -57,6 +56,11 @@ fi
 
 if [[ -z "${IDENTITY}" || "${IDENTITY}" == "-" || "${IDENTITY}" == "ad-hoc" || "${IDENTITY}" == "AD-HOC" ]]; then
   echo "Apple Development の署名IDを --identity か GENIE_CODESIGN_IDENTITY で渡してください。アドホック署名は使いません。" >&2
+  exit 2
+fi
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "codesign は macOS で実行します。" >&2
   exit 2
 fi
 
