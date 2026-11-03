@@ -288,8 +288,10 @@ def main():
     deadline = started + args.limit
     results = []
     exit_code = 0
+    current = None
     try:
         for entry in selected:
+            current = entry["name"]
             ok, why_not = runnable_here(entry)
             if not ok:
                 results.append((entry["name"], "NOT RUN", 0.0, why_not))
@@ -316,6 +318,10 @@ def main():
     except Interrupted as stop:
         print("中断（シグナル %d）。戻してから終わる。" % stop.args[0], file=sys.stderr)
         exit_code = 128 + stop.args[0]
+        done = set(r[0] for r in results)
+        for entry in selected:
+            if entry["name"] not in done:
+                results.append((entry["name"], "INTERRUPTED" if entry["name"] == current else "NOT RUN", 0.0, "中断"))
     finally:
         restore(saved)
         heavy_lock.release(lock)
@@ -337,8 +343,8 @@ def main():
     if any(r[1] not in ("KILLED", "NOT RUN") for r in results):
         return 1
     if any(r[1] == "NOT RUN" for r in results):
-        print("  未実施があるので、全件合格ではない。")
-        return 1 if all(r[1] == "NOT RUN" for r in results) else 0
+        print("  未実施があるので、合格ではない（exit 2）。")
+        return 2
     return 0
 
 
