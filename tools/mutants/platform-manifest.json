@@ -1,0 +1,10 @@
+[
+  {"name": "linux-drop-watch-start-failed", "platform": "linux", "patch": "linux-drop-watch-start-failed.patch", "filter": "testEachAttentionConditionShowsWarning"},
+  {"name": "linux-drop-held-lock", "platform": "linux", "patch": "linux-drop-held-lock.patch", "filter": "testEachAttentionConditionShowsWarning"},
+  {"name": "macos-drop-iconset", "platform": "macos", "patch": "macos-drop-iconset.patch", "filter": "testFreshScriptMatchesTheApprovedFiles"},
+  {"name": "macos-drop-is-template", "platform": "macos", "patch": "macos-drop-is-template.patch", "filter": "testMenuImageIsTemplate"},
+  {"name": "macos-assemble-omit-images", "platform": "macos", "patch": "macos-assemble-omit-images.patch", "filter": "testAssembleCopiesEveryMenuLamp"},
+  {"name": "macos-skip-apply-status", "platform": "macos", "patch": "macos-skip-apply-status.patch", "filter": "testMenuBarStatusSetsATemplateImage"},
+  {"name": "macos-swap-image-names", "platform": "macos", "patch": "macos-swap-image-names.patch", "filter": "testPausedAndWarningUseTheApprovedFiles"},
+  {"name": "macos-missing-png-blank", "platform": "macos", "patch": "macos-missing-png-blank.patch", "filter": "testMissingMenuLampLogsAndShowsAMark"}
+]

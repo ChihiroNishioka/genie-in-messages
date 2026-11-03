@@ -68,6 +68,31 @@ def try_acquire(path, label):
     return True, ""
 
 
+def acquire(label, wait=None):
+    """ロックを取る。取れなければ BUSY_EXIT で終わる。取ったロックのパスを返す。"""
+    if wait is None:
+        wait = float(os.environ.get("GENIE_HEAVY_LOCK_WAIT", "0"))
+    path = lock_path()
+    deadline = time.monotonic() + max(0.0, wait)
+    announced = False
+    while True:
+        ok, owner = try_acquire(path, label)
+        if ok:
+            return path
+        if time.monotonic() >= deadline:
+            print("heavy-lock: ほかの重い検証が実行中のため開始しない: %s" % owner, file=sys.stderr)
+            print("heavy-lock: ロック %s 。終わるのを待つか --wait 秒 を付ける。" % path, file=sys.stderr)
+            sys.exit(BUSY_EXIT)
+        if not announced:
+            print("heavy-lock: 待機中（実行中: %s）" % owner, file=sys.stderr, flush=True)
+            announced = True
+        time.sleep(2)
+
+
+def release(path):
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--wait", type=float, default=float(os.environ.get("GENIE_HEAVY_LOCK_WAIT", "0")))
@@ -77,21 +102,7 @@ def main():
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("コマンドがありません")
-    path = lock_path()
-    deadline = time.monotonic() + max(0.0, args.wait)
-    announced = False
-    while True:
-        ok, owner = try_acquire(path, args.label or " ".join(command))
-        if ok:
-            break
-        if time.monotonic() >= deadline:
-            print("heavy-lock: ほかの重い検証が実行中のため開始しない: %s" % owner, file=sys.stderr)
-            print("heavy-lock: ロック %s 。終わるのを待つか --wait 秒 を付ける。" % path, file=sys.stderr)
-            sys.exit(BUSY_EXIT)
-        if not announced:
-            print("heavy-lock: 待機中（実行中: %s）" % owner, file=sys.stderr, flush=True)
-            announced = True
-        time.sleep(2)
+    path = acquire(args.label or " ".join(command), args.wait)
 
     # シグナルでも必ずロックを外す。子は watchdog が自分のグループごと止める。
     child = None
@@ -111,7 +122,7 @@ def main():
             except InterruptedError:
                 continue
     finally:
-        shutil.rmtree(path, ignore_errors=True)
+        release(path)
     sys.exit(code if code >= 0 else 128 - code)
 
 

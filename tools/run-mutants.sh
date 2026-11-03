@@ -7,33 +7,14 @@ job="${1:?usage: tools/run-mutants.sh linux|macos}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# 壊し方とテストの対応は tools/mutants/platform-manifest.json にまとめてある
+# （tools/local/mutants.py と同じ表を使う）。
 filter_for() {
-  case "$1" in
-    linux-drop-watch-start-failed.patch|linux-drop-held-lock.patch)
-      printf '%s\n' "testEachAttentionConditionShowsWarning"
-      ;;
-    macos-drop-iconset.patch)
-      printf '%s\n' "testFreshScriptMatchesTheApprovedFiles"
-      ;;
-    macos-drop-is-template.patch)
-      printf '%s\n' "testMenuImageIsTemplate"
-      ;;
-    macos-assemble-omit-images.patch)
-      printf '%s\n' "testAssembleCopiesEveryMenuLamp"
-      ;;
-    macos-skip-apply-status.patch)
-      printf '%s\n' "testMenuBarStatusSetsATemplateImage"
-      ;;
-    macos-swap-image-names.patch)
-      printf '%s\n' "testPausedAndWarningUseTheApprovedFiles"
-      ;;
-    macos-missing-png-blank.patch)
-      printf '%s\n' "testMissingMenuLampLogsAndShowsAMark"
-      ;;
-    *)
-      printf '\n'
-      ;;
-  esac
+  python3 - "$root/tools/mutants/platform-manifest.json" "$1" <<'PY'
+import json, sys
+entries = json.load(open(sys.argv[1]))
+print(next((e["filter"] for e in entries if e["patch"] == sys.argv[2]), ""))
+PY
 }
 
 shopt -s nullglob
