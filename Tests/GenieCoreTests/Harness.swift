@@ -2,21 +2,75 @@ import Foundation
 import XCTest
 @testable import GenieCore
 
+/// テスト用の時計。sleep は待たずに時刻だけ進める。
+///
+/// 以前は待たずに戻り、中断もしなかった。止まらないループ（取り消しを無視するなど）は
+/// 協調スレッドを占有して CPU を使い切り、slept を際限なく伸ばした。Linux の少ない
+/// スレッドでは、テストの期限待ちも動けず、2026-11-02 の Actions では数時間止まらず、
+/// 最後はメモリ不足で落ちた。
+/// そこで (1) sleep のたびにスレッドを譲り、(2) sleep の回数に上限を置く。上限を超えたら
+/// 失敗を記録し、onRunaway（Harness では停止の知らせ）を呼んでループを終わらせる。
+/// 再試行や時間切れで隠さない。
 final class ManualClock: GenieClock, @unchecked Sendable {
+    /// どのテストもこの回数より十分少ない。超えたらループが止まっていない。
+    static let sleepBudget = 10_000
+
     var current: Date
     var slept: [Double] = []
-    init(_ date: Date = Date(timeIntervalSince1970: 1_700_000_000)) {
+    var onRunaway: (() -> Void)?
+    private let budgetLock = NSLock()
+    private var sleepCount = 0
+    private var ranAway = false
+
+    /// この時計を作ったテスト。失敗の記録は「いま動いているテスト」に付くので、
+    /// 前のテストから漏れたループでも、どのテストの時計かが分かるように残す。
+    let createdIn: String
+
+    init(_ date: Date = Date(timeIntervalSince1970: 1_700_000_000), createdIn: String = #function) {
         current = date
+        self.createdIn = createdIn
     }
     func now() -> Date { current }
     var onSleep: (() async -> Void)?
+
+    /// 上限を超えて sleep されたら true。
+    var runaway: Bool {
+        budgetLock.lock()
+        defer { budgetLock.unlock() }
+        return ranAway
+    }
+
     func sleep(seconds: Double) async throws {
+        if overBudget() {
+            throw RunawayLoop()
+        }
+        // 本物の時計（SystemClock）の sleep は必ず中断してスレッドを譲る。偽物も譲る。
+        // 譲らないと、回り続けるループが協調スレッドを占有し、テスト側が動けない。
+        await Task.yield()
         slept.append(seconds)
         current = current.addingTimeInterval(seconds)
         await onSleep?()
         try Task.checkCancellation()
     }
+
+    /// 上限を超えた最初の1回だけ、失敗を記録して onRunaway を呼ぶ。
+    private func overBudget() -> Bool {
+        budgetLock.lock()
+        sleepCount += 1
+        let over = sleepCount > Self.sleepBudget
+        let first = over && !ranAway
+        if over { ranAway = true }
+        budgetLock.unlock()
+        if first {
+            XCTFail("ManualClock: sleep が \(Self.sleepBudget) 回を超えた。ループが止まっていない（取り消しや停止を見ていない）。時計を作ったテスト: \(createdIn)")
+            onRunaway?()
+        }
+        return over
+    }
 }
+
+struct RunawayLoop: Error {}
+
 
 final class FakeWebhook: WebhookPosting, @unchecked Sendable {
     var results: [Result<WebhookHTTPResult, Error>] = []
@@ -83,7 +137,7 @@ final class ScriptedReplies: ReplySource, @unchecked Sendable {
 }
 
 final class Harness {
-    let clock = ManualClock()
+    let clock: ManualClock
     let stop = StopSignal()
     let webhook = FakeWebhook()
     let sender = FakeSender()
@@ -94,6 +148,13 @@ final class Harness {
     let replies = ScriptedReplies()
     var secrets: any SecretProviding = StaticSecret(webhook: "hook-secret", reply: nil)
     var config = GenieConfig.productDefaults
+
+    /// createdIn は呼んだテストの関数名（#function）。
+    init(createdIn: String = #function) {
+        clock = ManualClock(createdIn: createdIn)
+        // 止まらないループは、停止の知らせで終わらせる（ManualClock の説明を参照）。
+        clock.onRunaway = { [stop] in stop.stop() }
+    }
 
     func engine() throws -> GenieEngine {
         try engine(stop: stop)
