@@ -1373,6 +1373,14 @@ final class PollerCoverageTests: XCTestCase {
             started.open()
             await release.wait()
         }
+        // poller は止めない限り回り続ける。最初の sleep で待たせ、最後に止めて終わりまで待つ。
+        // 以前は止めずに抜けていて、ManualClock の上で次のテスト以降も回り続けていた。
+        let parked = Gate()
+        defer {
+            harness.stop.stop()
+            parked.open()
+        }
+        harness.clock.onSleep = { await parked.wait() }
         let watched = LockedFlag()
         let poller = makePoller(harness, engine, reader, schedule: .production)
         let tasks = GenieRuntimeLauncher.launch(poller: poller, stop: harness.stop) {
@@ -1383,6 +1391,10 @@ final class PollerCoverageTests: XCTestCase {
         release.open()
         _ = await tasks.supervisor.value
         XCTAssertFalse(watched.value)
+        harness.stop.stop()
+        parked.open()
+        _ = await tasks.poller.value
+        XCTAssertEqual(reader.calls, 1)
     }
 
     func testLessonsKeepTheDesignSentenceAndTheOldDistinction() throws {
