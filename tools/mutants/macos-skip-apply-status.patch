@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/LampIcon.swift
++++ b/Sources/GenieCore/LampIcon.swift
+@@ -106,7 +106,6 @@
+ 
+     package enum MenuBarStatus {
+         package static func apply(to button: NSButton, snapshot: EngineSnapshot?) {
+-            LampIcon.applyStatus(to: button, snapshot: snapshot)
+             button.imagePosition = .imageOnly
+         }
+     }

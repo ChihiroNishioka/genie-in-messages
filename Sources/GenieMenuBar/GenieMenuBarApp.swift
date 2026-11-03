@@ -59,6 +59,9 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         }
         notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
         super.init()
+        if let controller {
+            LampIcon.menuLampLogger = FileGenieLog(url: controller.logURL)
+        }
         begin()
     }
 
@@ -195,7 +198,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         loginStatus = LoginItemController.statusText()
         notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
         phase = Self.phaseText(snap)
-        symbol = Self.symbol(for: snap)
+        symbol = LampIcon.statusLabel(for: LampIcon.appearance(for: snap))
         applyStatusItem()
         chats = await controller.latestChats()
     }
@@ -206,51 +209,11 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         return "監視中"
     }
 
-    static func appearance(for snap: EngineSnapshot?) -> LampAppearance {
-        guard let snap else { return .running }
-        let warning = LampAppearance.showsAttention(snap)
-        if warning { return .warning }
-        if snap.paused { return .paused }
-        return .running
-    }
-
-    private static func symbol(for snap: EngineSnapshot) -> String {
-        switch appearance(for: snap) {
-        case .warning: return "ジーニー 要確認"
-        case .paused: return "ジーニー 一時停止"
-        case .running: return "ジーニー 監視中"
-        }
-    }
-
-    private static let menuImages: [LampAppearance: NSImage] = {
-        var images: [LampAppearance: NSImage] = [:]
-        let point = CGFloat(LampIcon.menuPointSize)
-        for appearance in [LampAppearance.running, .paused, .warning] {
-            let image = NSImage(size: NSSize(width: point, height: point))
-            for scale in LampIcon.menuScales {
-                let data = LampIcon.png(pixelHeight: LampIcon.menuPointSize * scale, appearance: appearance)
-                guard let rep = NSBitmapImageRep(data: data), rep.pixelsHigh > 0 else { continue }
-                let width = point * CGFloat(rep.pixelsWide) / CGFloat(rep.pixelsHigh)
-                rep.size = NSSize(width: width, height: point)
-                image.addRepresentation(rep)
-                image.size = rep.size
-            }
-            image.isTemplate = LampIcon.menuImageIsTemplate
-            images[appearance] = image
-        }
-        return images
-    }()
-
     private func applyStatusItem() {
         guard let button = statusItem?.button else { return }
-        let appearance = Self.appearance(for: snapshot)
-        let image = Self.menuImages[appearance] ?? NSImage()
-        image.isTemplate = LampIcon.menuImageIsTemplate
-        button.image = image
+        LampIcon.MenuBarStatus.apply(to: button, snapshot: snapshot)
+        let image = button.image ?? NSImage()
         statusItem?.length = image.size.width > 0 ? image.size.width : NSStatusItem.squareLength
-        button.imagePosition = .imageOnly
-        button.toolTip = symbol
-        button.setAccessibilityLabel(symbol)
     }
 
     private func populate(_ menu: NSMenu) {

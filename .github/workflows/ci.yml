@@ -39,3 +39,24 @@ jobs:
         run: swift test
       - name: 壊して確かめる
         run: python3 tools/check-mutants.py
+
+  mutation-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0.3"
+      - name: Mutate
+        run: bash tools/run-mutants.sh linux
+
+  mutation-macos:
+    runs-on: macos-14
+    steps:
+      - name: Select Xcode 16.2
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.2.app
+          swift --version
+      - uses: actions/checkout@v4
+      - name: Mutate
+        run: bash tools/run-mutants.sh macos

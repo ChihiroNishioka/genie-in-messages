@@ -1,0 +1,20 @@
+--- a/Sources/GenieCore/LampIcon.swift
++++ b/Sources/GenieCore/LampIcon.swift
+@@ -135,16 +135,7 @@
+         if loaded.height > 0, !loaded.pixels.isEmpty {
+             return loaded
+         }
+-        menuLampLogger?.record(
+-            level: .error,
+-            code: "menu_lamp_missing",
+-            chatID: nil,
+-            guid: nil,
+-            rowid: nil,
+-            detail: nil
+-        )
+-        FileHandle.standardError.write(Data("menu_lamp_missing\n".utf8))
+-        return fallbackRaster(pixelHeight)
++        return (0, 0, [])
+     }
+ 
+     /// 承認した印では無い。メニューが空にならないための黒い印。

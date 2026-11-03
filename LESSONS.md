@@ -58,3 +58,20 @@ sleep の禁止は、空回しのループで満たさない。実在のプロ�
 - `Tests/GenieCoreTests/PollerNoticeLoopTests.swift` は、1つの poller を持ち続けて、一覧のあと返事を取る順を見る。
 - `Tests/GenieCoreTests/PollerCoverageTests.swift` は、起動の待ち、重なる要求、送信中の停止、ログが解決のあとにもう1件増えることを見る。
 - `Tests/GenieCoreTests/PartialParseWordingTests.swift` は、一部の行だけ読めなかったときに「返事を待っています」と出さないことを見る。
+
+メニューバーの印は白黒の template にする。色は出さず、明るいバーと暗いバーの切り替えは macOS に任せる。通常は雲、一時停止は同じ高さの縦棒2本、要対応は「!」。一時停止と要対応が重なったら要対応を出す。線は @1x で 2px 以上。承認した印の幅は @1x が 21、@2x が 42、@3x が 63。高さは 18、36、54。引き伸ばさない。alpha は 0 か 255。余白は alpha が 255 の画素で測り、承認した印は四辺とも 0。取っ手の内側は閉じた穴にする。
+
+Finder のアイコンは、ランプの金色と雲を残し、背景だけを黒にする。紫と紺は残さない。角丸の外は透明で、縁の色も黒にする。余裕は四隅のうち一番外側の角で測る。承認した画像で測った最小の余裕は 1.615px。
+
+検査のマスクとお手本は、検査されるスクリプトの出力から作らない。承認したファイルのハッシュはテストの外に置く。メニューの PNG が無いときは、ログを出して代わりの印を出す。空のままにしない。テストが選んだ場所へスクショを書けなければ、そのテストは失敗する。`/opt/cursor` があるときはそこへも書き、書けなければ失敗する。
+
+テストは、できた画像の画素を測る。ソースの文字列では判断しない。保存した PNG を読み直して測る。スクリプトは空の場所に生成し、できたファイルの一覧を承認した一覧と照合する。
+
+これを守るもの:
+
+- `scripts/make-menu-icon.py` が原本から白黒の印を抜き、線を太らせ、承認した型を `AppBundle/MenuLamp/reference/` に書く。
+- `scripts/make-app-icon.py` が背景を黒にし、金色のランプを角丸の内側に収める。
+- `Tests/GenieCoreTests/LampIconTests.swift` が画素、状態、SPEC.md の60行目、スクショを見る。
+- `Sources/GenieCore/LampIcon.swift` の `appearance(for:)` と `statusLabel(for:)` を、メニューバーも使う。
+
+CI の macOS は Xcode をはっきり選ぶ。イメージの標準に任せると、Linux と Swift の版がずれる。

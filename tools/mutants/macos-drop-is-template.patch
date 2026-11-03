@@ -1,0 +1,17 @@
+--- a/Sources/GenieCore/LampIcon.swift
++++ b/Sources/GenieCore/LampIcon.swift
+@@ -90,14 +90,12 @@
+             size = rep.size
+         }
+         image.size = size
+-        image.isTemplate = menuImageIsTemplate
+         return image
+     }
+ 
+     package static func applyStatus(to button: NSButton, snapshot: EngineSnapshot?) {
+         let state = appearance(for: snapshot)
+         let image = menuImage(for: state)
+-        image.isTemplate = menuImageIsTemplate
+         button.image = image
+         let label = statusLabel(for: state)
+         button.toolTip = label
