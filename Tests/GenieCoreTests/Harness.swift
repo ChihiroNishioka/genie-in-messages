@@ -14,6 +14,7 @@ final class ManualClock: GenieClock, @unchecked Sendable {
         slept.append(seconds)
         current = current.addingTimeInterval(seconds)
         await onSleep?()
+        try Task.checkCancellation()
     }
 }
 
@@ -48,15 +49,20 @@ final class FakeSender: MessageSending, @unchecked Sendable {
 final class FakeLock: ScreenLockChecking, @unchecked Sendable {
     var locked = false
     var forced: ScreenLockState?
+    var onState: (() async -> Void)?
     func state() async -> ScreenLockState {
+        await onState?()
         if let forced { return forced }
         return locked ? .locked : .unlocked
     }
 }
 
+struct ScriptedFetchFailure: Error {}
+
 final class ScriptedReplies: ReplySource, @unchecked Sendable {
     var pages: [ReplyPage] = []
     var onFetch: (() async -> Void)?
+    var failNext = false
     func fetch(
         cursor: String?,
         skipping handledReplyIDs: Set<String> = [],
@@ -65,6 +71,10 @@ final class ScriptedReplies: ReplySource, @unchecked Sendable {
         _ = handledReplyIDs
         _ = replyIDs
         await onFetch?()
+        if failNext {
+            failNext = false
+            throw ScriptedFetchFailure()
+        }
         if pages.isEmpty {
             return ReplyPage(replies: [], nextCursor: cursor)
         }
@@ -86,18 +96,22 @@ final class Harness {
     var config = GenieConfig.productDefaults
 
     func engine() throws -> GenieEngine {
+        try engine(stop: stop)
+    }
+
+    func engine(stop signal: StopSignal) throws -> GenieEngine {
         var cfg = config
         if cfg.webhookURL.isEmpty {
             cfg.webhookURL = "https://127.0.0.1/webhook"
         }
-        return try makeEngine(config: cfg)
+        return try makeEngine(config: cfg, stop: signal)
     }
 
     /// 許可中の各トークを、保存してある guid で照合済みにしたエンジン。
     /// 送信を試す既存テストはこちらを使う。
     func opened() async throws -> GenieEngine {
         let created = try engine()
-        await created.reconcileChats(verifiedChatList())
+        await created.showChats(verifiedChatList())
         return created
     }
 
@@ -113,7 +127,7 @@ final class Harness {
         }
     }
 
-    private func makeEngine(config cfg: GenieConfig) throws -> GenieEngine {
+    private func makeEngine(config cfg: GenieConfig, stop signal: StopSignal) throws -> GenieEngine {
         try GenieEngine(
             configProvider: StaticConfig(config: cfg),
             initialConfig: cfg,
@@ -126,7 +140,7 @@ final class Harness {
             lock: lock,
             clock: clock,
             log: log,
-            stop: stop
+            stop: signal
         )
     }
 }
@@ -200,6 +214,124 @@ func routedReply(
     created: String = "2023-11-14T22:13:20Z"
 ) -> FetchedReply {
     FetchedReply(id: id, chatID: chat, text: text, inReplyToGUID: guid, createdAt: created)
+}
+
+extension GenieEngine {
+    func showChats(_ chats: [ChatSummary]) async {
+        _ = await applyChatList(.parsed(ChatListParse(chats: chats, failedLineCount: 0)))
+    }
+}
+
+final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var opened = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func open() {
+        let pending: [CheckedContinuation<Void, Never>]
+        lock.lock()
+        opened = true
+        pending = waiters
+        waiters = []
+        lock.unlock()
+        for waiter in pending { waiter.resume() }
+    }
+
+    func wait() async {
+        lock.lock()
+        if opened {
+            lock.unlock()
+            return
+        }
+        await withCheckedContinuation { (waiter: CheckedContinuation<Void, Never>) in
+            waiters.append(waiter)
+            lock.unlock()
+        }
+    }
+}
+
+final class EventLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [String] = []
+    func append(_ name: String) {
+        lock.lock()
+        events.append(name)
+        lock.unlock()
+    }
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
+}
+
+final class MutableConfig: ConfigProviding, @unchecked Sendable {
+    var config: GenieConfig
+    var onLoad: (() -> Void)?
+    init(_ config: GenieConfig) { self.config = config }
+    func load() throws -> GenieConfig {
+        onLoad?()
+        return config.sanitized()
+    }
+}
+
+final class RecordingProbe: PollerProbe, @unchecked Sendable {
+    let log: EventLog
+    var gates: [String: Gate] = [:]
+    var arrived: [String: Gate] = [:]
+    init(log: EventLog) { self.log = log }
+    func chatsReadReturned() async {
+        log.append("chatsReadReturned")
+        arrived["chatsReadReturned"]?.open()
+        if let gate = gates["chatsReadReturned"] { await gate.wait() }
+    }
+    func chatsApplied() async {
+        log.append("chatsApplied")
+        arrived["chatsApplied"]?.open()
+        if let gate = gates["chatsApplied"] { await gate.wait() }
+    }
+    func initialWaitRegistered() async {
+        log.append("initialWaitRegistered")
+        arrived["initialWaitRegistered"]?.open()
+        if let gate = gates["initialWaitRegistered"] { await gate.wait() }
+    }
+}
+
+/// 複数のタスクから読み書きする印。ロックで守る。
+final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Bool
+    init(_ value: Bool = false) { stored = value }
+    var value: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
+        }
+        set {
+            lock.lock()
+            stored = newValue
+            lock.unlock()
+        }
+    }
+}
+
+/// 複数のタスクから読み書きする Task。ロックで守る。
+final class TaskSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Task<Void, Never>?
+    var task: Task<Void, Never>? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
+        }
+        set {
+            lock.lock()
+            stored = newValue
+            lock.unlock()
+        }
+    }
 }
 
 func repoRoot() -> URL {

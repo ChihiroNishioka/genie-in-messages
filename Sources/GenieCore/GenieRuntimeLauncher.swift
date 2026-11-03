@@ -10,7 +10,8 @@ package enum GenieRuntimeLauncher {
         let pollerTask = Task { await poller.run() }
         let supervisor = Task {
             let initial = await poller.waitForInitialChatList()
-            if initial == .applied && !stop.isStopped {
+            if Task.isCancelled || stop.isStopped { return }
+            if initial == .applied {
                 await startWatch()
             }
         }

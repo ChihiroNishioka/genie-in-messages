@@ -1,0 +1,13 @@
+diff --git a/Sources/GenieCore/GeniePoller.swift b/Sources/GenieCore/GeniePoller.swift
+index fefa148..ae177ae 100644
+--- a/Sources/GenieCore/GeniePoller.swift
++++ b/Sources/GenieCore/GeniePoller.swift
+@@ -54,7 +54,7 @@ package actor GeniePoller {
+             return PollTickReport(at: at, steps: steps, skippedBusy: false, stoppedMidway: true)
+         }
+         let config = loadedConfig()
+-        if schedule.chatsDue(now: clock.now()) || pendingRefresh {
++        if schedule.chatsDue(now: clock.now()) {
+             pendingRefresh = false
+             refreshInFlight = true
+             let read = await reader.read()

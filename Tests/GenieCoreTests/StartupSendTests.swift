@@ -10,14 +10,14 @@ final class StartupSendTests: XCTestCase {
         XCTAssertTrue(early.harness.sender.sent.isEmpty)
 
         let swapped = try makeEngine(allowedGuid: "chat-old")
-        await swapped.engine.reconcileChats([
+        await swapped.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-new"),
         ])
         await swapped.engine.pollReplies()
         XCTAssertTrue(swapped.harness.sender.sent.isEmpty)
 
         let same = try makeEngine(allowedGuid: "chat-same")
-        await same.engine.reconcileChats([
+        await same.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-same"),
         ])
         await same.engine.pollReplies()
@@ -26,14 +26,14 @@ final class StartupSendTests: XCTestCase {
 
     func testEmptyChatListDoesNotSend() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([])
+        await started.engine.showChats([])
         await started.engine.pollReplies()
         XCTAssertEqual(started.harness.sender.sent.count, 0)
     }
 
     func testAllowedChatMissingFromTheListDoesNotSend() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept", chatsLimit: 1)
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 99, title: "other", isGroup: false, guid: "someone-else"),
         ])
         await started.engine.pollReplies()
@@ -42,7 +42,7 @@ final class StartupSendTests: XCTestCase {
 
     func testDifferentGuidDoesNotSendWhenTheDatabaseIsNotReset() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-kept"),
         ])
         await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)

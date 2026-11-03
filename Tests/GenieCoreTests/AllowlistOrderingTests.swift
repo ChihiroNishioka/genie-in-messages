@@ -63,7 +63,7 @@ final class AllowlistOrderingTests: XCTestCase {
     func testOutsideToggleKeepsTheKnownGuid() async throws {
         let harness = Harness()
         let engine = try await harness.opened()
-        await engine.reconcileChats([
+        await engine.showChats([
             ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
         ])
         await engine.setChatEnabled(21, guid: "guid-21", enabled: true)
@@ -85,7 +85,7 @@ final class AllowlistOrderingTests: XCTestCase {
         XCTAssertEqual(unknown.first?.level, LogLevel.warning.rawValue)
         XCTAssertEqual(harness.allow.guids[21], "")
 
-        await engine.reconcileChats([
+        await engine.showChats([
             ChatSummary(id: 21, title: "自分", isGroup: false, guid: "guid-21"),
         ])
         await engine.toggleChat(id: 21, guid: "")

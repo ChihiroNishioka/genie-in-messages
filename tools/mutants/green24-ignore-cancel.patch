@@ -1,0 +1,24 @@
+diff --git a/Sources/GenieCore/GeniePoller.swift b/Sources/GenieCore/GeniePoller.swift
+index fefa148..e3efa09 100644
+--- a/Sources/GenieCore/GeniePoller.swift
++++ b/Sources/GenieCore/GeniePoller.swift
+@@ -107,15 +107,15 @@ package actor GeniePoller {
+             initial.resolve(.stopped)
+             return
+         }
+-        while !stop.isStopped && !Task.isCancelled {
++        while !stop.isStopped {
+             _ = await tick()
+-            if stop.isStopped || Task.isCancelled { break }
++            if stop.isStopped { break }
+             do {
+                 try await clock.sleep(seconds: schedule.tickSeconds)
+             } catch {
+-                break
++                if stop.isStopped { break }
+             }
+-            if stop.isStopped || Task.isCancelled { break }
++            if stop.isStopped { break }
+         }
+         initial.resolve(.stopped)
+     }

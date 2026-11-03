@@ -1,0 +1,42 @@
+[
+  {
+    "name": "M4",
+    "patch": "m4-refresh-in-flight.patch",
+    "filter": "PollerCoverageTests.testRequestsDuringTheFirstReadCollapse"
+  },
+  {
+    "name": "M5",
+    "patch": "m5-stop-after-read.patch",
+    "filter": "PollerSingleEntryTests.testStoppingDuringTheChatReadDiscardsTheResult"
+  },
+  {
+    "name": "M6",
+    "patch": "m6-partial-clear.patch",
+    "filter": "PollerCoverageTests.testPartialSuccessResolvesTheHoldLogAcrossADatabaseReset"
+  },
+  {
+    "name": "M10",
+    "patch": "m10-all-rows-keep-directory.patch",
+    "filter": "PollerCoverageTests.testVerifiedChatDoesNotSendAfterEveryLineFails"
+  },
+  {
+    "name": "GREEN21",
+    "patch": "green21-ignore-pending-refresh.patch",
+    "filter": "PollerCoverageTests.testTickDuringFetchDoesNotReadChats"
+  },
+  {
+    "name": "GREEN24",
+    "patch": "green24-ignore-cancel.patch",
+    "filter": "PollerCoverageTests.testCancelDuringSleepStopsTheRun"
+  },
+  {
+    "name": "GREEN30",
+    "patch": "green30-mismatch-before-grace.patch",
+    "filter": "PollerCoverageTests.testMismatchStaysBehindTheFailureNoticeAfterTheGrace"
+  },
+  {
+    "name": "GREEN34",
+    "patch": "green34-drop-design-sentence.patch",
+    "filter": "PollerCoverageTests.testLessonsKeepTheDesignSentenceAndTheOldDistinction"
+  }
+]

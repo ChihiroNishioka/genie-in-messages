@@ -264,7 +264,7 @@ final class DeliveryTests: XCTestCase {
             clock: harness.clock,
             log: harness.log
         )
-        await engine.reconcileChats(harness.verifiedChatList())
+        await engine.showChats(harness.verifiedChatList())
         func warnings() -> Int { harness.log.records.filter { $0.code == "marker_replaced" }.count }
         XCTAssertEqual(warnings(), 1)
         await engine.pollReplies()
