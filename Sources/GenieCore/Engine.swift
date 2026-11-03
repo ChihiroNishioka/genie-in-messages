@@ -103,6 +103,8 @@ package actor GenieEngine {
 
     package func inFlightReplyCount() -> Int { inFlightReplyIDs.count }
 
+    package func savedReplyCursor() -> String? { persisted.replyCursor }
+
     package static let chatsFailureNoticeSeconds: Double = 60
 
     package func isPaused() -> Bool { paused }
@@ -252,18 +254,6 @@ package actor GenieEngine {
                 lastFetchVerified = false
             }
         }
-    }
-
-    /// テストと古い呼び出し向け。取得失敗か解析失敗を、一覧の層に記録する。
-    package func noteChatsProblem(code: String) {
-        if code == "chats_parse_failed" {
-            parseProblem = .partial
-            directoryGUIDs = [:]
-            directoryChecked = false
-            logListCode(code)
-            return
-        }
-        noteFetchFailure()
     }
 
     private func noteFetchFailure() {
@@ -522,7 +512,7 @@ package actor GenieEngine {
         }
         holds = kept
         for (index, hold) in ready.enumerated() {
-            if stop.isStopped {
+            if stop.isStopped || !directoryChecked {
                 let remaining = Array(ready[index...])
                 holds.append(contentsOf: remaining)
                 for item in remaining {
@@ -860,7 +850,13 @@ package actor GenieEngine {
             dropDisabled(replyID: replyID, chatID: chatID)
             return
         }
-        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) { return }
+        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+            restoreHoldWhenUnchecked(
+                replyID: replyID, chatID: chatID, text: text, reason: pauseReason,
+                attempts: attempts, createdAt: createdAt, originGUID: originGUID
+            )
+            return
+        }
         let locked = await lock.state()
         noteLock(locked)
         refreshConfig()
@@ -872,7 +868,13 @@ package actor GenieEngine {
             dropDisabled(replyID: replyID, chatID: chatID)
             return
         }
-        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) { return }
+        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+            restoreHoldWhenUnchecked(
+                replyID: replyID, chatID: chatID, text: text, reason: pauseReason,
+                attempts: attempts, createdAt: createdAt, originGUID: originGUID
+            )
+            return
+        }
         if locked == .locked {
             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
             hold(replyID: replyID, chatID: chatID, text: text, reason: .screenLocked, attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
@@ -918,6 +920,10 @@ package actor GenieEngine {
             releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             persist()
+            restoreHoldWhenUnchecked(
+                replyID: replyID, chatID: chatID, text: text, reason: pauseReason,
+                attempts: attempts, createdAt: createdAt, originGUID: originGUID
+            )
             return
         }
         do {
@@ -1022,6 +1028,30 @@ package actor GenieEngine {
         lastError = "reply_chat_disabled"
         log.record(level: .info, code: "reply_chat_disabled", chatID: chatID, guid: nil, rowid: nil)
         persist()
+    }
+
+    /// 再送の途中で一覧が未確認に戻ったら、取り出していた返事を保留へ戻す。
+    private func restoreHoldWhenUnchecked(
+        replyID: String,
+        chatID: Int64,
+        text: String,
+        reason: HoldReason,
+        attempts: Int,
+        createdAt: Date,
+        originGUID: String
+    ) {
+        guard !directoryChecked else { return }
+        hold(
+            replyID: replyID,
+            chatID: chatID,
+            text: text,
+            reason: reason,
+            attempts: attempts,
+            logIt: false,
+            immediate: true,
+            createdAt: createdAt,
+            originGUID: originGUID
+        )
     }
 
     private func hold(

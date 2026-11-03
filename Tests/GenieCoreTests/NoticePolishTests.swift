@@ -5,13 +5,10 @@ import XCTest
 final class NoticePolishTests: XCTestCase {
     func testPartialParseFailureStaysVisibleAfterTheSameRead() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
-            ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
-        ])
-        await started.engine.noteChatsProblem(code: "chats_parse_failed")
-        await started.engine.reconcileChats([
-            ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
-        ])
+        _ = await started.engine.applyChatList(.parsed(ChatListParse(
+            chats: [ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept")],
+            failedLineCount: 1
+        )))
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.holdNotice, "chats_parse_partial_ok")
         XCTAssertEqual(
@@ -30,8 +27,8 @@ final class NoticePolishTests: XCTestCase {
 
     func testRepeatedChatListFailureIsLoggedOnce() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.noteChatsProblem(code: "chats_failed")
-        await started.engine.noteChatsProblem(code: "chats_failed")
+        await started.engine.applyChatList(.failed)
+        await started.engine.applyChatList(.failed)
         let notes = started.harness.log.records.filter { $0.code == "chats_failed" }
         XCTAssertEqual(notes.count, 1)
         XCTAssertEqual(notes.first?.level, "error")

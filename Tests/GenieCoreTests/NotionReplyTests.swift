@@ -126,7 +126,7 @@ final class NotionReplyTests: XCTestCase {
             clock: harness.clock,
             log: harness.log
         )
-        await engine.reconcileChats(harness.verifiedChatList())
+        await engine.showChats(harness.verifiedChatList())
         await engine.pollReplies()
         XCTAssertTrue(harness.sender.sent.isEmpty)
         XCTAssertTrue(harness.log.records.contains { $0.code == "reply_unrouted" })
@@ -533,7 +533,7 @@ final class NotionReplyTests: XCTestCase {
             clock: harness.clock,
             log: harness.log
         )
-        await engine.reconcileChats(harness.verifiedChatList())
+        await engine.showChats(harness.verifiedChatList())
         return engine
     }
 

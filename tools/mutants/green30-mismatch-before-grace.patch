@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/Engine.swift b/Sources/GenieCore/Engine.swift
+index e8d0dd1..e841285 100644
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -303,6 +303,7 @@ package actor GenieEngine {
+     }
+ 
+     private func composedHoldNotice(now: Date) -> String? {
++        if guidMismatchOutstanding { return "reply_chat_guid_mismatch" }
+         if let since = listFetchFailingSince,
+            now.timeIntervalSince(since) >= Self.chatsFailureNoticeSeconds {
+             return "chats_failed"

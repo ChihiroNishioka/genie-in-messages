@@ -6,11 +6,11 @@ import XCTest
 final class HoldNoticeLifetimeTests: XCTestCase {
     func testListFailureDoesNotReplaceAnotherError() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         await started.engine.setLastError("messages_db_reset")
-        await started.engine.noteChatsProblem(code: "chats_failed")
+        await started.engine.applyChatList(.failed)
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.lastError, "messages_db_reset")
@@ -28,7 +28,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         )
 
         let saved = try makeEngine(allowedGuid: "chat-kept")
-        await saved.engine.reconcileChats([
+        await saved.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         saved.harness.state.shouldFailSave = true
@@ -54,7 +54,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
 
     func testWaitingNoticeClearsWhenTheReplyExpiresOrTheListReturns() async throws {
         let expired = try makeEngine(allowedGuid: "chat-kept", routeTTL: 60)
-        await expired.engine.reconcileChats([])
+        await expired.engine.showChats([])
         await expired.engine.pollReplies()
         let waiting = await expired.engine.snapshot()
         XCTAssertNil(waiting.lastError)
@@ -75,7 +75,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertTrue(expired.harness.log.records.contains { $0.code == "reply_too_old" })
 
         let empty = try makeEngine(allowedGuid: "chat-kept")
-        await empty.engine.reconcileChats([])
+        await empty.engine.showChats([])
         await empty.engine.pollReplies()
         let emptyHeld = await empty.engine.snapshot()
         XCTAssertEqual(emptyHeld.holdNotice, "reply_held_empty_list")
@@ -83,7 +83,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
             SendHoldStatus.menuLine(for: emptyHeld.holdNotice),
             "照合: トーク一覧が空のため、返事を待っています"
         )
-        await empty.engine.reconcileChats([
+        await empty.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let listed = await empty.engine.snapshot()
@@ -92,7 +92,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         XCTAssertEqual(SendHoldStatus.menuLine(for: listed.holdNotice), "照合: なし")
 
         let missing = try makeEngine(allowedGuid: "chat-kept")
-        await missing.engine.reconcileChats([
+        await missing.engine.showChats([
             ChatSummary(id: 99, title: "other", isGroup: false, guid: "someone-else"),
         ])
         await missing.engine.pollReplies()
@@ -102,7 +102,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
             SendHoldStatus.menuLine(for: missingHeld.holdNotice),
             "照合: 一覧に無いトークのため、返事を待っています。chats_limit を増やすと入ることがあります"
         )
-        await missing.engine.reconcileChats([
+        await missing.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let found = await missing.engine.snapshot()
@@ -114,7 +114,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
     func testSuccessfulRereadClearsTheListFailureAndKeepsAnotherError() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
         await started.engine.setLastError("messages_db_reset")
-        await started.engine.noteChatsProblem(code: "chats_failed")
+        await started.engine.applyChatList(.failed)
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
         let during = await started.engine.snapshot()
         XCTAssertEqual(during.lastError, "messages_db_reset")
@@ -124,7 +124,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
             "照合: トーク一覧を読めないため、返事を待っています"
         )
 
-        await started.engine.reconcileChats([
+        await started.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let snap = await started.engine.snapshot()

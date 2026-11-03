@@ -493,7 +493,7 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [7, 9, 42]
         let engine = try await harness.engine()
-        await engine.reconcileChats(parsed.chats)
+        await engine.showChats(parsed.chats)
 
         let echo = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "self-false", chat: 7, fromMe: false, text: "\u{1FA94} QXSELF91",
@@ -552,8 +552,8 @@ final class ChatMembershipEngineTests: XCTestCase {
         let harness = Harness()
         allow(harness, chat: 9)
         let engine = try await harness.opened()
-        await engine.noteChatsProblem(code: "chats_failed")
-        await engine.noteChatsProblem(code: "chats_parse_failed")
+        await engine.applyChatList(.failed)
+        _ = await engine.applyChatList(.parsed(ChatListParse(chats: [], failedLineCount: 1)))
         let echo = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "unread", chat: 9, fromMe: false, text: "\u{1FA94} QXMISS91",
             sender: other, isGroup: false, participants: [other]
@@ -571,13 +571,13 @@ final class ChatMembershipEngineTests: XCTestCase {
         let parsed = ChatListParser.parse(ndjson: broken)
         XCTAssertEqual(parsed.failedLineCount, 1)
         XCTAssertEqual(parsed.chats.count, 1)
-        await engine.reconcileChats(parsed.chats)
+        await engine.showChats(parsed.chats)
         let after = await engine.ingestWatchLine(watchLine(
             id: 2, guid: "after", chat: 9, fromMe: false, text: "\u{1FA94} later",
             sender: other, isGroup: false, participants: [other]
         ))
         XCTAssertEqual(after, .delivered)
-        await engine.noteChatsProblem(code: "chats_failed")
+        await engine.applyChatList(.failed)
         let kept = await engine.ingestWatchLine(watchLine(
             id: 3, guid: "kept", chat: 9, fromMe: false, text: "\u{1FA94} kept",
             sender: other, isGroup: false, participants: [other]
@@ -612,7 +612,7 @@ final class ChatMembershipEngineTests: XCTestCase {
 
     private func learnDeviceChats(_ engine: GenieEngine) async {
         let parsed = ChatListParser.parse(ndjson: deviceChatsNDJSON)
-        await engine.reconcileChats(parsed.chats)
+        await engine.showChats(parsed.chats)
     }
 }
 
