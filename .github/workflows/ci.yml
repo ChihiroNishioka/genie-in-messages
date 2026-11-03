@@ -37,6 +37,10 @@ jobs:
           swift-version: "6.0.3"
       - name: Test core
         run: swift test
+      - name: Test mutant verdict parser
+        run: python3 -I tools/test_check_mutants.py
+      - name: Probe mutant verdicts
+        run: python3 tools/check-mutants.py --probes
       - name: 壊して確かめる
         run: python3 tools/check-mutants.py
 
