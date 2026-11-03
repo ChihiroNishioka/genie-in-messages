@@ -11,11 +11,12 @@ iMessageの中に常駐する、アンビエント型のアシスタントbot「
 ## 動かし方
 
 ```bash
-swift test
-python3 tools/check-mutants.py       # 壊し方。テストが通ったら失敗
-swift build --product GenieMenuBar   # macOS
+python3 tools/local/verify.py        # 秘密の検査、swift test、GenieMenuBar のビルド（上限つき）
+python3 tools/local/mutants.py       # 壊し方。変更に関係するものだけ。テストが通ったら失敗
 scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 ```
+
+普段のテストとビルドはローカルの Mac mini で行う。GitHub Actions は手動起動だけで、自動では動かない。上限（テストとビルドは各 15 分、壊し方は全体で 30 分）、重い検証は同時に1つ、エージェントごとの worktree、Linux の扱いは [`docs/local-verification.md`](docs/local-verification.md)。エージェント向けの決まりは [`AGENTS.md`](AGENTS.md)。失敗、タイムアウト、未実施は成功にしない。
 
 壊し方の置き場所と、新しい条件には壊し方も足すことは `LESSONS.md` に書いてある。
 
@@ -73,6 +74,8 @@ webhook は `Authorization: Bearer`。重複排除用の `idempotency_key`（メ
 ## ファイル
 
 - [`SPEC.md`](SPEC.md): 仕様書（引き継ぎ用）。決定済み要件、アーキテクチャ、決定事項をまとめたもの。
+- [`docs/local-verification.md`](docs/local-verification.md): ローカルでの検証、上限、worktree、壊し方の動かし方。
+- [`AGENTS.md`](AGENTS.md): エージェント向けの決まり。
 - [`docs/design.md`](docs/design.md): 詳細設計案。初期の検討資料で、LaunchAgentとSwiftの小さなブリッジで🐦トークを中継する案として書かれている。現在の方針（メニューバーアプリ）は `SPEC.md` が正。
 
 ## 経緯
