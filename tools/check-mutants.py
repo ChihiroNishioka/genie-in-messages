@@ -32,7 +32,7 @@ def classify_test(rc, output, test_name):
         cls, _, method = test_name.rpartition(".")
         names = rf"(?:{escaped}|-\[(?:\w+\.)?{re.escape(cls)} {re.escape(method)}\])"
     else:
-        names = escaped
+        names = rf"(?:(?:\w+\.)*\w+\.{escaped}|-\[(?:\w+\.)*\w+ {escaped}\])"
     assertion_line = re.search(
         rf"^.*{names}.*(?:: XCT[^\n]* failed|: failed -).*$", output, re.MULTILINE
     )

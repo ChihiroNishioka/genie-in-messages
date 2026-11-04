@@ -72,6 +72,10 @@ class CheckMutantsTests(unittest.TestCase):
         self.assertEqual(classify_test(1, macos, target), "KILLED")
         prefix = "error: SplitReplyTests.testXY : XCTAssertEqual failed\nTest Case 'SplitReplyTests.testXY' failed (0.1 seconds)"
         self.assertEqual(classify_test(1, prefix, target), "RUN_FAILED")
+        bare = "testX"
+        self.assertEqual(classify_test(1, linux, bare), "KILLED")
+        self.assertEqual(classify_test(1, macos, bare), "KILLED")
+        self.assertEqual(classify_test(1, prefix, bare), "RUN_FAILED")
 
 
 if __name__ == "__main__":
