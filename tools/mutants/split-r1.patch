@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/GenieConfig.swift
++++ b/Sources/GenieCore/GenieConfig.swift
+@@ -32,7 +32,7 @@
+     package static let productDefaults = GenieConfig(
+         webhookURL: "",
+         replyFetchURL: "",
+-        marker: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}",
++        marker: "\u{1F9DE}\u{200D}\u{2642}",
+         imsgExecutable: "/opt/homebrew/opt/imsg/libexec/imsg",
+         rateLimitCount: 5,
+         rateLimitWindowSeconds: 60,

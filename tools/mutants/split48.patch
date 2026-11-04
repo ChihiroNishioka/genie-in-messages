@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1390,7 +1390,7 @@
+             PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at, rateCounted: rateCounted, part: part)
+         )
+         cap(&persisted.pendingSends)
+-        persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
++        if part == .marker { persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at)) }
+         pruneFingerprints(now: at)
+     }
+ 

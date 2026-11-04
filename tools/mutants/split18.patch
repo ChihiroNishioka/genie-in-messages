@@ -1,0 +1,18 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1225,8 +1225,13 @@
+             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: error, attempts: 2) {
+                 finishIntent(replyID: replyID)
+                 lastError = code
+-            } else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
+-                persisted.pendingSends[index].rateCounted = true
++            } else {
++                var retryable = partial
++                retryable.bodyResends = 0
++                persisted.partialReplies.append(retryable)
++                hold(replyID: replyID, chatID: chatID, part: .body, body: body,
++                     reason: .appleEventNotStarted, attempts: attempts, logIt: false,
++                     createdAt: createdAt, originGUID: originGUID)
+             }
+             log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "resend")
+             persist()

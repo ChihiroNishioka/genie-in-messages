@@ -38,5 +38,265 @@
     "name": "GREEN34",
     "patch": "green34-drop-design-sentence.patch",
     "filter": "PollerCoverageTests.testLessonsKeepTheDesignSentenceAndTheOldDistinction"
+  },
+  {
+    "name": "SPLIT1",
+    "patch": "split1.patch",
+    "filter": "SplitReplyTests.testFirstMessageIsExactlyTheFourScalars"
+  },
+  {
+    "name": "SPLIT2",
+    "patch": "split2.patch",
+    "filter": "SplitReplyTests.testSecondMessageHasNoMarkerOrLeadingSpace"
+  },
+  {
+    "name": "SPLIT3",
+    "patch": "split3.patch",
+    "filter": "SplitReplyTests.testSavesHappenInOrder"
+  },
+  {
+    "name": "SPLIT4",
+    "patch": "split4.patch",
+    "filter": "SplitReplyTests.testMarkerNotStartedKeepsTheBodyInTheHold"
+  },
+  {
+    "name": "SPLIT5",
+    "patch": "split5.patch",
+    "filter": "SplitReplyTests.testMarkerUncertainSendsNoBody"
+  },
+  {
+    "name": "SPLIT6",
+    "patch": "split6.patch",
+    "filter": "SplitReplyTests.testMarkerFailedSendsNoBody"
+  },
+  {
+    "name": "SPLIT7",
+    "patch": "split7.patch",
+    "filter": "SplitReplyTests.testBodyNotStartedDoesNotUseTheResend"
+  },
+  {
+    "name": "SPLIT8F",
+    "patch": "split8f.patch",
+    "filter": "SplitReplyTests.testBodyFailedIsResentOnce"
+  },
+  {
+    "name": "SPLIT8U",
+    "patch": "split8f.patch",
+    "filter": "SplitReplyTests.testBodyUncertainIsResentOnce"
+  },
+  {
+    "name": "SPLIT8I",
+    "patch": "split8f.patch",
+    "filter": "SplitReplyTests.testCrashDuringTheFirstBodyUsesTheOneResend"
+  },
+  {
+    "name": "SPLIT10",
+    "patch": "split10.patch",
+    "filter": "SplitReplyTests.testFailedResendGoesToDeadLetter"
+  },
+  {
+    "name": "SPLIT11",
+    "patch": "split11.patch",
+    "filter": "SplitReplyTests.testUncertainResendGoesToDeadLetter"
+  },
+  {
+    "name": "SPLIT12",
+    "patch": "split12.patch",
+    "filter": "SplitReplyTests.testMarkerIsNeverResentWhileTheBodyIsRetried"
+  },
+  {
+    "name": "SPLIT13",
+    "patch": "split13.patch",
+    "filter": "SplitReplyTests.testCrashDuringTheResendIsDeadLettered"
+  },
+  {
+    "name": "SPLIT14",
+    "patch": "split14.patch",
+    "filter": "SplitReplyTests.testCrashDuringTheFirstBodyUsesTheOneResend"
+  },
+  {
+    "name": "SPLIT15",
+    "patch": "split15.patch",
+    "filter": "SplitReplyTests.testRestartBeforeTheResendSendsItOnce"
+  },
+  {
+    "name": "SPLIT16",
+    "patch": "split16.patch",
+    "filter": "SplitReplyTests.testResendIgnoresTheRateLimitAndUsesNoQuota"
+  },
+  {
+    "name": "SPLIT17",
+    "patch": "split17.patch",
+    "filter": "SplitReplyTests.testPauseBeforeTheResendKeepsTheCount"
+  },
+  {
+    "name": "SPLIT18",
+    "patch": "split18.patch",
+    "filter": "SplitReplyTests.testFinalBodyFailureWithoutDeadLetterIsNotResent"
+  },
+  {
+    "name": "SPLIT19",
+    "patch": "split19.patch",
+    "filter": "SplitReplyTests.testFinalBodyUncertainWithoutDeadLetterIsRecordedNextStart"
+  },
+  {
+    "name": "SPLIT20",
+    "patch": "split20.patch",
+    "filter": "SplitReplyTests.testInterruptedBodyWithoutDeadLetterIsRecordedNextStart"
+  },
+  {
+    "name": "SPLIT21",
+    "patch": "split21.patch",
+    "filter": "SplitReplyTests.testLockBeforeTheBodyHoldsOnlyTheBody"
+  },
+  {
+    "name": "SPLIT22",
+    "patch": "split22.patch",
+    "filter": "SplitReplyTests.testRateCountsOnePerReply"
+  },
+  {
+    "name": "SPLIT22H",
+    "patch": "split22h.patch",
+    "filter": "SplitReplyTests.testRateCountsOnePerReply"
+  },
+  {
+    "name": "SPLIT23",
+    "patch": "split23.patch",
+    "filter": "SplitReplyTests.testBodyIsSentEvenWhenTheChatIsHalted"
+  },
+  {
+    "name": "SPLIT24P",
+    "patch": "split24p.patch",
+    "filter": "SplitReplyTests.testPauseBetweenPartsHoldsTheBody"
+  },
+  {
+    "name": "SPLIT24S",
+    "patch": "split24s.patch",
+    "filter": "SplitReplyTests.testStopBetweenPartsResumesAfterRestartFromJSON"
+  },
+  {
+    "name": "SPLIT25",
+    "patch": "split25.patch",
+    "filter": "SplitReplyTests.testNewStateRoundTripsThroughJSON"
+  },
+  {
+    "name": "SPLIT26",
+    "patch": "split26.patch",
+    "filter": "SplitReplyTests.testDisabledBetweenPartsDropsTheBody"
+  },
+  {
+    "name": "SPLIT27",
+    "patch": "split27.patch",
+    "filter": "SplitReplyTests.testInterruptedMarkerIsNotRetried"
+  },
+  {
+    "name": "SPLIT28",
+    "patch": "split28.patch",
+    "filter": "SplitReplyTests.testOldStateWithoutPartsDecodes"
+  },
+  {
+    "name": "SPLIT29",
+    "patch": "split29.patch",
+    "filter": "SplitReplyTests.testNewStateRoundTripsThroughJSON"
+  },
+  {
+    "name": "SPLIT30",
+    "patch": "split30.patch",
+    "filter": "SplitReplyTests.testReentrantCallsDoNotDuplicateEitherPart"
+  },
+  {
+    "name": "SPLIT31",
+    "patch": "split31.patch",
+    "filter": "SplitReplyTests.testSameChatRepliesDoNotInterleave"
+  },
+  {
+    "name": "SPLIT32",
+    "patch": "split32.patch",
+    "filter": "NotionReplyTests.testWaitingSameChatRepliesDoNotBlockAnotherChat"
+  },
+  {
+    "name": "SPLIT33",
+    "patch": "split33.patch",
+    "filter": "SplitReplyTests.testBodyStartingWithLampIsNotSent"
+  },
+  {
+    "name": "SPLIT34",
+    "patch": "split34.patch",
+    "filter": "SplitReplyTests.testEmptyBodySendsNothing"
+  },
+  {
+    "name": "SPLIT35T",
+    "patch": "split35t.patch",
+    "filter": "SplitReplyTests.testEchoesAreIgnoredInsideTheWindowOnly"
+  },
+  {
+    "name": "SPLIT35W",
+    "patch": "split35w.patch",
+    "filter": "SplitReplyTests.testEchoesAreIgnoredInsideTheWindowOnly"
+  },
+  {
+    "name": "SPLIT36",
+    "patch": "split36.patch",
+    "filter": "SplitReplyTests.testRollbackRemovesOneFingerprint"
+  },
+  {
+    "name": "SPLIT37",
+    "patch": "split37.patch",
+    "filter": "SplitReplyTests.testMarkerSettingDoesNotChangeTheFirstMessage"
+  },
+  {
+    "name": "SPLIT38",
+    "patch": "split38.patch",
+    "filter": "SplitReplyTests.testLogsAndDeadLettersHaveNoBody"
+  },
+  {
+    "name": "SPLIT39",
+    "patch": "split39.patch",
+    "filter": "SplitReplyTests.testExpiredBodyHoldIsDropped"
+  },
+  {
+    "name": "SPLIT40",
+    "patch": "split40.patch",
+    "filter": "SplitReplyTests.testDatabaseResetClearsPartials"
+  },
+  {
+    "name": "SPLIT41",
+    "patch": "split41.patch",
+    "filter": "SplitReplyTests.testDatabaseResetDuringTheMarkerSendDropsTheResult"
+  },
+  {
+    "name": "SPLIT42",
+    "patch": "split42.patch",
+    "filter": "SplitReplyTests.testDatabaseResetDuringTheBodySendDoesNotResend"
+  },
+  {
+    "name": "SPLIT43",
+    "patch": "split43.patch",
+    "filter": "SplitReplyTests.testPartialSaveFailureHoldsTheBody"
+  },
+  {
+    "name": "SPLIT44",
+    "patch": "split44.patch",
+    "filter": "SplitReplyTests.testPartialDroppedByTheCapIsHandled"
+  },
+  {
+    "name": "SPLIT-R1",
+    "patch": "split-r1.patch",
+    "filter": "SignalTests.testDefaultMarkerMatchesTheSpecScalars"
+  },
+  {
+    "name": "SPLIT-R2",
+    "patch": "split-r2.patch",
+    "filter": "ReviewFixesTests.testIntentIsRecordedBeforeSendAndInterruptedSendsAreNotRetried"
+  },
+  {
+    "name": "SPLIT47",
+    "patch": "split47.patch",
+    "filter": "SplitReplyTests.testResendCountSaveFailureHoldsTheResend"
+  },
+  {
+    "name": "SPLIT48",
+    "patch": "split48.patch",
+    "filter": "SplitReplyTests.testSelfChatInboundEchoesAreIgnored"
   }
 ]

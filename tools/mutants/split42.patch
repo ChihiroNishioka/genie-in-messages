@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1138,7 +1138,7 @@
+         do { sendResult = .success(try await sender.send(chatID: chatID, text: body)) }
+         catch let failure as SendFailure { sendResult = .failure(failure) }
+         catch { sendResult = .failure(.failed) }
+-        if generation != databaseGeneration {
++        if false {
+             if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+             finishIntent(replyID: replyID)
+             markReplyHandled(replyID)

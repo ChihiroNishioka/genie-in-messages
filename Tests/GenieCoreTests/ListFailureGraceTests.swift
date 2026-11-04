@@ -42,7 +42,7 @@ final class ListFailureGraceTests: XCTestCase {
         await started.engine.pollReplies()
         snap = await started.engine.snapshot()
         XCTAssertNotEqual(snap.holdNotice, "chats_failed")
-        XCTAssertEqual(started.harness.sender.sent.count, 1)
+        XCTAssertEqual(started.harness.sender.sent.count, 2)
         XCTAssertEqual(started.harness.log.records.filter { $0.code == "chats_failed" }.count, 1)
     }
 

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1062,7 +1062,7 @@
+         createdAt: Date, originGUID: String
+     ) async {
+         guard persisted.partialReplies.contains(where: { $0.replyID == replyID }) else { return }
+-        if paused || stop.isStopped {
++        if paused || stop.isStopped || persisted.haltedChatIDs.contains(chatID) {
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return

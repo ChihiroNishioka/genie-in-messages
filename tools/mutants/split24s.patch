@@ -1,0 +1,29 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1062,7 +1062,7 @@
+         createdAt: Date, originGUID: String
+     ) async {
+         guard persisted.partialReplies.contains(where: { $0.replyID == replyID }) else { return }
+-        if paused || stop.isStopped {
++        if paused {
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+@@ -1078,7 +1078,7 @@
+         noteLock(locked)
+         guard generation == databaseGeneration else { return }
+         refreshConfig()
+-        if paused || stop.isStopped {
++        if paused {
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+@@ -1115,7 +1115,7 @@
+                  createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+-        if paused || stop.isStopped {
++        if paused {
+             rollbackIntent(replyID: replyID)
+             persist()
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,

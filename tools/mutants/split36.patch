@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1398,7 +1398,7 @@
+         guard let pending = persisted.pendingSends.first(where: { $0.replyID == replyID }) else { return }
+         persisted.pendingSends.removeAll { $0.replyID == replyID }
+         if let index = persisted.fingerprints.lastIndex(where: { $0.hash == pending.hash && $0.sentAt == pending.at }) {
+-            persisted.fingerprints.remove(at: index)
++            persisted.fingerprints.removeAll { $0.hash == pending.hash && $0.sentAt == pending.at }
+         }
+     }
+ 

@@ -27,8 +27,9 @@ final class ReviewFixesTests: XCTestCase {
             ),
         ]
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.map(\.chatID), [1])
-        XCTAssertTrue(harness.sender.sent[0].text.contains("yes"))
+        XCTAssertEqual(harness.sender.sent.map(\.chatID), [1, 1])
+        XCTAssertEqual(harness.sender.sent[0].text, ReplyComposer.markerText)
+        XCTAssertEqual(harness.sender.sent[1].text, "yes")
         XCTAssertEqual(
             Set(harness.log.records.map(\.code)),
             Set(harness.log.records.map(\.code)).union(["reply_chat_mismatch", "reply_unrouted", "reply_too_old"])
@@ -127,7 +128,7 @@ final class ReviewFixesTests: XCTestCase {
             await engine.resumeRateLimit(chatID: 1)
         }
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.sent.count, 2)
     }
 
     func testFailedSendIsDeadLetteredAndNotRetried() async throws {
@@ -420,7 +421,7 @@ final class ReviewFixesTests: XCTestCase {
             await engine.pollReplies()
         }
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.sent.count, 2)
     }
 
     func testChildProcessTimeout() async {
@@ -489,7 +490,7 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.sent.count, 2)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.screenLock, .unknown)
         XCTAssertFalse(snap.screenLocked)

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/BodyResendPolicy.swift
++++ b/Sources/GenieCore/BodyResendPolicy.swift
+@@ -5,7 +5,7 @@
+ 
+ /// The sole decision point for retrying a body send after an uncertain result.
+ enum BodyResendPolicy {
+-    static let maxResends = 1
++    static let maxResends = 0
+ 
+     static func decide(resendsUsed: Int) -> BodyRetryDecision {
+         resendsUsed < maxResends ? .resend : .deadLetter

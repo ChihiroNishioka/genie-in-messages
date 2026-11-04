@@ -90,6 +90,7 @@ final class Harness {
     let lock = FakeLock()
     let log = MemoryLog()
     let state = MemoryStateStore()
+    var store: (any StatePersisting)?
     let allow = MemoryAllowlist()
     let replies = ScriptedReplies()
     var secrets: any SecretProviding = StaticSecret(webhook: "hook-secret", reply: nil)
@@ -131,7 +132,7 @@ final class Harness {
         try GenieEngine(
             configProvider: StaticConfig(config: cfg),
             initialConfig: cfg,
-            stateStore: state,
+            stateStore: store ?? state,
             allowlistStore: allow,
             replySource: replies,
             sender: sender,
@@ -142,6 +143,49 @@ final class Harness {
             log: log,
             stop: signal
         )
+    }
+}
+
+final class RecordingStateStore: StatePersisting, @unchecked Sendable {
+    let memory: MemoryStateStore
+    private(set) var saves: [PersistedState] = []
+
+    init(state: PersistedState = .empty) {
+        memory = MemoryStateStore(state: state)
+    }
+
+    func load() throws -> PersistedState { try memory.load() }
+
+    func save(_ state: PersistedState) throws {
+        try memory.save(state)
+        saves.append(state)
+    }
+
+    func appendDeadLetter(_ entry: DeadLetterEntry) throws {
+        try memory.appendDeadLetter(entry)
+    }
+}
+
+final class FailNextSaveStateStore: StatePersisting, @unchecked Sendable {
+    let memory: MemoryStateStore
+    var failNextSave = false
+
+    init(memory: MemoryStateStore) {
+        self.memory = memory
+    }
+
+    func load() throws -> PersistedState { try memory.load() }
+
+    func save(_ state: PersistedState) throws {
+        if failNextSave {
+            failNextSave = false
+            throw StateError.corrupt
+        }
+        try memory.save(state)
+    }
+
+    func appendDeadLetter(_ entry: DeadLetterEntry) throws {
+        try memory.appendDeadLetter(entry)
     }
 }
 
@@ -196,10 +240,28 @@ func decodedWebhookText(_ data: Data) throws -> String {
 }
 
 func assertNoBody(_ harness: Harness, _ body: String, file: StaticString = #filePath, line: UInt = #line) {
-    let codes = harness.log.records.map(\.code).joined(separator: "\n")
-    let letters = harness.state.deadLetters.map { "\($0.error) \($0.guid ?? "") \($0.kind)" }.joined(separator: "\n")
-    XCTAssertFalse(codes.contains(body), file: file, line: line)
+    let logs = harness.log.records.map {
+        "\($0.ts) \($0.level) \($0.code) \($0.chatID.map(String.init) ?? "") \($0.guid ?? "") \($0.rowid.map(String.init) ?? "") \($0.detail ?? "")"
+    }.joined(separator: "\n")
+    let letters = harness.state.deadLetters.map {
+        "\($0.ts) \($0.kind) \($0.chatID.map(String.init) ?? "") \($0.guid ?? "") \($0.rowid.map(String.init) ?? "") \($0.attempts) \($0.error)"
+    }.joined(separator: "\n")
+    XCTAssertFalse(logs.contains(body), file: file, line: line)
     XCTAssertFalse(letters.contains(body), file: file, line: line)
+    do {
+        let data = try StateCoding.encoder().encode(harness.state.state)
+        let stateJSON = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(stateJSON.contains(body), file: file, line: line)
+    } catch {
+        XCTFail("state JSON encode failed: \(error)", file: file, line: line)
+    }
+}
+
+func reloaded(_ state: PersistedState) throws -> (PersistedState, String) {
+    let data = try StateCoding.encoder().encode(state)
+    let decoded = try StateCoding.decoder().decode(PersistedState.self, from: data)
+    let json = String(data: data, encoding: .utf8) ?? ""
+    return (decoded, json)
 }
 
 func seedRoute(_ harness: Harness, guid: String, chat: Int64) {

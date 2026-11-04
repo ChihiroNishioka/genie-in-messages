@@ -21,7 +21,7 @@ final class StartupSendTests: XCTestCase {
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-same"),
         ])
         await same.engine.pollReplies()
-        XCTAssertEqual(same.harness.sender.sent.map(\.chatID), [7])
+        XCTAssertEqual(same.harness.sender.sent.map(\.chatID), [7, 7])
     }
 
     func testEmptyChatListDoesNotSend() async throws {

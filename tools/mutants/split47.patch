@@ -1,0 +1,16 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1191,12 +1191,7 @@
+             bodyResendSavePending.insert(replyID)
+             lastError = code
+             log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "body")
+-            guard persist() else {
+-                hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+-                     reason: .appleEventNotStarted, attempts: attempts, logIt: false,
+-                     createdAt: createdAt, originGUID: originGUID)
+-                return
+-            }
++            _ = persist()
+             bodyResendSavePending.remove(replyID)
+             await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: attempts + 1,
+                            pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)

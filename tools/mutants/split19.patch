@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1225,8 +1225,8 @@
+             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: error, attempts: 2) {
+                 finishIntent(replyID: replyID)
+                 lastError = code
+-            } else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
+-                persisted.pendingSends[index].rateCounted = true
++            } else {
++                finishIntent(replyID: replyID)
+             }
+             log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "resend")
+             persist()

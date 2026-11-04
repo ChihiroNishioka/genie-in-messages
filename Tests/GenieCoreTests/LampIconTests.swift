@@ -498,7 +498,12 @@ final class LampIconTests: XCTestCase {
             "lamp-warning@1x.png", "lamp-warning@2x.png", "lamp-warning@3x.png",
         ]
         for name in names {
-            let data = try Data(contentsOf: dest.appendingPathComponent("Contents/Resources/MenuLamp/\(name)"))
+            let url = dest.appendingPathComponent("Contents/Resources/MenuLamp/\(name)")
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                XCTFail("missing \(name)")
+                continue
+            }
+            let data = try Data(contentsOf: url)
             XCTAssertEqual(try sha256Hex(data), hashes["AppBundle/MenuLamp/\(name)"], name)
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("Contents/MacOS/GenieMenuBar").path))

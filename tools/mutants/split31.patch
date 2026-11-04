@@ -1,0 +1,14 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -838,11 +838,6 @@
+                 persist()
+                 return
+             }
+-        } else if inFlightReplyIDs.contains(where: { otherID in
+-            otherID != reply.id && inFlightReplyChats[otherID] == chatID
+-        }) || persisted.partialReplies.contains(where: { $0.chatID == chatID && $0.replyID != reply.id }) {
+-            chatWaitingReplyIDs.insert(reply.id)
+-            return
+         }
+ 
+         if paused || stop.isStopped { return }

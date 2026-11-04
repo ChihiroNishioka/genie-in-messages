@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/StateStore.swift
++++ b/Sources/GenieCore/StateStore.swift
+@@ -99,7 +99,7 @@
+         hash = try container.decode(String.self, forKey: .hash)
+         at = try container.decode(Date.self, forKey: .at)
+         rateCounted = try container.decodeIfPresent(Bool.self, forKey: .rateCounted) ?? false
+-        part = try container.decodeIfPresent(SendPart.self, forKey: .part)
++        part = try container.decode(SendPart.self, forKey: .part)
+     }
+ 
+     func encode(to encoder: Encoder) throws {

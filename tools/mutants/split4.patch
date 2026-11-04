@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1022,7 +1022,7 @@
+         case .notStarted:
+             if let pending { releaseRate(chatID: chatID, at: pending.at) }
+             rollbackIntent(replyID: replyID)
+-            hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
++            hold(replyID: replyID, chatID: chatID, part: .marker, body: "",
+                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
+                  createdAt: createdAt, originGUID: originGUID)
+             if attempts == 1 { lastError = "apple_event_1712" }

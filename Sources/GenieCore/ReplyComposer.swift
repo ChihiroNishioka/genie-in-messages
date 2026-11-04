@@ -1,46 +1,54 @@
 import Foundation
 
-struct ResolvedMarker: Equatable {
-    var text: String
-    var replaced: Bool
+enum SplitOutcome: Equatable {
+    case send(body: String)
+    case emptyBody
+    case stillSignal
 }
 
 enum ReplyComposer {
-    /// 空、空白だけ、不可視文字だけ、合図で始まる印は製品既定に戻す。
-    static func resolveMarker(_ marker: String) -> ResolvedMarker {
-        let markerNFC = TextNormalizer.nfc(marker)
-        let blank = TextNormalizer.isBlank(markerNFC)
-        if blank || Signal.matches(markerNFC) {
-            return ResolvedMarker(text: GenieConfig.productDefaults.marker, replaced: true)
-        }
-        return ResolvedMarker(text: markerNFC, replaced: false)
-    }
+    static let markerText = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
 
-    /// 送信直前に、合図を外し、印が無ければ先頭へ付ける。判定は `Signal.scan`。
-    static func prepare(body: String, marker: String) -> String {
-        let scan = Signal.scan(body)
-        let text = scan.matched ? trimLeadingWhitespace(scan.remainder) : scan.remainder
-        let chosen = resolveMarker(marker).text
-        if text.hasPrefix(chosen) {
-            return text
-        }
-        if text.isEmpty {
-            return chosen
-        }
-        let chosenEndsWithSpace = chosen.unicodeScalars.last.map {
-            CharacterSet.whitespacesAndNewlines.contains($0)
-        } ?? false
-        let textStartsWithSpace = text.unicodeScalars.first.map {
-            CharacterSet.whitespacesAndNewlines.contains($0)
-        } ?? false
-        if chosenEndsWithSpace || textStartsWithSpace {
-            return chosen + text
-        }
-        return chosen + " " + text
-    }
+    static func split(body: String) -> SplitOutcome {
+        let normalized = TextNormalizer.nfc(body)
+        var scalars = Array(normalized.unicodeScalars)
 
-    private static func trimLeadingWhitespace(_ text: String) -> String {
-        let scalars = text.unicodeScalars.drop { CharacterSet.whitespacesAndNewlines.contains($0) }
-        return String(String.UnicodeScalarView(scalars))
+        // Keep the existing lamp-prefix sanitization: remove it and its following whitespace.
+        var index = 0
+        while index < scalars.count,
+              CharacterSet.whitespacesAndNewlines.contains(scalars[index])
+                || TextNormalizer.isInvisible(scalars[index]) {
+            index += 1
+        }
+        if index < scalars.count, scalars[index].value == 0x1FA94 {
+            index += 1
+            if index < scalars.count, scalars[index].value == 0xFE0F { index += 1 }
+            while index < scalars.count, CharacterSet.whitespacesAndNewlines.contains(scalars[index]) {
+                index += 1
+            }
+            scalars = Array(scalars.dropFirst(index))
+        }
+
+        let genie: [UInt32] = [0x1F9DE, 0x200D, 0x2642]
+        var changed = true
+        while changed, !scalars.isEmpty {
+            changed = false
+            while let first = scalars.first,
+                  CharacterSet.whitespacesAndNewlines.contains(first) || TextNormalizer.isInvisible(first) {
+                scalars.removeFirst()
+                changed = true
+            }
+            if scalars.count >= genie.count,
+               Array(scalars.prefix(genie.count)).map(\.value) == genie {
+                scalars.removeFirst(genie.count)
+                if scalars.first?.value == 0xFE0F { scalars.removeFirst() }
+                changed = true
+            }
+        }
+
+        let result = String(String.UnicodeScalarView(scalars))
+        if result.isEmpty { return .emptyBody }
+        if Signal.matches(result) { return .stillSignal }
+        return .send(body: result)
     }
 }

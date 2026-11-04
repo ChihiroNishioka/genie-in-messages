@@ -1,0 +1,18 @@
+--- a/Tests/GenieCoreTests/SplitReplyTests.swift
++++ b/Tests/GenieCoreTests/SplitReplyTests.swift
+@@ -2,11 +2,14 @@
+ import XCTest
+ @testable import GenieCore
+ 
++private struct ProbeError: Error {}
++
+ let M = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
+ let B = "こんにちは"
+ 
+ final class SplitReplyTests: XCTestCase {
+-    func testFirstMessageIsExactlyTheFourScalars() async {
++    func testFirstMessageIsExactlyTheFourScalars() async throws {
++        throw ProbeError()
+         let h = splitHarness(M + " " + B)
+         guard let e = await splitOpened(h) else { return }
+         await e.pollReplies()

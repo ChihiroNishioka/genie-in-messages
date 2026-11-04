@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -420,7 +420,7 @@
+             }
+         }
+         do {
+-            let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs).union(chatWaitingReplyIDs)
++            let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs)
+             let page = try await replySource.fetch(
+                 cursor: persisted.replyCursor,
+                 skipping: Set(persisted.handledReplyIDs),

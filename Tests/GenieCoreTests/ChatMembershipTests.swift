@@ -461,7 +461,7 @@ final class ChatMembershipEngineTests: XCTestCase {
             ReplyPage(replies: [routedReply("r1", chat: 42, text: "ok", guid: "msg-1")], nextCursor: nil),
         ]
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.map(\.chatID), [42])
+        XCTAssertEqual(harness.sender.sent.map(\.chatID), [42, 42])
     }
 
     func testDeviceChatsDistinguishSelfDirectAndGroup() async throws {

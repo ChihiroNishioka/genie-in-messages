@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/StateStore.swift
++++ b/Sources/GenieCore/StateStore.swift
+@@ -109,7 +109,6 @@
+         try container.encode(hash, forKey: .hash)
+         try container.encode(at, forKey: .at)
+         try container.encode(rateCounted, forKey: .rateCounted)
+-        try container.encodeIfPresent(part, forKey: .part)
+     }
+ }
+ 

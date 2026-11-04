@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1411,7 +1411,6 @@
+         persisted.partialReplies.append(partial)
+         while persisted.partialReplies.count > 5000 {
+             let dropped = persisted.partialReplies.removeFirst()
+-            markReplyHandled(dropped.replyID)
+             log.record(level: .info, code: "reply_partial_dropped", chatID: dropped.chatID,
+                        guid: nil, rowid: nil, detail: "body")
+         }

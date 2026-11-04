@@ -1,0 +1,20 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1067,7 +1067,7 @@
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+-        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
++        if false { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+@@ -1083,7 +1083,7 @@
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+-        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
++        if false { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)

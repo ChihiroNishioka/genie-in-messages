@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -977,7 +977,7 @@
+             return
+         }
+         let result: Result<SendReceipt, SendFailure>
+-        do { result = .success(try await sender.send(chatID: chatID, text: ReplyComposer.markerText)) }
++        do { result = .success(try await sender.send(chatID: chatID, text: config.marker)) }
+         catch let failure as SendFailure { result = .failure(failure) }
+         catch { result = .failure(.failed) }
+         if generation != databaseGeneration {

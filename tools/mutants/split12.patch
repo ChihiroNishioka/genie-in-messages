@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1215,8 +1215,8 @@
+                 return
+             }
+             bodyResendSavePending.remove(replyID)
+-            await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: attempts + 1,
+-                           pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
++            await sendMarker(replyID: replyID, chatID: chatID, body: body, attempts: attempts + 1,
++                             pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+         case .deadLetter:
+             persisted.partialReplies.removeAll { $0.replyID == replyID }
+             holds.removeAll { $0.replyID == replyID }

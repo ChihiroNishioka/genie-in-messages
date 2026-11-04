@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1,6 +1,7 @@
+ import Foundation
+ 
+ package actor GenieEngine {
++    let _probe: Int = "x"
+     private let configProvider: any ConfigProviding
+     private var config: GenieConfig
+     private let stateStore: any StatePersisting

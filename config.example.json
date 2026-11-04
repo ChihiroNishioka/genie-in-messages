@@ -1,7 +1,6 @@
 {
   "webhook_url": "",
   "reply_fetch_url": "",
-  "marker": "\uD83E\uDDDE\u200D\u2642\uFE0F",
   "imsg_executable": "/opt/homebrew/opt/imsg/libexec/imsg",
   "rate_limit_count": 5,
   "rate_limit_window_seconds": 60,

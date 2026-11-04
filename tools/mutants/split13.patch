@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1448,7 +1448,7 @@
+         for item in pending {
+             if item.part == .body,
+                let partialIndex = state.partialReplies.firstIndex(where: { $0.replyID == item.replyID }),
+-               BodyResendPolicy.decide(resendsUsed: state.partialReplies[partialIndex].bodyResends) == .resend {
++               true {
+                 state.pendingSends.removeAll { $0.replyID == item.replyID }
+                 state.partialReplies[partialIndex].bodyResends += 1
+                 if !state.fingerprints.contains(where: { $0.hash == item.hash && $0.sentAt == item.at }) {

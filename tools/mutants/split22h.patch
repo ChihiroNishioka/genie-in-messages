@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -930,7 +930,7 @@
+             if first { lastError = "screen_locked" }
+             return
+         }
+-        if persisted.haltedChatIDs.contains(chatID) || !authorize(chatID: chatID, now: clock.now()) {
++        if persisted.haltedChatIDs.contains(chatID) && !authorize(chatID: chatID, now: clock.now()) {
+             let newlyHalted = !persisted.haltedChatIDs.contains(chatID)
+             if newlyHalted {
+                 persisted.haltedChatIDs.append(chatID)

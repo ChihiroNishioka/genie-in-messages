@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1202,6 +1202,7 @@
+         let code = failure == .failed ? "send_failed" : "send_uncertain"
+         switch BodyResendPolicy.decide(resendsUsed: partial.bodyResends) {
+         case .resend:
++            countRate(chatID: chatID)
+             if failure == .failed { rollbackIntent(replyID: replyID) }
+             else { finishIntent(replyID: replyID) }
+             persisted.partialReplies[partialIndex].bodyResends += 1

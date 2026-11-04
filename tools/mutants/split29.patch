@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/StateStore.swift
++++ b/Sources/GenieCore/StateStore.swift
+@@ -161,7 +161,7 @@
+         case rateEvents = "rate_events"
+         case routes
+         case pendingSends = "pending_sends"
+-        case partialReplies = "partial_replies"
++        case partialReplies = "partials"
+         case knownChats = "known_chats"
+     }
+ 

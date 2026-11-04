@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1107,6 +1107,7 @@
+         }
+         let sendingResend = (persisted.partialReplies.first(where: { $0.replyID == replyID })?.bodyResends ?? 0) > 0
+         let reservedAt = clock.now()
++        countRate(chatID: chatID)
+         recordIntent(replyID: replyID, chatID: chatID, text: body, at: reservedAt, rateCounted: true, part: .body)
+         guard persist() else {
+             rollbackIntent(replyID: replyID)

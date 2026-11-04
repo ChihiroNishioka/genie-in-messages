@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1172,7 +1172,7 @@
+             holds.removeAll { $0.replyID == replyID }
+             lastError = nil
+             log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+-                       rowid: receipt.id, detail: sendingResend ? "resend" : "body")
++                       rowid: receipt.id, detail: body)
+             persist()
+         case .success:
+             await handleBodyFailure(replyID: replyID, chatID: chatID, body: body, failure: .uncertain,
