@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1446,7 +1446,7 @@
+         guard !pending.isEmpty else { return }
+         var kept: [PendingSend] = []
+         for item in pending {
+-            if item.part == .body,
++            if item.part == .marker,
+                let partialIndex = state.partialReplies.firstIndex(where: { $0.replyID == item.replyID }),
+                BodyResendPolicy.decide(resendsUsed: state.partialReplies[partialIndex].bodyResends) == .resend {
+                 state.pendingSends.removeAll { $0.replyID == item.replyID }

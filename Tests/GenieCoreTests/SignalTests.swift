@@ -37,58 +37,41 @@ final class SignalTests: XCTestCase {
         XCTAssertEqual(TextNormalizer.nfc(text).unicodeScalars.map(\.value).last, 0x3067)
     }
 
-    func testComposerStripsSignalAndForcesMarker() {
-        let marker = GenieConfig.productDefaults.marker
-        let prepared = ReplyComposer.prepare(body: "\u{1FA94}\u{FE0F} 返事", marker: marker)
-        XCTAssertFalse(Signal.matches(prepared))
-        XCTAssertTrue(prepared.hasPrefix(marker))
-        XCTAssertTrue(prepared.contains("返事"))
-        XCTAssertEqual(ReplyComposer.prepare(body: "\u{1FA94}", marker: marker), marker)
-        XCTAssertEqual(ReplyComposer.prepare(body: "hello", marker: marker), marker + " hello")
+    func testComposerSplitsSignalFromBody() {
+        XCTAssertEqual(ReplyComposer.split(body: "\u{1FA94}\u{FE0F} 返事"), .send(body: "返事"))
+        XCTAssertEqual(ReplyComposer.split(body: "\u{1FA94}"), .emptyBody)
+        XCTAssertEqual(ReplyComposer.split(body: "hello"), .send(body: "hello"))
     }
 
-    func testComposerDoesNotDoubleTheMarker() {
-        let marker = GenieConfig.productDefaults.marker
-        let prepared = ReplyComposer.prepare(body: marker + " hi", marker: marker)
-        XCTAssertEqual(prepared, marker + " hi")
-        XCTAssertFalse(Signal.matches(prepared))
+    func testComposerStripsLeadingGenieScalars() {
+        XCTAssertEqual(ReplyComposer.split(body: ReplyComposer.markerText + " \n hi"), .send(body: "hi"))
+        XCTAssertEqual(ReplyComposer.split(body: "\u{200B}" + ReplyComposer.markerText + "x"), .send(body: "x"))
     }
 
-    func testBlankMarkerFallsBackToTheDefault() throws {
+    func testLegacyMarkerSettingIsIgnored() throws {
         let marker = GenieConfig.productDefaults.marker
-        XCTAssertEqual(ReplyComposer.prepare(body: "hello", marker: ""), marker + " hello")
-        XCTAssertEqual(ReplyComposer.prepare(body: "hello", marker: " \n\t"), marker + " hello")
-        XCTAssertFalse(Signal.matches(ReplyComposer.prepare(body: "hello", marker: "")))
         var config = GenieConfig.productDefaults
         config.marker = ""
-        XCTAssertEqual(config.sanitized().marker, marker)
-        XCTAssertTrue(config.sanitized().markerWasReplaced)
+        XCTAssertEqual(config.sanitized().marker, "")
         config.marker = " \n\t"
-        XCTAssertEqual(config.sanitized().marker, marker)
-        XCTAssertTrue(config.sanitized().markerWasReplaced)
+        XCTAssertEqual(config.sanitized().marker, " \n\t")
         config.marker = "\u{200B}\u{200D}\u{FE0F}\u{FEFF}"
-        XCTAssertEqual(config.sanitized().marker, marker)
-        XCTAssertTrue(config.sanitized().markerWasReplaced)
+        XCTAssertEqual(config.sanitized().marker, "\u{200B}\u{200D}\u{FE0F}\u{FEFF}")
         config.marker = "\u{200B}ok"
         XCTAssertEqual(config.sanitized().marker, "\u{200B}ok")
-        XCTAssertFalse(config.sanitized().markerWasReplaced)
         config.marker = "\u{0601}"
         XCTAssertEqual(config.sanitized().marker, "\u{0601}")
-        XCTAssertFalse(config.sanitized().markerWasReplaced)
         let data = try JSONEncoder().encode(config.sanitized())
         let text = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(text.contains("markerWasReplaced"))
         XCTAssertFalse(text.contains("marker_was_replaced"))
     }
 
-    func testLampMarkerIsReplacedWithTheDefault() {
-        let prepared = ReplyComposer.prepare(body: "hello", marker: "\u{1FA94}")
-        XCTAssertFalse(Signal.matches(prepared))
-        XCTAssertTrue(prepared.hasPrefix(GenieConfig.productDefaults.marker))
-        XCTAssertTrue(prepared.contains("hello"))
+    func testLegacyLampMarkerDoesNotChangeTheSplit() {
         var config = GenieConfig.productDefaults
         config.marker = "\u{1FA94}\u{FE0F} hi"
-        XCTAssertEqual(config.sanitized().marker, GenieConfig.productDefaults.marker)
+        XCTAssertEqual(config.sanitized().marker, "\u{1FA94}\u{FE0F} hi")
+        XCTAssertEqual(ReplyComposer.split(body: "hello"), .send(body: "hello"))
     }
 
     func testDefaultMarkerMatchesTheSpecScalars() {

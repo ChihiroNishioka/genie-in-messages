@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1063,6 +1063,10 @@
+     ) async {
+         guard persisted.partialReplies.contains(where: { $0.replyID == replyID }) else { return }
+         if paused || stop.isStopped {
++            if let index = persisted.partialReplies.firstIndex(where: { $0.replyID == replyID }) {
++                persisted.partialReplies[index].bodyResends = 0
++                persist()
++            }
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -523,7 +523,7 @@
+                 }
+                 return
+             }
+-            if clock.now().timeIntervalSince(hold.createdAt) > config.routeTTLSeconds {
++            if hold.part != .body && clock.now().timeIntervalSince(hold.createdAt) > config.routeTTLSeconds {
+                 inFlightReplyIDs.remove(hold.replyID)
+                 inFlightReplyChats.removeValue(forKey: hold.replyID)
+                 markReplyHandled(hold.replyID)

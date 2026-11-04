@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1054,6 +1054,10 @@
+             if wrote { lastError = "send_uncertain" }
+             log.record(level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: "marker")
+             persist()
++            addPartialReply(PartialReply(replyID: replyID, chatID: chatID, markerGUID: "mutant", at: clock.now()))
++            persist()
++            await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: attempts,
++                           pauseReason: .appleEventNotStarted, createdAt: createdAt, originGUID: originGUID)
+         }
+     }
+ 

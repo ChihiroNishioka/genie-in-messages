@@ -1,0 +1,16 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -994,12 +994,7 @@
+             appendCapped(receipt.guid, to: &persisted.sentGUIDs)
+             let partial = PartialReply(replyID: replyID, chatID: chatID, markerGUID: receipt.guid, at: clock.now())
+             addPartialReply(partial)
+-            guard persist() else {
+-                hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+-                     reason: .appleEventNotStarted, attempts: 1, logIt: false,
+-                     createdAt: createdAt, originGUID: originGUID)
+-                return
+-            }
++            // S2 save omitted by mutant.
+             log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+                        rowid: receipt.id, detail: "marker")
+             await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,

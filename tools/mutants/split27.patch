@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1480,7 +1480,7 @@
+             if !item.rateCounted {
+                 state.rateEvents.append(RateEvent(chatID: item.chatID, at: item.at))
+             }
+-            if !item.replyID.isEmpty, !state.handledReplyIDs.contains(item.replyID) {
++            if item.part == .body, !item.replyID.isEmpty, !state.handledReplyIDs.contains(item.replyID) {
+                 state.handledReplyIDs.append(item.replyID)
+             }
+             state.partialReplies.removeAll { $0.replyID == item.replyID }

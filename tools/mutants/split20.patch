@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1492,7 +1492,6 @@
+             } else {
+                 var copy = item
+                 copy.rateCounted = true
+-                kept.append(copy)
+             }
+         }
+         HandledReplyIDs.prune(&state.handledReplyIDs, protecting: NotionCursor.ids(in: state.replyCursor))

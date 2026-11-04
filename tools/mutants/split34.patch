@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ReplyComposer.swift
++++ b/Sources/GenieCore/ReplyComposer.swift
+@@ -47,7 +47,7 @@
+         }
+ 
+         let result = String(String.UnicodeScalarView(scalars))
+-        if result.isEmpty { return .emptyBody }
++        if result.isEmpty { return .send(body: result) }
+         if Signal.matches(result) { return .stillSignal }
+         return .send(body: result)
+     }

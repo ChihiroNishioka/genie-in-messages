@@ -166,6 +166,29 @@ final class RecordingStateStore: StatePersisting, @unchecked Sendable {
     }
 }
 
+final class FailNextSaveStateStore: StatePersisting, @unchecked Sendable {
+    let memory: MemoryStateStore
+    var failNextSave = false
+
+    init(memory: MemoryStateStore) {
+        self.memory = memory
+    }
+
+    func load() throws -> PersistedState { try memory.load() }
+
+    func save(_ state: PersistedState) throws {
+        if failNextSave {
+            failNextSave = false
+            throw StateError.corrupt
+        }
+        try memory.save(state)
+    }
+
+    func appendDeadLetter(_ entry: DeadLetterEntry) throws {
+        try memory.appendDeadLetter(entry)
+    }
+}
+
 func watchLine(
     id: Int,
     guid: String,

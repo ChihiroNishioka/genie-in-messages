@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1074,7 +1074,7 @@
+             return
+         }
+         let generation = databaseGeneration
+-        let locked = await lock.state()
++        let locked = ScreenLockState.unlocked
+         noteLock(locked)
+         guard generation == databaseGeneration else { return }
+         refreshConfig()

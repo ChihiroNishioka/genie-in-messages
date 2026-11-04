@@ -109,19 +109,20 @@ extension SplitReplyTests {
         XCTAssertTrue((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).isEmpty)
         h.replies.pages = [ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil)]
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [B])
+        XCTAssertTrue(h.sender.sent.isEmpty)
     }
 
     func testCrashDuringTheFirstBodyUsesTheOneResend() async {
         let pending: [[String: Any]] = [["reply_id": "r1", "chat_id": 7, "hash": "abc", "at": 1_700_000_000_000, "rate_counted": true, "part": "body"]]
         let h = splitHarness()
         guard splitInstallPartials(h, [splitPartial("r1", resends: 0)], pending: pending), let e = await splitOpened(h) else { return }
-        await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [B])
         XCTAssertTrue(h.state.deadLetters.isEmpty)
         XCTAssertEqual((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).first?["body_resends"] as? Int, 1)
         XCTAssertTrue((splitJSON(h.state.state)?["pending_sends"] as? [[String: Any]] ?? []).isEmpty)
         XCTAssertTrue(h.log.records.contains { $0.code == "send_interrupted" && $0.detail == "body" })
+        await e.pollReplies()
+        XCTAssertEqual(h.sender.sent.map(\.text), [B])
+        XCTAssertTrue(h.state.deadLetters.isEmpty)
 
         let failed = splitHarness()
         failed.sender.script = [.failure(.failed)]
@@ -144,15 +145,18 @@ extension SplitReplyTests {
             restarted.state.state = state
             restarted.replies.pages = [ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil)]
             guard let e = await splitOpened(restarted) else { return }
+            var resendsAtSend: Int?
+            restarted.sender.onSend = { resendsAtSend = restarted.state.state.partialReplies.first?.bodyResends }
             await e.pollReplies()
             XCTAssertEqual(restarted.sender.sent.map(\.text), [B])
             XCTAssertTrue(restarted.state.deadLetters.isEmpty)
-            XCTAssertEqual((splitJSON(restarted.state.state)?["partial_replies"] as? [[String: Any]] ?? []).first?["body_resends"] as? Int, 1)
+            XCTAssertEqual(resendsAtSend, 1)
 
             let failed = Harness()
             failed.allow.ids = [7]
             failed.config.replyFetchURL = "https://example.com/replies"
             failed.state.state = state
+            failed.replies.pages = [ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil)]
             failed.sender.script = [.failure(.failed)]
             guard let failedEngine = await splitOpened(failed) else { return }
             await failedEngine.pollReplies()
@@ -165,9 +169,8 @@ extension SplitReplyTests {
         let h = splitHarness()
         h.state.state.haltedChatIDs = [7]
         h.state.state.rateEvents = (0..<5).map { _ in RateEvent(chatID: 7, at: h.clock.current) }
-        let pending: [[String: Any]] = [["reply_id": "r1", "chat_id": 7, "hash": "abc", "at": 1_700_000_000_000, "rate_counted": true, "part": "body"]]
         h.sender.script = [.failure(.failed), .success(SendReceipt(id: 2, guid: "sent-again", status: "sent"))]
-        guard splitInstallPartials(h, [splitPartial("r1")], pending: pending), let e = await splitOpened(h) else { return }
+        guard splitInstallPartials(h, [splitPartial("r1")]), let e = await splitOpened(h) else { return }
         await e.pollReplies()
         XCTAssertEqual(h.sender.sent.map(\.text), [B, B])
         XCTAssertEqual(h.state.state.rateEvents.filter { $0.chatID == 7 }.count, 5)
@@ -176,11 +179,11 @@ extension SplitReplyTests {
 
     func testPauseBeforeTheResendKeepsTheCount() async {
         let h = splitHarness()
-        h.sender.script = [.success(SendReceipt(id: 1, guid: "marker", status: "sent")), .failure(.uncertain), .failure(.failed)]
+        h.sender.script = [.success(SendReceipt(id: 1, guid: "marker", status: "sent")), .failure(.uncertain)]
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 3 { await e.setPaused(true) } }
+        h.sender.onSend = { if h.sender.sent.count == 2 { await e.setPaused(true) } }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 3)
+        XCTAssertEqual(h.sender.sent.count, 2)
         XCTAssertEqual((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).first?["body_resends"] as? Int, 1)
         let paused = await e.snapshot()
         XCTAssertEqual(paused.heldCount, 1)
@@ -189,11 +192,11 @@ extension SplitReplyTests {
         h.sender.script = [.failure(.failed)]
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
-        XCTAssertEqual(h.sender.sent.count, 4)
+        XCTAssertEqual(h.sender.sent.count, 3)
         XCTAssertTrue(h.state.deadLetters.contains { $0.error == "body_send_failed" })
         await e.retryHolds()
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 4)
+        XCTAssertEqual(h.sender.sent.count, 3)
     }
 
     func testFinalBodyFailureWithoutDeadLetterIsNotResent() async {
@@ -295,8 +298,10 @@ extension SplitReplyTests {
 
     func testPartialSaveFailureHoldsTheBody() async {
         let h = splitHarness()
+        let stateStore = FailNextSaveStateStore(memory: h.state)
+        h.store = stateStore
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 1 { h.state.shouldFailSave = true } }
+        h.sender.onSend = { if h.sender.sent.count == 1 { stateStore.failNextSave = true } }
         await e.pollReplies()
         XCTAssertEqual(h.sender.sent.map(\.text), [M])
         let failedSnapshot = await e.snapshot()
@@ -309,6 +314,7 @@ extension SplitReplyTests {
             let pending = (try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])?["pending_sends"] as? [[String: Any]] ?? []
             XCTAssertTrue(pending.contains { $0["reply_id"] as? String == "r1" && $0["part"] as? String == "marker" })
         } catch { XCTFail("state reload failed: \(error)"); return }
+        h.state.shouldFailSave = true
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
         XCTAssertEqual(h.sender.sent.map(\.text), [M])
@@ -377,9 +383,11 @@ extension SplitReplyTests {
 
     func testResendCountSaveFailureHoldsTheResend() async {
         let h = splitHarness()
+        let stateStore = FailNextSaveStateStore(memory: h.state)
+        h.store = stateStore
         h.sender.script = [.success(SendReceipt(id: 1, guid: "marker", status: "sent")), .failure(.failed)]
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 2 { h.state.shouldFailSave = true } }
+        h.sender.onSend = { if h.sender.sent.count == 2 { stateStore.failNextSave = true } }
         await e.pollReplies()
         XCTAssertEqual(h.sender.sent.count, 2)
         let blockedSnapshot = await e.snapshot()
@@ -395,15 +403,18 @@ extension SplitReplyTests {
             XCTAssertEqual(partial?["body_resends"] as? Int, 0)
             XCTAssertTrue(pending.contains { $0["part"] as? String == "body" })
         } catch { XCTFail("state reload failed: \(error)"); return }
+        h.state.shouldFailSave = true
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
         XCTAssertEqual(h.sender.sent.count, 2)
         h.state.shouldFailSave = false
-        h.sender.onSend = nil
+        var savedResends: Int?
+        h.sender.onSend = { if h.sender.sent.count == 3 { savedResends = h.state.state.partialReplies.first?.bodyResends } }
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
         XCTAssertEqual(h.sender.sent.count, 3)
-        XCTAssertEqual((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).first?["body_resends"] as? Int, 1)
+        XCTAssertEqual(savedResends, 1)
+        h.sender.onSend = nil
         await e.retryHolds()
         await e.pollReplies()
         XCTAssertEqual(h.sender.sent.count, 3)
@@ -412,9 +423,12 @@ extension SplitReplyTests {
         disk.allow.ids = [7]
         disk.config.replyFetchURL = "https://example.com/replies"
         disk.state.state = diskState
+        disk.replies.pages = [ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil)]
         guard let restarted = await splitOpened(disk) else { return }
+        var diskResends: Int?
+        disk.sender.onSend = { diskResends = disk.state.state.partialReplies.first?.bodyResends }
         await restarted.pollReplies()
         XCTAssertEqual(disk.sender.sent.map(\.text), [B])
-        XCTAssertEqual((splitJSON(disk.state.state)?["partial_replies"] as? [[String: Any]] ?? []).first?["body_resends"] as? Int, 1)
+        XCTAssertEqual(diskResends, 1)
     }
 }

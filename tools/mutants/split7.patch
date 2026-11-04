@@ -1,0 +1,12 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1179,6 +1179,9 @@
+                 attempts: attempts, sendingResend: sendingResend, pauseReason: pauseReason,
+                 createdAt: createdAt, originGUID: originGUID)
+         case .failure(.notStarted):
++            if let index = persisted.partialReplies.firstIndex(where: { $0.replyID == replyID }) {
++                persisted.partialReplies[index].bodyResends += 1
++            }
+             rollbackIntent(replyID: replyID)
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,

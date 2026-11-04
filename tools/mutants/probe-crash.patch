@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/ReplyComposer.swift
++++ b/Sources/GenieCore/ReplyComposer.swift
+@@ -10,6 +10,7 @@
+     static let markerText = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
+ 
+     static func split(body: String) -> SplitOutcome {
++        fatalError("probe")
+         let normalized = TextNormalizer.nfc(body)
+         var scalars = Array(normalized.unicodeScalars)
+ 

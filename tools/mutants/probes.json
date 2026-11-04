@@ -1,0 +1,32 @@
+[
+  {
+    "name": "P-BUILD",
+    "patch": "probe-build-error.patch",
+    "filter": "SplitReplyTests.testFirstMessageIsExactlyTheFourScalars",
+    "expect": "BUILD_FAILED"
+  },
+  {
+    "name": "P-CRASH",
+    "patch": "probe-crash.patch",
+    "filter": "SplitReplyTests.testFirstMessageIsExactlyTheFourScalars",
+    "expect": "CRASHED"
+  },
+  {
+    "name": "P-THROW",
+    "patch": "probe-throw.patch",
+    "filter": "SplitReplyTests.testFirstMessageIsExactlyTheFourScalars",
+    "expect": "ERRORED"
+  },
+  {
+    "name": "P-BASELINE",
+    "patch": null,
+    "filter": "SplitReplyTests.testNoSuchTest",
+    "expect": "BASELINE_FAILED"
+  },
+  {
+    "name": "P-KILL",
+    "patch": "split1.patch",
+    "filter": "SplitReplyTests.testFirstMessageIsExactlyTheFourScalars",
+    "expect": "KILLED"
+  }
+]

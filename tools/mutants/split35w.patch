@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1532,7 +1532,7 @@
+         let messageTime = ISO8601.date(from: createdAt) ?? now
+         let window = config.fingerprintWindowSeconds
+         return persisted.fingerprints.contains { fingerprint in
+-            fingerprint.hash == hash && abs(messageTime.timeIntervalSince(fingerprint.sentAt)) <= window
++            fingerprint.hash == hash && abs(messageTime.timeIntervalSince(fingerprint.sentAt)) < window
+         }
+     }
+ 

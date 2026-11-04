@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ReplyComposer.swift
++++ b/Sources/GenieCore/ReplyComposer.swift
+@@ -42,7 +42,7 @@
+                Array(scalars.prefix(genie.count)).map(\.value) == genie {
+                 scalars.removeFirst(genie.count)
+                 if scalars.first?.value == 0xFE0F { scalars.removeFirst() }
+-                changed = true
++                changed = false
+             }
+         }
+ 

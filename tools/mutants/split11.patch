@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1204,7 +1204,7 @@
+         case .resend:
+             if failure == .failed { rollbackIntent(replyID: replyID) }
+             else { finishIntent(replyID: replyID) }
+-            persisted.partialReplies[partialIndex].bodyResends += 1
++            if failure == .failed { persisted.partialReplies[partialIndex].bodyResends += 1 }
+             bodyResendSavePending.insert(replyID)
+             lastError = code
+             log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "body")

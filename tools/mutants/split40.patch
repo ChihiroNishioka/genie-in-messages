@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1651,7 +1651,6 @@
+         persisted.cursorRowID = 0
+         persisted.routes = []
+         persisted.pendingSends = []
+-        persisted.partialReplies = []
+         chatWaitingReplyIDs.removeAll()
+         bodyResendSavePending.removeAll()
+         holds.removeAll()

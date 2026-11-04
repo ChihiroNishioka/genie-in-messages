@@ -27,6 +27,44 @@ struct MessageRoute: Codable, Equatable {
     }
 }
 
+enum SendPart: String, Codable {
+    case marker
+    case body
+}
+
+struct PartialReply: Codable, Equatable {
+    var replyID: String
+    var chatID: Int64
+    var markerGUID: String
+    var at: Date
+    var bodyResends: Int
+
+    enum CodingKeys: String, CodingKey {
+        case replyID = "reply_id"
+        case chatID = "chat_id"
+        case markerGUID = "marker_guid"
+        case at
+        case bodyResends = "body_resends"
+    }
+
+    init(replyID: String, chatID: Int64, markerGUID: String, at: Date, bodyResends: Int = 0) {
+        self.replyID = replyID
+        self.chatID = chatID
+        self.markerGUID = markerGUID
+        self.at = at
+        self.bodyResends = bodyResends
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        replyID = try container.decode(String.self, forKey: .replyID)
+        chatID = try container.decode(Int64.self, forKey: .chatID)
+        markerGUID = try container.decode(String.self, forKey: .markerGUID)
+        at = try container.decode(Date.self, forKey: .at)
+        bodyResends = try container.decodeIfPresent(Int.self, forKey: .bodyResends) ?? 0
+    }
+}
+
 struct PendingSend: Codable, Equatable {
     var replyID: String
     var chatID: Int64
@@ -34,6 +72,7 @@ struct PendingSend: Codable, Equatable {
     var at: Date
     /// 結果不明の送信を、すでにレートへ数えたあとに残すとき true。再起動時に二重に数えない。
     var rateCounted: Bool
+    var part: SendPart?
 
     enum CodingKeys: String, CodingKey {
         case replyID = "reply_id"
@@ -41,14 +80,16 @@ struct PendingSend: Codable, Equatable {
         case hash
         case at
         case rateCounted = "rate_counted"
+        case part
     }
 
-    init(replyID: String, chatID: Int64, hash: String, at: Date, rateCounted: Bool = false) {
+    init(replyID: String, chatID: Int64, hash: String, at: Date, rateCounted: Bool = false, part: SendPart? = nil) {
         self.replyID = replyID
         self.chatID = chatID
         self.hash = hash
         self.at = at
         self.rateCounted = rateCounted
+        self.part = part
     }
 
     init(from decoder: Decoder) throws {
@@ -58,6 +99,7 @@ struct PendingSend: Codable, Equatable {
         hash = try container.decode(String.self, forKey: .hash)
         at = try container.decode(Date.self, forKey: .at)
         rateCounted = try container.decodeIfPresent(Bool.self, forKey: .rateCounted) ?? false
+        part = try container.decodeIfPresent(SendPart.self, forKey: .part)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -67,6 +109,7 @@ struct PendingSend: Codable, Equatable {
         try container.encode(hash, forKey: .hash)
         try container.encode(at, forKey: .at)
         try container.encode(rateCounted, forKey: .rateCounted)
+        try container.encodeIfPresent(part, forKey: .part)
     }
 }
 
@@ -87,6 +130,7 @@ package struct PersistedState: Codable, Equatable {
     var rateEvents: [RateEvent]
     var routes: [MessageRoute]
     var pendingSends: [PendingSend]
+    var partialReplies: [PartialReply]
     var knownChats: [ChatIdentity]
 
     static let empty = PersistedState(
@@ -101,6 +145,7 @@ package struct PersistedState: Codable, Equatable {
         rateEvents: [],
         routes: [],
         pendingSends: [],
+        partialReplies: [],
         knownChats: []
     )
 
@@ -116,6 +161,7 @@ package struct PersistedState: Codable, Equatable {
         case rateEvents = "rate_events"
         case routes
         case pendingSends = "pending_sends"
+        case partialReplies = "partial_replies"
         case knownChats = "known_chats"
     }
 
@@ -131,6 +177,7 @@ package struct PersistedState: Codable, Equatable {
         rateEvents: [RateEvent],
         routes: [MessageRoute],
         pendingSends: [PendingSend],
+        partialReplies: [PartialReply] = [],
         knownChats: [ChatIdentity]
     ) {
         self.v = v
@@ -144,6 +191,7 @@ package struct PersistedState: Codable, Equatable {
         self.rateEvents = rateEvents
         self.routes = routes
         self.pendingSends = pendingSends
+        self.partialReplies = partialReplies
         self.knownChats = knownChats
     }
 
@@ -160,6 +208,7 @@ package struct PersistedState: Codable, Equatable {
         rateEvents = try container.decodeIfPresent([RateEvent].self, forKey: .rateEvents) ?? []
         routes = try container.decodeIfPresent([MessageRoute].self, forKey: .routes) ?? []
         pendingSends = try container.decodeIfPresent([PendingSend].self, forKey: .pendingSends) ?? []
+        partialReplies = try container.decodeIfPresent([PartialReply].self, forKey: .partialReplies) ?? []
         knownChats = try container.decodeIfPresent([ChatIdentity].self, forKey: .knownChats) ?? []
     }
 }

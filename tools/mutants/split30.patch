@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1002,6 +1002,7 @@
+             }
+             log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+                        rowid: receipt.id, detail: "marker")
++            inFlightReplyIDs.remove(replyID)
+             await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
+                            pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+         case .success:

@@ -117,11 +117,11 @@ final class DeliveryTests: XCTestCase {
         harness.lock.locked = false
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.sent.count, 2)
         let text = harness.sender.sent[0].text
         XCTAssertFalse(Signal.matches(text))
-        XCTAssertTrue(text.hasPrefix(GenieConfig.productDefaults.marker))
-        XCTAssertTrue(text.contains("answer"))
+        XCTAssertEqual(text, ReplyComposer.markerText)
+        XCTAssertEqual(harness.sender.sent[1].text, "answer")
         snap = await engine.snapshot()
         XCTAssertEqual(snap.heldCount, 0)
     }
@@ -146,7 +146,7 @@ final class DeliveryTests: XCTestCase {
         XCTAssertEqual(snap.lastError, "apple_event_1712")
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.sent.count, 3)
         let echo = await engine.ingestWatchLine(watchLine(
             id: 20, guid: "out-guid", chat: 7, fromMe: true, text: GenieConfig.productDefaults.marker + " echo"
         ))
@@ -195,22 +195,21 @@ final class DeliveryTests: XCTestCase {
         harness.replies.pages = [ReplyPage(replies: replies, nextCursor: "c")]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 5)
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 1)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 10)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 2)
         var snap = await engine.snapshot()
         XCTAssertEqual(snap.haltedChatIDs, [1])
         XCTAssertEqual(snap.heldCount, 1)
         await engine.resumeRateLimit(chatID: 1)
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 5)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 10)
         harness.clock.current = harness.clock.current.addingTimeInterval(61)
         await engine.resumeRateLimit(chatID: 1)
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 6)
+        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 12)
         snap = await engine.snapshot()
         XCTAssertTrue(snap.haltedChatIDs.isEmpty)
-        for sent in harness.sender.sent {
-            XCTAssertFalse(Signal.matches(sent.text))
-            XCTAssertTrue(sent.text.hasPrefix(GenieConfig.productDefaults.marker))
-        }
+        XCTAssertEqual(harness.sender.sent.filter { $0.text == ReplyComposer.markerText }.count, 7)
+        XCTAssertEqual(harness.sender.sent.filter { $0.text.hasPrefix("answer") || $0.text == "other" }.count, 7)
+        XCTAssertTrue(harness.sender.sent.allSatisfy { !Signal.matches($0.text) })
     }
 
     func testDisabledChatReplyIsNotSent() async throws {
@@ -238,16 +237,11 @@ final class DeliveryTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        let text = try XCTUnwrap(harness.sender.sent.first?.text)
-        XCTAssertTrue(text.hasPrefix(GenieConfig.productDefaults.marker))
-        XCTAssertFalse(Signal.matches(text))
-        XCTAssertFalse(text.hasPrefix("\u{1FA94}"))
-        let warnings = harness.log.records.filter { $0.code == "marker_replaced" }
-        XCTAssertEqual(warnings.count, 1)
-        XCTAssertEqual(warnings.first?.level, LogLevel.warning.rawValue)
+        XCTAssertEqual(harness.sender.sent.map(\.text), [ReplyComposer.markerText, "hello"])
+        XCTAssertFalse(harness.log.records.contains { $0.code == "marker_replaced" })
     }
 
-    func testMarkerWarningIsOnceWhileTheSettingStaysBroken() async throws {
+    func testLegacyMarkerSettingNeverProducesAWarning() async throws {
         let box = MutableMarkerConfig(marker: "\u{200B}\u{FE0F}")
         let harness = Harness()
         harness.config.marker = box.marker
@@ -266,16 +260,16 @@ final class DeliveryTests: XCTestCase {
         )
         await engine.showChats(harness.verifiedChatList())
         func warnings() -> Int { harness.log.records.filter { $0.code == "marker_replaced" }.count }
-        XCTAssertEqual(warnings(), 1)
+        XCTAssertEqual(warnings(), 0)
         await engine.pollReplies()
         await engine.pollReplies()
-        XCTAssertEqual(warnings(), 1)
+        XCTAssertEqual(warnings(), 0)
         box.marker = "OK"
         await engine.pollReplies()
-        XCTAssertEqual(warnings(), 1)
+        XCTAssertEqual(warnings(), 0)
         box.marker = "\u{FEFF}"
         await engine.pollReplies()
-        XCTAssertEqual(warnings(), 2)
+        XCTAssertEqual(warnings(), 0)
     }
 }
 

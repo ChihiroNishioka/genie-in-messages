@@ -54,19 +54,25 @@ for patch_file in "${patches[@]}"; do
   echo "=== ${name} ==="
   patch -p1 --forward --batch < "$patch_file"
   set +e
-  log="$(swift test --filter "$filter" 2>&1)"
-  status=$?
+  build_log="$(swift build --build-tests 2>&1)"
+  build_status=$?
+  if [[ "$build_status" -eq 0 ]]; then
+    log="$(swift test --skip-build --filter "$filter" 2>&1)"
+    status=$?
+  else
+    log="$build_log"
+    status=$build_status
+  fi
   set -e
   patch -p1 --reverse --batch < "$patch_file"
   printf '%s\n' "$log" | tail -n 20
-  if [[ "$status" -eq 0 ]]; then
-    echo "SURVIVED ${name}"
+  if [[ "$build_status" -ne 0 ]]; then
+    echo "BUILD_FAILED ${name}"
     failed=1
-  elif printf '%s\n' "$log" | grep -q "Test Case '.*' failed"; then
-    echo "KILLED ${name}"
   else
-    echo "RUN DID NOT TEST ${name}"
-    failed=1
+    classification="$(printf '%s\n' "$log" | python3 "$root/tools/check-mutants.py" --classify-test "$status" "$filter")"
+    echo "${classification} ${name}"
+    if [[ "$classification" != "KILLED" ]]; then failed=1; fi
   fi
 done
 

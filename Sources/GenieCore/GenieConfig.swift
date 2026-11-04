@@ -28,8 +28,6 @@ package struct GenieConfig: Equatable, Sendable {
     package var selfChatIDs: [Int64]
     /// 比較キーから表示名。設定ファイルには書かない。
     package var senderNameKeys: [String: String] = [:]
-    /// 読み込んだ印を製品既定へ戻した。設定ファイルには書かない。
-    package var markerWasReplaced = false
 
     package static let productDefaults = GenieConfig(
         webhookURL: "",
@@ -80,11 +78,6 @@ package struct GenieConfig: Equatable, Sendable {
         copy.senderNameKeys = Self.indexNames(copy.senderNames)
         var seenChatIDs: Set<Int64> = []
         copy.selfChatIDs = copy.selfChatIDs.filter { seenChatIDs.insert($0).inserted }
-        let resolved = ReplyComposer.resolveMarker(copy.marker)
-        if resolved.replaced {
-            copy.marker = resolved.text
-            copy.markerWasReplaced = true
-        }
         return copy
     }
 

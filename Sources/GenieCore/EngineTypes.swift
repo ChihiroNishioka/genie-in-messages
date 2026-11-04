@@ -9,7 +9,8 @@ enum HoldReason: String, Codable {
 struct HeldSend: Equatable {
     var replyID: String
     var chatID: Int64
-    var text: String
+    var part: SendPart
+    var body: String
     var reason: HoldReason
     var attempts: Int
     var nextAttemptAt: Date

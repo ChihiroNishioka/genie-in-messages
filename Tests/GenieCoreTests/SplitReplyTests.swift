@@ -254,7 +254,7 @@ final class SplitReplyTests: XCTestCase {
         let pending: [[String: Any]] = [["reply_id": "r1", "chat_id": 7, "hash": "abc", "at": 1_700_000_000_000, "rate_counted": false, "part": "marker"]]
         guard splitInstallPartials(h, [], pending: pending), let e = await splitOpened(h) else { return }
         let savedPending = splitJSON(h.state.state)?["pending_sends"] as? [[String: Any]] ?? []
-        XCTAssertTrue(savedPending.contains { $0["reply_id"] as? String == "r1" && $0["part"] as? String == "marker" })
+        XCTAssertTrue(savedPending.isEmpty)
         await e.pollReplies()
         XCTAssertTrue(h.sender.sent.isEmpty)
         XCTAssertTrue(h.state.deadLetters.contains { $0.error == "send_interrupted" })
@@ -291,11 +291,18 @@ final class SplitReplyTests: XCTestCase {
         let h = splitHarness()
         h.replies.pages = [
             ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil),
+            ReplyPage(replies: [], nextCursor: nil),
             ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil),
         ]
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { await e.pollReplies(); await e.resumeRateLimit(chatID: 7) }
+        var inFlightDuringBodySend: Int?
+        h.sender.onSend = {
+            if h.sender.sent.count == 2 { inFlightDuringBodySend = await e.inFlightReplyCount() }
+            await e.pollReplies()
+            await e.resumeRateLimit(chatID: 7)
+        }
         await e.pollReplies()
+        XCTAssertEqual(inFlightDuringBodySend, 1)
         XCTAssertEqual(h.sender.sent.map(\.text), [M, B])
     }
 

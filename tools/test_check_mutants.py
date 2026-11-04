@@ -64,6 +64,14 @@ class CheckMutantsTests(unittest.TestCase):
         self.assertEqual(classify_test(1, other_test, target), "RUN_FAILED")
         self.assertEqual(classify_test(1, "Exited with signal code 11", target), "CRASHED")
         self.assertEqual(classify_test(1, "Exited with unexpected signal code 11", target), "CRASHED")
+        linux = ("/x/SplitReplyTests.swift:15: error: SplitReplyTests.testX : XCTAssertEqual failed: (\"a\") is not equal to (\"b\") - \n"
+                 "Test Case 'SplitReplyTests.testX' failed (0.106 seconds)")
+        self.assertEqual(classify_test(1, linux, target), "KILLED")
+        macos = ("/x/SplitReplyTests.swift:15: error: -[GenieCoreTests.SplitReplyTests testX] : XCTAssertEqual failed: (\"a\") is not equal to (\"b\")\n"
+                 "Test Case '-[GenieCoreTests.SplitReplyTests testX]' failed (0.106 seconds).")
+        self.assertEqual(classify_test(1, macos, target), "KILLED")
+        prefix = "error: SplitReplyTests.testXY : XCTAssertEqual failed\nTest Case 'SplitReplyTests.testXY' failed (0.1 seconds)"
+        self.assertEqual(classify_test(1, prefix, target), "RUN_FAILED")
 
 
 if __name__ == "__main__":
