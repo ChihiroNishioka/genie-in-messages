@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -479,7 +479,7 @@
+                         next = nil
+                     }
+                     if let next, next != savedCursor {
+-                        if lane == .http {
++                        if lane != .notion {
+                             persisted.httpReplyCursor = next
+                         } else {
+                             persisted.replyCursor = next

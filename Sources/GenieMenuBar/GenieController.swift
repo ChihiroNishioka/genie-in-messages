@@ -195,6 +195,7 @@ enum RuntimeBuilder {
             stateStore: FileStateStore(paths: paths),
             allowlistStore: FileAllowlistStore(file: paths.allowlistFile),
             replySource: ConfiguredReplySource(config: config, secrets: secrets),
+            httpReplySource: ConfiguredHTTPReplySource(config: config, secrets: secrets),
             sender: ImsgMessageSender(config: config),
             webhook: URLSessionWebhook(),
             secrets: secrets,

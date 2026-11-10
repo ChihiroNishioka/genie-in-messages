@@ -1,0 +1,12 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -464,6 +464,9 @@
+                 for reply in page.replies {
+                     if stop.isStopped { return .skippedStopped }
+                     await deliverReply(reply)
++                    if persisted.handledReplyIDs.contains(reply.id) {
++                        persisted.routes.removeAll { $0.guid == reply.inReplyToGUID }
++                    }
+                     if stop.isStopped { return .skippedStopped }
+                 }
+                 let unhandled = page.replies.filter { reply in

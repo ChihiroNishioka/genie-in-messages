@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -657,7 +657,7 @@
+         senderIsMe: Bool,
+         senderName: String
+     ) async -> IngestResult {
+-        let job = config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty
++        let job = false
+         let rawURL = (job ? config.jobWebhookURL : config.webhookURL).trimmingCharacters(in: .whitespacesAndNewlines)
+         let kind = job ? "job_webhook" : "webhook"
+         let detail: String? = job ? "job" : nil

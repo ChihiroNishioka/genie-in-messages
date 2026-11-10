@@ -55,10 +55,18 @@ struct WebhookPayload: Encodable {
 }
 
 enum EndpointURL {
+    static func httpsOrLoopback(_ text: String) -> URL? {
+        if let url = https(text) { return url }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.scheme?.lowercased() == "http",
+              let host = url.host?.lowercased(),
+              ["127.0.0.1", "::1", "[::1]", "localhost"].contains(host) else { return nil }
+        return url
+    }
     static func https(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
-        guard url.scheme?.lowercased() == "https", url.host != nil else { return nil }
+        guard url.scheme?.lowercased() == "https", let host = url.host, !host.isEmpty else { return nil }
         return url
     }
 }

@@ -298,5 +298,115 @@
     "name": "SPLIT48",
     "patch": "split48.patch",
     "filter": "SplitReplyTests.testSelfChatInboundEchoesAreIgnored"
+  },
+  {
+    "name": "JOB1",
+    "patch": "job1-empty-chat-ids.patch",
+    "filter": "ConfigTests.testG01JobConfigDefaultsNullAndDeduplication"
+  },
+  {
+    "name": "JOB2",
+    "patch": "job2-ordinary-route.patch",
+    "filter": "JobRouteTests.testG02JobUsesItsURLSecretAndUnchangedPayload"
+  },
+  {
+    "name": "JOB3",
+    "patch": "job3-all-job-route.patch",
+    "filter": "JobRouteTests.testG03UnlistedChatUsesOrdinaryWebhook"
+  },
+  {
+    "name": "JOB4",
+    "patch": "job4-bypass-allowlist.patch",
+    "filter": "JobRouteTests.testG04JobSelectionDoesNotGrantPermission"
+  },
+  {
+    "name": "JOB5",
+    "patch": "job5-empty-job-stops.patch",
+    "filter": "JobRouteTests.testG05EmptyJobURLUsesOrdinaryWebhook"
+  },
+  {
+    "name": "JOB6",
+    "patch": "job6-ordinary-secret.patch",
+    "filter": "JobRouteTests.testG06JobSecretFailuresNeverUseOrdinarySecret"
+  },
+  {
+    "name": "JOB7",
+    "patch": "job7-loose-loopback-host.patch",
+    "filter": "JobRouteTests.testG07LoopbackIsAnExactHostException"
+  },
+  {
+    "name": "JOB8",
+    "patch": "job8-invalid-job-falls-back.patch",
+    "filter": "JobRouteTests.testG08InvalidJobURLStopsWithoutFallback"
+  },
+  {
+    "name": "JOB9",
+    "patch": "job9-ordinary-loopback.patch",
+    "filter": "JobRouteTests.testG09OrdinaryWebhookStillRequiresHTTPS"
+  },
+  {
+    "name": "JOB10",
+    "patch": "job10-reselect-on-retry.patch",
+    "filter": "JobRouteTests.testG10RetryKeepsTheSelectedJobRouteAcrossConfigRefresh"
+  },
+  {
+    "name": "JOB11",
+    "patch": "job11-https-replies-only.patch",
+    "filter": "JobReplyLaneTests.testG11HTTPOnlyAcceptsLoopback"
+  },
+  {
+    "name": "JOB12",
+    "patch": "job12-shared-cursor.patch",
+    "filter": "JobReplyLaneTests.testG12BothSourcesRunHTTPFirstWithSeparateCursors"
+  },
+  {
+    "name": "JOB13",
+    "patch": "job13-abort-on-source-failure.patch",
+    "filter": "JobReplyLaneTests.testG13FailureOfEitherSourceDoesNotBlockTheOther"
+  },
+  {
+    "name": "JOB14a",
+    "patch": "job14a-remove-reply-route.patch",
+    "filter": "JobReplyLaneTests.testG14MultipleRepliesRetainRouteAndHoldCursorUntilSent"
+  },
+  {
+    "name": "JOB14b",
+    "patch": "job14b-advance-held-cursor.patch",
+    "filter": "JobReplyLaneTests.testG14MultipleRepliesRetainRouteAndHoldCursorUntilSent"
+  },
+  {
+    "name": "JOB15a",
+    "patch": "job15a-move-legacy-cursor.patch",
+    "filter": "JobReplyLaneTests.testG15HTTPOnlyKeepsLegacyCursorAndIgnoresNotionCursor"
+  },
+  {
+    "name": "JOB15b",
+    "patch": "job15b-pass-notion-cursor-to-http.patch",
+    "filter": "JobReplyLaneTests.testG15HTTPOnlyKeepsLegacyCursorAndIgnoresNotionCursor"
+  },
+  {
+    "name": "JOB16a",
+    "patch": "job16a-omit-http-cursor-key.patch",
+    "filter": "ConfigTests.testG16OldStateAndHTTPCursorRoundTrip"
+  },
+  {
+    "name": "JOB16b",
+    "patch": "job16b-omit-http-source-wiring.patch",
+    "filter": "JobReplyLaneTests.testG16ControllerWiresHTTPSource"
+  },
+  {
+    "name": "JOB17",
+    "patch": "job17-ignore-job-chat-list.patch",
+    "filter": "JobRouteTests.testG17SnapshotUsesSeparateURLRulesAndNeedsJobChats"
+  },
+  {
+    "name": "JOB18",
+    "patch": "job18-fetch-empty-http.patch",
+    "filter": "JobReplyLaneTests.testG18NotionOnlyNeverCallsHTTP"
+  },
+  {
+    "name": "JOB19",
+    "patch": "job19-omit-job-config-docs.patch",
+    "filter": "ConfigTests.testG19JobDocsAndExampleDescribeContract"
   }
 ]

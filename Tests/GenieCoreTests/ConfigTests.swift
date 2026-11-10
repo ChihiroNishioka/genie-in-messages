@@ -147,3 +147,68 @@ final class ConfigTests: XCTestCase {
         return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
 }
+
+extension ConfigTests {
+    func testG01JobConfigDefaultsNullAndDeduplication() throws {
+        for json in ["{}", "{\"webhook_url\":\"https://example.com/hook\"}", "{\"job_webhook_url\":null,\"job_chat_ids\":null}"] {
+            let c = try JSONDecoder().decode(GenieConfig.self, from: Data(json.utf8))
+            XCTAssertEqual(c.jobWebhookURL, "")
+            XCTAssertEqual(c.jobChatIDs, [])
+        }
+        let c = try JSONDecoder().decode(GenieConfig.self, from: Data("{\"job_webhook_url\":\" http://127.0.0.1:3321/ingress/genie \",\"job_chat_ids\":[7,7,8]}".utf8))
+        XCTAssertEqual(c.jobWebhookURL, "http://127.0.0.1:3321/ingress/genie")
+        XCTAssertEqual(c.jobChatIDs, [7,8])
+        XCTAssertThrowsError(try JSONDecoder().decode(GenieConfig.self, from: Data("{\"job_chat_ids\":[\"7\"]}".utf8)))
+        let example = try Data(contentsOf: repoRoot().appendingPathComponent("config.example.json"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: example) as? [String: Any])
+        XCTAssertEqual(object["job_webhook_url"] as? String, "")
+        XCTAssertEqual(object["job_chat_ids"] as? [Int], [])
+    }
+
+    func testG01UnreadableJobConfigKeepsPreviousSettings() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let paths = ConfigPaths(root: root, logFile: root.appendingPathComponent("genie.log"))
+        try ConfigDirectory.prepare(paths)
+        var c = GenieConfig.productDefaults
+        c.webhookURL = "https://example.com/hook"
+        try ConfigLoader.write(c, to: paths.configFile)
+        let h = Harness()
+        h.allow.ids = [7]
+        let e = try GenieEngine(configProvider: FileConfigProvider(url: paths.configFile), initialConfig: c,
+            stateStore: h.state, allowlistStore: h.allow, replySource: h.replies, sender: h.sender,
+            webhook: h.webhook, secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
+        try Data("{\"job_chat_ids\":[\"7\"]}".utf8).write(to: paths.configFile)
+        let result = await e.ingestWatchLine(watchLine(id: 1, guid: "g-config", chat: 7, fromMe: true, text: "🪔 body"))
+        XCTAssertEqual(result, .delivered)
+        XCTAssertEqual(h.webhook.urls.map(\.absoluteString), [c.webhookURL])
+        XCTAssertTrue(h.log.records.contains { $0.code == "config_unreadable" })
+    }
+
+    func testG16OldStateAndHTTPCursorRoundTrip() throws {
+        let old = try StateCoding.decoder().decode(PersistedState.self, from: Data("{}".utf8))
+        XCTAssertNil(old.httpReplyCursor)
+        var state = old
+        state.httpReplyCursor = "http-next"
+        let (decoded, json) = try reloaded(state)
+        XCTAssertEqual(decoded.httpReplyCursor, "http-next")
+        XCTAssertTrue(json.contains("\"http_reply_cursor\""))
+    }
+
+    func testG19JobDocsAndExampleDescribeContract() throws {
+        let readme = try String(contentsOf: repoRoot().appendingPathComponent("README.md"), encoding: .utf8)
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        for text in [readme, spec] {
+            for needle in ["job_chat_ids", "job_webhook_url", "job-secret", "http://127.0.0.1:3321/ingress/genie", "http_reply_cursor"] {
+                XCTAssertTrue(text.contains(needle), needle)
+            }
+        }
+        for number in ["4.5", "4.9", "5.2"] {
+            let section = spec.components(separatedBy: "### \(number)").dropFirst().first?.components(separatedBy: "\n### ").first ?? ""
+            XCTAssertTrue(section.contains("job_chat_ids"), number)
+            if number == "4.9" {
+                XCTAssertTrue(section.contains("`job_chat_ids` は整数配列で既定は空"))
+            }
+        }
+    }
+}

@@ -133,6 +133,10 @@ flowchart LR
 - 送信レート上限（例: 1分5件）は、返事1件を1回として数える。枠は1通目の前に確かめて予約する。2通目と送り直しは、レートの枠もレートの自動停止（`halted_chat_ids`）も見ず、枠も使わない。`StopSignal` と一時停止は必ず見る。送信の完了を待たずに、並行する取得や保留の再送が同じ枠を使えない。1通目を送れなかったとき（起動前の失敗、送信失敗）は予約を戻す。1通目の結果不明と、1通目が届いたあとは戻さない。超えたらそのトークへの返信を自動停止し、メニューバーに警告。停止の解除は停止フラグだけを外し、窓の中の回数は残す
 
 ### 4.5 ボットとの受け渡し・秘密情報・ログ
+- `job_chat_ids` に入り、許可リストでもオンのトークは、空でない `job_webhook_url` に `job-secret` で送る。例は `http://127.0.0.1:3321/ingress/genie` と架空の `chat_id: 7`。送り先は許可と一時停止の判定後に1回だけ選び、再送中は固定する。JSON の9キー、`v: 1`、重複排除の契約は通常と同じ
+- `job_webhook_url` が空なら通常の `webhook_url` と `secret` を使う。空でないが無効なら `url_not_https` で止め、通常へ切り替えない。指定したトークがあり Job URL が未設定か無効ならメニューに区別を出す
+- `job-secret` は0600で置き、送るたびに読み直す。自動作成しない。欠落、0600以外、空は `job_secret_missing`、`job_secret_mode`、`job_secret_empty` で deadletter にする。読めないときは `job_secret_unreadable` で通常と同じバックオフを使う。`secret` へ切り替えない
+- Job も2xxで成功。408、429、5xx、通信失敗は `webhook_max_attempts` まで再送し、ほかの4xxは再送しない。deadletter の kind は `job_webhook`。本文と秘密を残さない。成功の `webhook_delivered` と失敗の `webhook_http_<code>`、`webhook_transport` は Job のとき detail に `job` を付ける
 - 受け取るのは Grok Bot の、webhook で起動するルーチン。役割は何でも答える汎用アシスタント
 - 本文はそのまま webhook に送ってよい。ただし送るのは許可リストでオンのトークのメッセージだけ
 - アプリのログ（`deadletter.jsonl` を含む）には許可語以外を残さない。標準エラーに出た語は小文字にし、両端の記号（先頭と末尾の `.` を含む）を外してから照合する
@@ -155,7 +159,7 @@ flowchart LR
   "sender_name": "hana"
 }
 ```
-- 通信は `URLSession.shared` を使わず、キャッシュしないセッションを使う。空でない URL は https だけ
+- 通信は `URLSession.shared` を使わず、キャッシュしないセッションを使う。通常の `webhook_url` は https だけ。`job_webhook_url` と `reply_fetch_url` は https に加え、host が `127.0.0.1`、`::1`、`localhost` の http を許す。host は大文字と小文字を区別せず完全一致で比べる。似た名前や別のアドレスは許さない
 - webhook のシークレットは設定ディレクトリ（例: `~/.config/genie-in-messages/`、ディレクトリ700）の `secret`（600）。plist や引数・環境変数に入れない。送信のたびに読み直す（差し替えに再起動不要）
 - Notion のトークンも同じ扱い。`notion-token`（600）に置き、使うたびに読み直す。メニューの「Notion トークンを設定」から入れ、画面には出さない。状態表示は「設定済み」「未設定」「権限が 600 ではありません」だけ。Keychain は使わない
 - GET JSON の取得元を使うときのトークンは任意の `reply-secret`（600）
@@ -180,6 +184,9 @@ flowchart LR
 - 検討事項: ブリッジ側で guid を使って複数台の重複を止める方法（例: 処理済み guid を共有の場所に記録して先着1台だけが処理する）。1台運用の補助として設計で検討する
 
 ### 4.9 設定と利用者ごとの分離
+- `job_webhook_url` は文字列で既定は空、前後の空白を除く。`job_chat_ids` は整数配列で既定は空。キーが無い、または null なら空にし、重複を除く。別の型は `config_unreadable` にして直前の設定を保つ。`job_chat_ids` は送り先を選ぶだけで、トークの許可にはならない
+- `config.example.json` では `job_webhook_url` を `""`、`job_chat_ids` を `[]` にする。利用時の架空の例は `[7]` と `http://127.0.0.1:3321/ingress/genie`。秘密は設定と別の `job-secret`（0600）で扱う
+- 古い config と state も読める。新しい state の `http_reply_cursor` は省略可能。古い版に戻すとこのキーは無視され、HTTP は `reply_cursor` から読み直す。重複は共有の処理済み ID で落とす
 - ちひろさん専用の値をコードに直接書かない。次はすべて設定から読む
   - webhook のURL、シークレット、返事を取りに行く場所、許可リスト
   - `config.json` の主な項目: `notion_data_source_id`、`route_ttl_seconds`（既定 604800）、`send_timeout_seconds`、`chats_timeout_seconds`、`reply_page_limit`（既定 100）、`self_sender_name`（既定 `me`）、`sender_names`（任意。既定は空）、`self_chat_ids`（任意。既定は空）
@@ -282,8 +289,15 @@ flowchart LR
   - 対応の期限（`route_ttl_seconds`、既定 7 日）より古い行を定期的に片付ける。Mac は行を消さない
   - 片付けてよいのは、その期限より古い行だけ。読み直し幅は 120 秒だが、レート停止などで保留した返事は、再起動すると表から読み直す。120 秒より少し古い行を消すと、その再起動で本文が無くなる。片付けは読み直し幅ではなく、対応の期限に合わせる
 
-### 5.2 予備の取得元: GET JSON
-- `notion_data_source_id` が空のときは、設定した URL を GET する取得元を使う（差し替え用に残す）
+### 5.2 HTTP の取得元: GET JSON
+- `reply_fetch_url` があれば HTTP から取る。Notion もあれば1回の `pollReplies()` で HTTP、Notion の順に両方を取る。Notion の再試行で先に HTTP の返信を待たせないため。`job_chat_ids` のトークも、ほかのトークも、返信先は保存した `in_reply_to_guid` の対応で決める
+- Job の送り先例は `http://127.0.0.1:3321/ingress/genie` と `chat_id: 7`。`job-secret` と HTTP 返信取得用の `reply-secret` は別。Job URL と `reply_fetch_url` は loopback の http を許す。通常の `webhook_url` は https のまま
+- HTTP だけなら `reply_cursor`、Notion だけでも `reply_cursor` を使う。両方なら HTTP は `http_reply_cursor`、Notion は `reply_cursor` を使う。HTTP だけから両方へ切り替えても移さない。Notion に渡る古い HTTP cursor は初回相当となり、HTTP は空の `http_reply_cursor` から読み直す。Notion を外して HTTP だけに戻すとき、`reply_cursor` が Notion 形式なら cursor 無しで問い合わせる
+- HTTP の cursor は、取得元で規則を決める。ページの id 付き返信がすべて処理済みになったときだけ `nextCursor` を保存する。保留か送信中の返信があれば進めない。Notion の cursor 調整と保護する ID の規則は変えない。HTTP と Notion の処理済み ID は共有し、ID は衝突しない前提
+- 一覧照合、一時停止の確認、holding の作成と待ち ID の初期化は各 poll で1回だけ。各 await のあとに停止を確認する。片方が失敗してももう片方を取り、失敗した取得元の cursor は進めない。先に保存した結果は保つ。結果は `.fetchFailed` で、取得終了時刻は進める。両取得時の取得失敗ログの detail は `http` または `notion`。単独取得では付けない
+- 同じ guid の受付と完了も送れるよう、返信を送ったあとも対応表を残す。それぞれ印と本文の2通となり、既定の1分5件のレート制限にかかりやすい。Job Engine 側で受付の返信を控える選択肢がある
+- cursor の進行は Genie での処理を表し、配達の確認ではない。送り先不明、期限切れ、chat_id 不一致、許可オフ、空本文、合図のままの本文は送らず処理済みにする。送信結果、結果不明、deadletter を Job Engine に返す仕組みはない
+- HTTP cursor が止まっているあいだに処理済み ID が5000件を超えると、捨てた ID が再送されるおそれがある。個人利用ではこの件数を想定しない
 - 形: `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。`reply-secret` があれば Bearer。取得間隔の既定は10秒。壊れた要素は飛ばしてログに残す（本文は出さない）
 
 ### 5.3 読み終えた行の片付け
@@ -358,6 +372,8 @@ flowchart LR
 
 ## 9. 実機で未確認のこと
 
+- macOS の ATS が Job と HTTP 返信取得の loopback の http を許すか。Linux の検証では確認できない
+
 - 親アプリ（自作アプリ）に許可があれば子の imsg も chat.db を読めるか
 - 自作アプリからの初回オートメーション許可が実際にどう出るか
 - Apple Development 証明書で署名し直したあと、brew upgrade やアプリ再ビルドの後も許可が保たれるか
@@ -369,7 +385,7 @@ flowchart LR
 - Notion の `created_time` が分に丸まるか、行を書いてから query に出るまでの遅れ。実装は水位の 120 秒前から読み直して吸収する想定で、実測はまだ
 - 429 と 529 の `Retry-After`、500 と 503 の再試行が、公式の案内どおりか
 - query の結果が 1 万件に達したときの `request_status` は見ていない。1回の取得は 20 ページ（2000 行）で打ち切るので、1万件の上限より先にこの打ち切りに当たる。読み直しは 120 秒、空のカーソルは今の分から始める。保留で水位が止まっていない限り、通常は当たらない
-- 429 などの再試行は 5 回目も `Retry-After`（上限 60 秒）を待ってから打ち切る。1回の取得が数分止まることがあり、そのあいだほかの返事も待つ
+- 429 などの再試行は 5 回目も `Retry-After`（上限 60 秒）を待ってから打ち切る。1回の Notion 取得が数分止まることがあり、そのあいだ後続の取得も待つ。両取得時は先に HTTP を終える
 - imsg 0.19.1 が、🧞‍♂️ だけの送信で guid を返すか（本文の完全一致で探すため）。Messages が大きい絵文字として本文を別の形で保存すると一致しない。一致しなければ、返事はすべて1通目で結果不明になり、2通目は送らない（4.4）
 - 🧞‍♂️ だけの送信が、iPhone と Mac で大きい絵文字に見えるか。watch に戻る行の本文と guid が、送ったものと同じか
 - 1通目と2通目を続けて送ったとき、相手の端末でもその順に並ぶか

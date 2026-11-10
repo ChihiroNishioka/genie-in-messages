@@ -7,6 +7,7 @@ package actor GenieEngine {
     private var persisted: PersistedState
     private let allowlistStore: any AllowlistPersisting
     private var allowlist: AllowlistState
+    private let httpReplySource: (any ReplySource)?
     private let replySource: any ReplySource
     private let sender: any MessageSending
     private let webhook: any WebhookPosting
@@ -63,6 +64,7 @@ package actor GenieEngine {
         stateStore: any StatePersisting,
         allowlistStore: any AllowlistPersisting,
         replySource: any ReplySource,
+        httpReplySource: (any ReplySource)? = nil,
         sender: any MessageSending,
         webhook: any WebhookPosting,
         secrets: any SecretProviding,
@@ -77,6 +79,7 @@ package actor GenieEngine {
         self.persisted = try stateStore.load()
         self.allowlistStore = allowlistStore
         self.allowlist = try allowlistStore.load()
+        self.httpReplySource = httpReplySource
         self.replySource = replySource
         self.sender = sender
         self.webhook = webhook
@@ -349,7 +352,9 @@ package actor GenieEngine {
             screenLocked: screenLock == .locked,
             screenLock: screenLock,
             replyFetchConfigured: !config.notionDataSourceID.isEmpty
-                || EndpointURL.https(config.replyFetchURL) != nil,
+                || EndpointURL.httpsOrLoopback(config.replyFetchURL) != nil,
+            jobWebhookConfigured: !config.jobChatIDs.isEmpty
+                && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
             webhookConfigured: EndpointURL.https(config.webhookURL) != nil
         )
     }
@@ -399,6 +404,12 @@ package actor GenieEngine {
         return .skipped
     }
 
+    private enum ReplyLane {
+        case http, notion, legacyHTTP
+
+        var detail: String { self == .notion ? "notion" : "http" }
+    }
+
     @discardableResult
     package func pollReplies() async -> ReplyPollOutcome {
         if stop.isStopped { return .skippedStopped }
@@ -411,78 +422,88 @@ package actor GenieEngine {
         prunePartialReplies()
         let notion = !config.notionDataSourceID.isEmpty
         let rawURL = config.replyFetchURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !notion {
-            if rawURL.isEmpty { return finishReplyPoll(.notConfigured) }
-            guard EndpointURL.https(rawURL) != nil else {
-                lastError = "url_not_https"
-                log.record(level: .error, code: "url_not_https", chatID: nil, guid: nil, rowid: nil)
-                return finishReplyPoll(.fetchFailed)
-            }
+        let dual = notion && !rawURL.isEmpty
+        var lanes: [(ReplyLane, any ReplySource)] = []
+        if dual {
+            if let httpReplySource { lanes.append((.http, httpReplySource)) }
+            lanes.append((.notion, replySource))
+        } else if notion {
+            lanes.append((.notion, replySource))
+        } else if !rawURL.isEmpty {
+            lanes.append((.legacyHTTP, replySource))
         }
-        do {
-            let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs).union(chatWaitingReplyIDs)
-            let page = try await replySource.fetch(
-                cursor: persisted.replyCursor,
-                skipping: Set(persisted.handledReplyIDs),
-                holding: holding
-            )
+        if lanes.isEmpty { return finishReplyPoll(.notConfigured) }
+        let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs).union(chatWaitingReplyIDs)
+        chatWaitingReplyIDs.removeAll()
+        var failed = false
+        for (lane, source) in lanes {
             if stop.isStopped { return .skippedStopped }
-            if page.skipped > 0 {
-                log.record(level: .error, code: "reply_bad_entry", chatID: nil, guid: nil, rowid: nil)
+            let detail: String? = dual ? lane.detail : nil
+            if lane != .notion && EndpointURL.httpsOrLoopback(rawURL) == nil {
+                lastError = "url_not_https"
+                log.record(level: .error, code: "url_not_https", chatID: nil, guid: nil, rowid: nil, detail: detail)
+                failed = true
+                continue
             }
-            let freshCount = page.replies.filter { !holding.contains($0.id) }.count
-            if freshCount > config.replyPageLimit {
-                log.record(level: .error, code: "reply_page_over_limit", chatID: nil, guid: nil, rowid: nil)
-            }
-            chatWaitingReplyIDs.removeAll()
-            var stoppedDuring = false
-            for reply in page.replies {
-                if stop.isStopped {
-                    stoppedDuring = true
-                    break
+            do {
+                let savedCursor = lane == .http ? persisted.httpReplyCursor : persisted.replyCursor
+                let cursor = lane == .legacyHTTP && NotionCursor.decode(savedCursor) != nil ? nil : savedCursor
+                let page = try await source.fetch(
+                    cursor: cursor,
+                    skipping: Set(persisted.handledReplyIDs),
+                    holding: holding
+                )
+                if stop.isStopped { return .skippedStopped }
+                if page.skipped > 0 {
+                    log.record(level: .error, code: "reply_bad_entry", chatID: nil, guid: nil, rowid: nil)
                 }
-                await deliverReply(reply)
-                if stop.isStopped {
-                    stoppedDuring = true
-                    break
+                let freshCount = page.replies.filter { !holding.contains($0.id) }.count
+                if freshCount > config.replyPageLimit {
+                    log.record(level: .error, code: "reply_page_over_limit", chatID: nil, guid: nil, rowid: nil)
                 }
-            }
-            if stoppedDuring { return .skippedStopped }
-            let unhandled = page.replies.filter { reply in
-                !reply.id.isEmpty && !persisted.handledReplyIDs.contains(reply.id)
-            }
-            if let proposed = page.nextCursor {
-                let next: String?
-                if NotionCursor.decode(proposed) != nil {
-                    next = NotionCursor.reconcile(proposed: proposed, unhandled: unhandled)
-                } else if unhandled.isEmpty {
-                    next = proposed
-                } else {
-                    next = nil
+                for reply in page.replies {
+                    if stop.isStopped { return .skippedStopped }
+                    await deliverReply(reply)
+                    if stop.isStopped { return .skippedStopped }
                 }
-                if let next, next != persisted.replyCursor {
-                    persisted.replyCursor = next
-                    persist()
+                let unhandled = page.replies.filter { reply in
+                    !reply.id.isEmpty && !persisted.handledReplyIDs.contains(reply.id)
                 }
+                if let proposed = page.nextCursor {
+                    let next: String?
+                    if lane == .notion {
+                        next = NotionCursor.reconcile(proposed: proposed, unhandled: unhandled)
+                    } else if unhandled.isEmpty {
+                        next = proposed
+                    } else {
+                        next = nil
+                    }
+                    if let next, next != savedCursor {
+                        if lane == .http {
+                            persisted.httpReplyCursor = next
+                        } else {
+                            persisted.replyCursor = next
+                        }
+                        persist()
+                    }
+                }
+            } catch {
+                if stop.isStopped { return .skippedStopped }
+                let code: String
+                switch error {
+                case ReplyFetchError.secretMode: code = "reply_secret_mode"
+                case ReplyFetchError.notionToken(let error): code = notionTokenCode(error)
+                default: code = "reply_fetch_failed"
+                }
+                lastError = code
+                log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil, detail: detail)
+                failed = true
             }
-            if expiredReplyThisPass && !notedHoldThisPass {
-                clearExpiredHoldNotice()
-            }
-            return finishReplyPoll(.fetched)
-        } catch ReplyFetchError.secretMode {
-            lastError = "reply_secret_mode"
-            log.record(level: .error, code: "reply_secret_mode", chatID: nil, guid: nil, rowid: nil)
-            return finishReplyPoll(.fetchFailed)
-        } catch ReplyFetchError.notionToken(let error) {
-            let code = notionTokenCode(error)
-            lastError = code
-            log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil)
-            return finishReplyPoll(.fetchFailed)
-        } catch {
-            lastError = "reply_fetch_failed"
-            log.record(level: .error, code: "reply_fetch_failed", chatID: nil, guid: nil, rowid: nil)
-            return finishReplyPoll(.fetchFailed)
         }
+        if expiredReplyThisPass && !notedHoldThisPass {
+            clearExpiredHoldNotice()
+        }
+        return finishReplyPoll(failed ? .fetchFailed : .fetched)
     }
 
     private func finishReplyPoll(_ outcome: ReplyPollOutcome) -> ReplyPollOutcome {
@@ -636,12 +657,15 @@ package actor GenieEngine {
         senderIsMe: Bool,
         senderName: String
     ) async -> IngestResult {
-        let rawURL = config.webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let job = config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty
+        let rawURL = (job ? config.jobWebhookURL : config.webhookURL).trimmingCharacters(in: .whitespacesAndNewlines)
+        let kind = job ? "job_webhook" : "webhook"
+        let detail: String? = job ? "job" : nil
         if rawURL.isEmpty {
-            return deadLetter(event, error: "webhook_not_configured", attempts: 0)
+            return deadLetter(event, error: "webhook_not_configured", attempts: 0, kind: kind, detail: detail)
         }
-        guard let url = EndpointURL.https(rawURL) else {
-            return deadLetter(event, error: "url_not_https", attempts: 0)
+        guard let url = job ? EndpointURL.httpsOrLoopback(rawURL) : EndpointURL.https(rawURL) else {
+            return deadLetter(event, error: "url_not_https", attempts: 0, kind: kind, detail: detail)
         }
         let payload = WebhookPayload(
             v: 1,
@@ -658,7 +682,7 @@ package actor GenieEngine {
         do {
             body = try payload.encodeData()
         } catch {
-            return deadLetter(event, error: "webhook_encode_failed", attempts: 0)
+            return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail)
         }
         if !event.guid.isEmpty {
             rememberRoute(guid: event.guid, chatID: chatID)
@@ -681,11 +705,11 @@ package actor GenieEngine {
             }
             let token: String
             do {
-                token = try secrets.webhookSecret()
+                token = try job ? secrets.jobWebhookSecret() : secrets.webhookSecret()
             } catch let error as SecretReadError {
-                let code = secretCode(error)
-                if code == "secret_mode" || code == "secret_missing" || code == "secret_empty" {
-                    return deadLetter(event, error: code, attempts: attempt)
+                let code = (job ? "job_" : "") + secretCode(error)
+                if error != .unreadable {
+                    return deadLetter(event, error: code, attempts: attempt, kind: kind, detail: detail)
                 }
                 last = code
                 if attempt < maxAttempts, await sleepBackoff(attempt: attempt) == false {
@@ -693,7 +717,7 @@ package actor GenieEngine {
                 }
                 continue
             } catch {
-                last = "secret_unreadable"
+                last = job ? "job_secret_unreadable" : "secret_unreadable"
                 if attempt < maxAttempts, await sleepBackoff(attempt: attempt) == false {
                     return .deferredPaused
                 }
@@ -715,23 +739,24 @@ package actor GenieEngine {
                 )
                 if (200...299).contains(response.statusCode) {
                     lastError = nil
-                    log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id)
+                    log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
                     return finish(event, .delivered)
                 }
                 last = "webhook_http_\(response.statusCode)"
                 if !WebhookRetry.shouldRetry(statusCode: response.statusCode) {
-                    return deadLetter(event, error: last, attempts: attempt)
+                    return deadLetter(event, error: last, attempts: attempt, kind: kind, detail: detail)
                 }
             } catch {
                 last = "webhook_transport"
             }
             if attempt < maxAttempts {
+                log.record(level: .error, code: last, chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
                 if await sleepBackoff(attempt: attempt) == false {
                     return .deferredPaused
                 }
             }
         }
-        return deadLetter(event, error: last, attempts: attempt)
+        return deadLetter(event, error: last, attempts: attempt, kind: kind, detail: detail)
     }
 
     private func sleepBackoff(attempt: Int) async -> Bool {
@@ -748,10 +773,10 @@ package actor GenieEngine {
         return !paused
     }
 
-    private func deadLetter(_ event: WatchEvent, error: String, attempts: Int) -> IngestResult {
+    private func deadLetter(_ event: WatchEvent, error: String, attempts: Int, kind: String = "webhook", detail: String? = nil) -> IngestResult {
         let entry = DeadLetterEntry(
             ts: ISO8601.string(from: clock.now()),
-            kind: "webhook",
+            kind: kind,
             chatID: event.chatID,
             guid: event.guid.isEmpty ? nil : event.guid,
             rowid: event.id,
@@ -766,7 +791,7 @@ package actor GenieEngine {
             return .blocked
         }
         lastError = error
-        log.record(level: .error, code: error, chatID: event.chatID, guid: event.guid, rowid: event.id)
+        log.record(level: .error, code: error, chatID: event.chatID, guid: event.guid, rowid: event.id, detail: detail)
         return finish(event, .deadLettered(error))
     }
 

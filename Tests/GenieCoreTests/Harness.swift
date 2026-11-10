@@ -22,7 +22,9 @@ final class FakeWebhook: WebhookPosting, @unchecked Sendable {
     var results: [Result<WebhookHTTPResult, Error>] = []
     var secrets: [String] = []
     var bodies: [Data] = []
+    var urls: [URL] = []
     func post(url: URL, secret: String, body: Data, idempotencyKey: String) async throws -> WebhookHTTPResult {
+        urls.append(url)
         secrets.append(secret)
         bodies.append(body)
         if results.isEmpty {
@@ -62,6 +64,8 @@ struct ScriptedFetchFailure: Error {}
 final class ScriptedReplies: ReplySource, @unchecked Sendable {
     var pages: [ReplyPage] = []
     var onFetch: (() async -> Void)?
+    var cursors: [String?] = []
+    var holdings: [Set<String>] = []
     var failNext = false
     func fetch(
         cursor: String?,
@@ -69,7 +73,8 @@ final class ScriptedReplies: ReplySource, @unchecked Sendable {
         holding replyIDs: Set<String> = []
     ) async throws -> ReplyPage {
         _ = handledReplyIDs
-        _ = replyIDs
+        cursors.append(cursor)
+        holdings.append(replyIDs)
         await onFetch?()
         if failNext {
             failNext = false
@@ -93,6 +98,7 @@ final class Harness {
     var store: (any StatePersisting)?
     let allow = MemoryAllowlist()
     let replies = ScriptedReplies()
+    let httpReplies = ScriptedReplies()
     var secrets: any SecretProviding = StaticSecret(webhook: "hook-secret", reply: nil)
     var config = GenieConfig.productDefaults
 
@@ -135,6 +141,7 @@ final class Harness {
             stateStore: store ?? state,
             allowlistStore: allow,
             replySource: replies,
+            httpReplySource: httpReplies,
             sender: sender,
             webhook: webhook,
             secrets: secrets,

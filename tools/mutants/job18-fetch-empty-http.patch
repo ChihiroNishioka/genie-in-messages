@@ -1,0 +1,19 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -428,6 +428,7 @@
+             if let httpReplySource { lanes.append((.http, httpReplySource)) }
+             lanes.append((.notion, replySource))
+         } else if notion {
++            if let httpReplySource { lanes.append((.http, httpReplySource)) }
+             lanes.append((.notion, replySource))
+         } else if !rawURL.isEmpty {
+             lanes.append((.legacyHTTP, replySource))
+@@ -439,7 +440,7 @@
+         for (lane, source) in lanes {
+             if stop.isStopped { return .skippedStopped }
+             let detail: String? = dual ? lane.detail : nil
+-            if lane != .notion && EndpointURL.httpsOrLoopback(rawURL) == nil {
++            if lane != .notion && !rawURL.isEmpty && EndpointURL.httpsOrLoopback(rawURL) == nil {
+                 lastError = "url_not_https"
+                 log.record(level: .error, code: "url_not_https", chatID: nil, guid: nil, rowid: nil, detail: detail)
+                 failed = true

@@ -55,6 +55,7 @@ package struct EngineSnapshot: Equatable {
     package var screenLocked: Bool
     package var screenLock: ScreenLockState
     package var replyFetchConfigured: Bool
+    package var jobWebhookConfigured: Bool = false
     package var webhookConfigured: Bool
 }
 

@@ -1,0 +1,12 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -695,6 +695,9 @@
+         var last = "webhook_transport"
+         var attempt = 0
+         while attempt < maxAttempts {
++            let job = config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty
++            let rawURL = job ? config.jobWebhookURL : config.webhookURL
++            let url = (job ? EndpointURL.httpsOrLoopback(rawURL) : EndpointURL.https(rawURL)) ?? url
+             attempt += 1
+             if paused {
+                 return .deferredPaused
