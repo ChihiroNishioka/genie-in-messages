@@ -234,9 +234,8 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         if let snap = snapshot, !snap.webhookConfigured {
             label("webhook の URL が未設定です")
         }
-        if let snap = snapshot, !snap.jobWebhookConfigured,
-           let loaded = try? ConfigLoader.load(from: paths.configFile), !loaded.jobChatIDs.isEmpty {
-            label("Job Engine の URL が未設定か、使えない形です（空なら通常の webhook に送り、使えない形なら送信しません）")
+        if let line = snapshot?.jobRouteState.menuLine {
+            label(line)
         }
         if let snap = snapshot, !snap.replyFetchConfigured {
             label("返事の取得先が未設定です")

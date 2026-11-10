@@ -408,5 +408,75 @@
     "name": "JOB19",
     "patch": "job19-omit-job-config-docs.patch",
     "filter": "ConfigTests.testG19JobDocsAndExampleDescribeContract"
+  },
+  {
+    "name": "JOB20",
+    "patch": "job20-merge-menu-route-states.patch",
+    "filter": "JobMenuStateTests.testSnapshotDistinguishesEmptyAndInvalidJobURLs"
+  },
+  {
+    "name": "JOB21",
+    "patch": "job21-menu-rereads-config.patch",
+    "filter": "JobMenuStateTests.testMenuUsesSnapshotWithoutReloadingConfig"
+  },
+  {
+    "name": "JOB22",
+    "patch": "job22-snapshot-default-route.patch",
+    "filter": "JobMenuStateTests.testSnapshotHasNoJobWarningWithoutJobChatsOrWithValidJobURL"
+  },
+  {
+    "name": "JOB23",
+    "patch": "job23-reload-reply-source.patch",
+    "filter": "JobPollContractTests.testPollFreezesConfiguredNotionSourceBeforeHTTPAwait"
+  },
+  {
+    "name": "JOB24",
+    "patch": "job24-send-clears-fetch-errors.patch",
+    "filter": "JobReplyLaneTests.testG13FailureOfEitherSourceDoesNotBlockTheOther"
+  },
+  {
+    "name": "JOB25",
+    "patch": "job25-http-uses-notion-reconcile.patch",
+    "filter": "JobPollContractTests.testHTTPNotionShapedCursorStaysUnchangedWhileHeld"
+  },
+  {
+    "name": "JOB26",
+    "patch": "job26-clear-waiting-before-fetch.patch",
+    "filter": "JobPollContractTests.testFailedFetchKeepsChatWaitingIDsUntilSuccessfulFetch"
+  },
+  {
+    "name": "JOB27",
+    "patch": "job27-advance-unreadable-notion-cursor.patch",
+    "filter": "JobPollContractTests.testNotionUnreadableCursorDoesNotAdvanceWhileHeld"
+  },
+  {
+    "name": "JOB28",
+    "patch": "job-review-ordinary-retry-log.patch",
+    "filter": "JobReviewContractTests.testOrdinaryWebhookRetriesDoNotAddIntermediateErrorLogs"
+  },
+  {
+    "name": "JOB29",
+    "patch": "job-review-unreadable-no-retry.patch",
+    "filter": "JobReviewContractTests.testUnreadableJobSecretBacksOffRetriesAndKeepsJobError"
+  },
+  {
+    "name": "JOB30",
+    "patch": "job-review-unreadable-no-prefix.patch",
+    "filter": "JobReviewContractTests.testUnreadableJobSecretBacksOffRetriesAndKeepsJobError"
+  },
+  {
+    "name": "JOB31",
+    "patch": "job-review-doc-credentials.patch",
+    "filter": "JobReviewContractTests.testDocsDescribeJobEngineCredentials"
+  },
+  {
+    "name": "JOB32",
+    "patch": "job-review-doc-allowlists.patch",
+    "filter": "JobReviewContractTests.testDocsDescribeBothJobEngineAllowlists"
+  },
+  {
+    "name": "JOB33",
+    "patch": "job-review-hardware-checks.patch",
+    "filter": "JobReviewContractTests.testHardwareChecksHaveOneListInSpec"
   }
 ]

@@ -1,15 +1,15 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -446,7 +446,7 @@
-                 continue
-             }
-             do {
--                let savedCursor = lane == .http ? persisted.httpReplyCursor : persisted.replyCursor
-+                let savedCursor = persisted.replyCursor
-                 let cursor = lane == .legacyHTTP && NotionCursor.decode(savedCursor) != nil ? nil : savedCursor
-                 let page = try await source.fetch(
-                     cursor: cursor,
-@@ -480,7 +480,7 @@
+@@ -436,7 +436,7 @@
+             sources.append((.legacyHTTP, replySource))
+         }
+         let lanes = sources.map { lane, source in
+-            let savedCursor = lane == .http ? persisted.httpReplyCursor : persisted.replyCursor
++            let savedCursor = persisted.replyCursor
+             return (lane, source.prepared(for: pollConfig), savedCursor)
+         }
+         replyFetchErrors = replyFetchErrors.filter { key, _ in sources.contains { $0.0 == key } }
+@@ -492,7 +492,7 @@
                      }
                      if let next, next != savedCursor {
                          if lane == .http {

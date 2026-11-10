@@ -1,6 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -473,7 +473,7 @@
+@@ -485,7 +485,7 @@
                      let next: String?
                      if lane == .notion {
                          next = NotionCursor.reconcile(proposed: proposed, unhandled: unhandled)

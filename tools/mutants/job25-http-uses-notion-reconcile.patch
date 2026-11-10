@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -483,7 +483,7 @@
+                 }
+                 if let proposed = page.nextCursor {
+                     let next: String?
+-                    if lane == .notion {
++                    if lane == .notion || lane == .http {
+                         next = NotionCursor.reconcile(proposed: proposed, unhandled: unhandled)
+                     } else if unhandled.isEmpty {
+                         next = proposed

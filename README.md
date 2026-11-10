@@ -21,7 +21,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 署名IDは Apple Development 証明書の名前を引数か `GENIE_CODESIGN_IDENTITY` で渡す。アドホック署名は使わない。証明書はリポジトリに置かない。
 
-設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。Job Engine 用のトークンは別の `job-secret`（0600）。返事の取得用トークンは任意の `reply-secret`（0600）。秘密はコードに書かない。
+設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。Job Engine 用のトークンは別の `job-secret`（0600）。返事の取得用トークンは `reply-secret`（0600）。一般の GET JSON では任意だが、Job Engine では必須。秘密はコードに書かない。
 
 誰が呼べるかは、メニューのチャット許可（オン・オフ）だけ。オンのトークにいる人は全員。オフは自分の 🪔 も無視する。自分宛てトークは、グループでなく participant が1人で自分のハンドルと一致するときだけ、受信側の重複を無視する。表示名の表は任意で、反応には影響しない。`self_chat_ids` も任意で、書いた `chat_id` を自分宛てとして扱う。番号とメールは架空の例。
 
@@ -47,9 +47,13 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 }
 ```
 
+Job Engine を使うときは、`job-secret` と `reply-secret` に Job Engine の `GENIE_TOKEN` と同じ値を入れる。別のファイルだが、値は同じにする。Job Engine の返信取得では `reply-secret` が必須で、無いと 401 になる。
+
+Job Engine 側の `GENIE_ALLOWED_CHAT_IDS` と `ALLOWED_SOURCE_CHAT_IDS` に同じ `chat_id` を入れる。どちらかの許可に無いと `webhook_http_403` で再送せずに止まり、deadletter の kind は `job_webhook` になる。
+
 `job-secret` は自動では作られない。送信のたびに読み直し、欠落、空、0600以外なら送らず deadletter に残す。読めないときはバックオフして再試行する。通常の `secret` へは切り替えない。Job の deadletter は `kind: "job_webhook"` で、本文と秘密を残さない。
 
-`job_webhook_url` が空なら、指定したトークも通常の `webhook_url` に送る。空でないが使えない URL なら `url_not_https` で止める。メニューにもこの区別を出す。通常の `webhook_url` は https のみ。Job と `reply_fetch_url` は https に加え、host が `127.0.0.1`、`::1`、`localhost` の http だけを許す。例では名前解決の差を避けるため `127.0.0.1` を使う。macOS の ATS と loopback の http は実機で未確認。
+`job_webhook_url` が空なら、指定したトークも通常の `webhook_url` に送る。空でないが使えない URL なら `url_not_https` で止める。メニューにもこの区別を出す。通常の `webhook_url` は https のみ。Job と `reply_fetch_url` は https に加え、host が `127.0.0.1`、`::1`、`localhost` の http だけを許す。例では名前解決の差を避けるため `127.0.0.1` を使う。実機での確認が残る項目は SPEC の [実機で未確認のこと](SPEC.md#9-実機で未確認のこと) にまとめる。
 
 `imsg` は既定で `/opt/homebrew/opt/imsg/libexec/imsg` を直接起動する。パスは設定で変えられる。`/opt/homebrew/bin/imsg`（bash ラッパー）は使わない。
 
@@ -73,7 +77,7 @@ Notion の列は `reply_id`（title）、`chat_id`（number、確認用）、`in
 
 送り先は、webhook に渡したときの guid と chat_id の対応から決める。`reply_id` で冪等にする。必須の列が欠けた行、対応が無い行、取得元の chat_id と食い違う行は送らない。本文はログに出さない。
 
-GET JSON を使う場合の形は `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。`reply-secret`（0600）があれば Bearer を付ける。cursor は、そのページの id 付き返事を処理し終えるまで進めない。1ページは 100 件までを想定し、壊れた要素は飛ばしてログに残す。
+GET JSON を使う場合の形は `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。一般の GET JSON では `reply-secret`（0600）があれば Bearer を付ける。Job Engine では必須。cursor は、そのページの id 付き返事を処理し終えるまで進めない。1ページは 100 件までを想定し、壊れた要素は飛ばしてログに残す。
 
 両方から取るときは HTTP の cursor を `http_reply_cursor`、Notion の cursor を `reply_cursor` に保存する。HTTP は、そのページの id 付き返信がすべて処理済みになったときだけ進める。保留や送信中があれば進めない。処理済み ID は両方で共有し、取得元の ID は衝突しない前提。HTTP の cursor が止まったまま処理済み ID が5000件を超えると、捨てた ID の返信が再送されるおそれがある。
 

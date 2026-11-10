@@ -1,0 +1,12 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -442,7 +442,8 @@
+         replyFetchErrors = replyFetchErrors.filter { key, _ in sources.contains { $0.0 == key } }
+         if lanes.isEmpty { return finishReplyPoll(.notConfigured) }
+         let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs).union(chatWaitingReplyIDs)
+-        var clearedWaiting = false
++        chatWaitingReplyIDs.removeAll()
++        var clearedWaiting = true
+         var failed = false
+         for (lane, source, savedCursor) in lanes {
+             if stop.isStopped { return .skippedStopped }

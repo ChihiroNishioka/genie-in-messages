@@ -1,0 +1,11 @@
+--- a/README.md
++++ b/README.md
+@@ -49,7 +49,7 @@
+ 
+ Job Engine を使うときは、`job-secret` と `reply-secret` に Job Engine の `GENIE_TOKEN` と同じ値を入れる。別のファイルだが、値は同じにする。Job Engine の返信取得では `reply-secret` が必須で、無いと 401 になる。
+ 
+-Job Engine 側の `GENIE_ALLOWED_CHAT_IDS` と `ALLOWED_SOURCE_CHAT_IDS` に同じ `chat_id` を入れる。どちらかの許可に無いと `webhook_http_403` で再送せずに止まり、deadletter の kind は `job_webhook` になる。
++Job Engine 側の許可を設定する。どちらかの許可に無いと `webhook_http_403` で再送せずに止まり、deadletter の kind は `job_webhook` になる。
+ 
+ `job-secret` は自動では作られない。送信のたびに読み直し、欠落、空、0600以外なら送らず deadletter に残す。読めないときはバックオフして再試行する。通常の `secret` へは切り替えない。Job の deadletter は `kind: "job_webhook"` で、本文と秘密を残さない。
+ 

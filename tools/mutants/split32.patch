@@ -1,11 +1,11 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -432,7 +432,7 @@
-             lanes.append((.legacyHTTP, replySource))
+@@ -441,7 +441,7 @@
          }
+         replyFetchErrors = replyFetchErrors.filter { key, _ in sources.contains { $0.0 == key } }
          if lanes.isEmpty { return finishReplyPoll(.notConfigured) }
 -        let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs).union(chatWaitingReplyIDs)
 +        let holding = Set(holds.map(\.replyID)).union(inFlightReplyIDs)
-         chatWaitingReplyIDs.removeAll()
+         var clearedWaiting = false
          var failed = false
-         for (lane, source) in lanes {
+         for (lane, source, savedCursor) in lanes {

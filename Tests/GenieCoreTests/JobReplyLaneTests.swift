@@ -61,6 +61,8 @@ final class JobReplyLaneTests: XCTestCase {
             let e = try await h.opened()
             let result = await e.pollReplies()
             XCTAssertEqual(result, .fetchFailed)
+            let snapshot = await e.snapshot()
+            XCTAssertEqual(snapshot.lastError, "reply_fetch_failed")
             XCTAssertEqual(h.httpReplies.cursors.count, 1)
             XCTAssertEqual(h.replies.cursors.count, 1)
             XCTAssertEqual(h.sender.sent.map(\.text), [h.config.marker, httpFails ? "Notion" : "HTTP"])

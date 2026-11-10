@@ -135,6 +135,8 @@ flowchart LR
 ### 4.5 ボットとの受け渡し・秘密情報・ログ
 - `job_chat_ids` に入り、許可リストでもオンのトークは、空でない `job_webhook_url` に `job-secret` で送る。例は `http://127.0.0.1:3321/ingress/genie` と架空の `chat_id: 7`。送り先は許可と一時停止の判定後に1回だけ選び、再送中は固定する。JSON の9キー、`v: 1`、重複排除の契約は通常と同じ
 - `job_webhook_url` が空なら通常の `webhook_url` と `secret` を使う。空でないが無効なら `url_not_https` で止め、通常へ切り替えない。指定したトークがあり Job URL が未設定か無効ならメニューに区別を出す
+- Job Engine を使うときは、`job-secret` と `reply-secret` に Job Engine の `GENIE_TOKEN` と同じ値を入れる。ファイルは別だが、値は同じにする。Job Engine の返信取得では `reply-secret` が必須で、無いと 401 になる
+- Job Engine 側の `GENIE_ALLOWED_CHAT_IDS` と `ALLOWED_SOURCE_CHAT_IDS` に同じ `chat_id` を入れる。どちらかの許可に無いと `webhook_http_403` で再送せずに止まり、deadletter の kind は `job_webhook` になる
 - `job-secret` は0600で置き、送るたびに読み直す。自動作成しない。欠落、0600以外、空は `job_secret_missing`、`job_secret_mode`、`job_secret_empty` で deadletter にする。読めないときは `job_secret_unreadable` で通常と同じバックオフを使う。`secret` へ切り替えない
 - Job も2xxで成功。408、429、5xx、通信失敗は `webhook_max_attempts` まで再送し、ほかの4xxは再送しない。deadletter の kind は `job_webhook`。本文と秘密を残さない。成功の `webhook_delivered` と失敗の `webhook_http_<code>`、`webhook_transport` は Job のとき detail に `job` を付ける
 - 受け取るのは Grok Bot の、webhook で起動するルーチン。役割は何でも答える汎用アシスタント
@@ -162,7 +164,7 @@ flowchart LR
 - 通信は `URLSession.shared` を使わず、キャッシュしないセッションを使う。通常の `webhook_url` は https だけ。`job_webhook_url` と `reply_fetch_url` は https に加え、host が `127.0.0.1`、`::1`、`localhost` の http を許す。host は大文字と小文字を区別せず完全一致で比べる。似た名前や別のアドレスは許さない
 - webhook のシークレットは設定ディレクトリ（例: `~/.config/genie-in-messages/`、ディレクトリ700）の `secret`（600）。plist や引数・環境変数に入れない。送信のたびに読み直す（差し替えに再起動不要）
 - Notion のトークンも同じ扱い。`notion-token`（600）に置き、使うたびに読み直す。メニューの「Notion トークンを設定」から入れ、画面には出さない。状態表示は「設定済み」「未設定」「権限が 600 ではありません」だけ。Keychain は使わない
-- GET JSON の取得元を使うときのトークンは任意の `reply-secret`（600）
+- GET JSON の取得元を使うときのトークンは `reply-secret`（600）。一般の GET JSON では任意だが、Job Engine では必須
 
 ### 4.6 許可と署名
 - フルディスクアクセスは `.app` に付与。子の imsg はその許可で読める見込み（要実機確認）
@@ -291,14 +293,14 @@ flowchart LR
 
 ### 5.2 HTTP の取得元: GET JSON
 - `reply_fetch_url` があれば HTTP から取る。Notion もあれば1回の `pollReplies()` で HTTP、Notion の順に両方を取る。Notion の再試行で先に HTTP の返信を待たせないため。`job_chat_ids` のトークも、ほかのトークも、返信先は保存した `in_reply_to_guid` の対応で決める
-- Job の送り先例は `http://127.0.0.1:3321/ingress/genie` と `chat_id: 7`。`job-secret` と HTTP 返信取得用の `reply-secret` は別。Job URL と `reply_fetch_url` は loopback の http を許す。通常の `webhook_url` は https のまま
+- Job の送り先例は `http://127.0.0.1:3321/ingress/genie` と `chat_id: 7`。`job-secret` と HTTP 返信取得用の `reply-secret` は別のファイルだが、Job Engine を使う場合は両方に同じ `GENIE_TOKEN` の値を置く。Job URL と `reply_fetch_url` は loopback の http を許す。通常の `webhook_url` は https のまま
 - HTTP だけなら `reply_cursor`、Notion だけでも `reply_cursor` を使う。両方なら HTTP は `http_reply_cursor`、Notion は `reply_cursor` を使う。HTTP だけから両方へ切り替えても移さない。Notion に渡る古い HTTP cursor は初回相当となり、HTTP は空の `http_reply_cursor` から読み直す。Notion を外して HTTP だけに戻すとき、`reply_cursor` が Notion 形式なら cursor 無しで問い合わせる
 - HTTP の cursor は、取得元で規則を決める。ページの id 付き返信がすべて処理済みになったときだけ `nextCursor` を保存する。保留か送信中の返信があれば進めない。Notion の cursor 調整と保護する ID の規則は変えない。HTTP と Notion の処理済み ID は共有し、ID は衝突しない前提
 - 一覧照合、一時停止の確認、holding の作成と待ち ID の初期化は各 poll で1回だけ。各 await のあとに停止を確認する。片方が失敗してももう片方を取り、失敗した取得元の cursor は進めない。先に保存した結果は保つ。結果は `.fetchFailed` で、取得終了時刻は進める。両取得時の取得失敗ログの detail は `http` または `notion`。単独取得では付けない
 - 同じ guid の受付と完了も送れるよう、返信を送ったあとも対応表を残す。それぞれ印と本文の2通となり、既定の1分5件のレート制限にかかりやすい。Job Engine 側で受付の返信を控える選択肢がある
 - cursor の進行は Genie での処理を表し、配達の確認ではない。送り先不明、期限切れ、chat_id 不一致、許可オフ、空本文、合図のままの本文は送らず処理済みにする。送信結果、結果不明、deadletter を Job Engine に返す仕組みはない
 - HTTP cursor が止まっているあいだに処理済み ID が5000件を超えると、捨てた ID が再送されるおそれがある。個人利用ではこの件数を想定しない
-- 形: `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。`reply-secret` があれば Bearer。取得間隔の既定は10秒。壊れた要素は飛ばしてログに残す（本文は出さない）
+- 形: `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。一般の GET JSON では `reply-secret` があれば Bearer。Job Engine では必須。取得間隔の既定は10秒。壊れた要素は飛ばしてログに残す（本文は出さない）
 
 ### 5.3 読み終えた行の片付け
 - Mac は行を消さない（読むだけのトークンでは消せない）。通常の件数では、正しさは削除に依存しない。保留で水位が止まっているあいだに読み直しの範囲が 2000 行を超えると、それより後ろは読めない（5.1）
@@ -373,7 +375,9 @@ flowchart LR
 ## 9. 実機で未確認のこと
 
 - macOS の ATS が Job と HTTP 返信取得の loopback の http を許すか。Linux の検証では確認できない
-
+- Job Engine との疎通。Job の登録、HTTP 返信取得と cursor の通知を含む
+- Job Engine から取得した返信の iMessage 送信。印と本文の2通が実機で届くか
+- macOS の CI ジョブ。Linux での成功だけでは macOS のビルドとテストの成功は確認できない
 - 親アプリ（自作アプリ）に許可があれば子の imsg も chat.db を読めるか
 - 自作アプリからの初回オートメーション許可が実際にどう出るか
 - Apple Development 証明書で署名し直したあと、brew upgrade やアプリ再ビルドの後も許可が保たれるか

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/EngineTypes.swift
++++ b/Sources/GenieCore/EngineTypes.swift
+@@ -54,7 +54,7 @@
+         } else if config.jobWebhookURL.isEmpty {
+             self = .fallback
+         } else if EndpointURL.httpsOrLoopback(config.jobWebhookURL) == nil {
+-            self = .invalid
++            self = .fallback
+         } else {
+             self = .job
+         }

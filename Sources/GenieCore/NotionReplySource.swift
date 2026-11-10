@@ -149,7 +149,9 @@ struct NotionCursor: Codable, Equatable {
 
     /// 未処理の返事より先に水位を進めない。その ID は見たと覚えないので、次も読み直す。
     static func reconcile(proposed: String?, unhandled: [FetchedReply]) -> String? {
-        guard let proposed, var cursor = decode(proposed) else { return proposed }
+        guard let proposed, var cursor = decode(proposed) else {
+            return unhandled.isEmpty ? proposed : nil
+        }
         guard !unhandled.isEmpty else { return proposed }
         let drop = Set(unhandled.map(\.id))
         cursor.seen.removeAll { drop.contains($0.id) }

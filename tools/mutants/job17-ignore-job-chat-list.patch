@@ -7,6 +7,6 @@
 -            jobWebhookConfigured: !config.jobChatIDs.isEmpty
 -                && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
 +            jobWebhookConfigured: EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
+             jobRouteState: JobRouteState(config: config),
              webhookConfigured: EndpointURL.https(config.webhookURL) != nil
          )
-     }

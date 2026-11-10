@@ -1,9 +1,9 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -447,7 +447,7 @@
+@@ -454,7 +454,7 @@
+                 continue
              }
              do {
-                 let savedCursor = lane == .http ? persisted.httpReplyCursor : persisted.replyCursor
 -                let cursor = lane == .legacyHTTP && NotionCursor.decode(savedCursor) != nil ? nil : savedCursor
 +                let cursor = savedCursor
                  let page = try await source.fetch(
