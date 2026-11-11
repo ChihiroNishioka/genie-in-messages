@@ -80,6 +80,7 @@ package struct EngineSnapshot: Equatable {
     package var heldCount: Int
     package var heldLockCount: Int
     package var lastError: String?
+    package var replyFetchError: String? = nil
     /// 照合できずに送らなかった理由。最後のエラーとは別。
     package var holdNotice: String?
     package var screenLocked: Bool

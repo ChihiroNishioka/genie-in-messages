@@ -432,7 +432,7 @@
   {
     "name": "JOB24",
     "patch": "job24-send-clears-fetch-errors.patch",
-    "filter": "JobReplyLaneTests.testG13FailureOfEitherSourceDoesNotBlockTheOther"
+    "filter": "ErrorStatusTests.testSuccessfulSendDoesNotClearFetchFailure"
   },
   {
     "name": "JOB25",
@@ -478,5 +478,10 @@
     "name": "JOB33",
     "patch": "job-review-hardware-checks.patch",
     "filter": "JobReviewContractTests.testHardwareChecksHaveOneListInSpec"
+  },
+  {
+    "name": "JOB34",
+    "patch": "job34-snapshot-mixes-fetch-error.patch",
+    "filter": "ErrorStatusTests.testSendFailureRemainsVisibleDuringFetchFailureAndRecovery"
   }
 ]

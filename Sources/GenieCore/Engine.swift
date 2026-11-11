@@ -348,7 +348,8 @@ package actor GenieEngine {
             heldLockCount: holds.filter {
                 $0.reason == .screenLocked || $0.reason == .appleEventNotStarted
             }.count,
-            lastError: replyFetchErrors[.http] ?? replyFetchErrors[.legacyHTTP] ?? replyFetchErrors[.notion] ?? lastError,
+            lastError: lastError,
+            replyFetchError: replyFetchErrors[.http] ?? replyFetchErrors[.legacyHTTP] ?? replyFetchErrors[.notion],
             holdNotice: composedHoldNotice(now: clock.now()),
             screenLocked: screenLock == .locked,
             screenLock: screenLock,

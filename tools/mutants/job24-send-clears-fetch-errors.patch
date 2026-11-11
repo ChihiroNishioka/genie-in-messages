@@ -1,11 +1,10 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -348,7 +348,7 @@
-             heldLockCount: holds.filter {
-                 $0.reason == .screenLocked || $0.reason == .appleEventNotStarted
-             }.count,
--            lastError: replyFetchErrors[.http] ?? replyFetchErrors[.legacyHTTP] ?? replyFetchErrors[.notion] ?? lastError,
-+            lastError: lastError,
-             holdNotice: composedHoldNotice(now: clock.now()),
-             screenLocked: screenLock == .locked,
-             screenLock: screenLock,
+@@ -752,6 +752,7 @@
+                 )
+                 if (200...299).contains(response.statusCode) {
+                     lastError = nil
++                    replyFetchErrors.removeAll()
+                     log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
+                     return finish(event, .delivered)
+                 }
