@@ -400,7 +400,7 @@ final class SplitReplyTests: XCTestCase {
         XCTAssertEqual(sent, .ignoredSentGUID)
         XCTAssertEqual(within, .ignoredFingerprint)
         XCTAssertEqual(edge, .ignoredFingerprint)
-        XCTAssertEqual(after, .ignoredNoSignal)
+        XCTAssertEqual(after, .ignoredReplyMarker)
         XCTAssertEqual(body, .ignoredFingerprint)
         XCTAssertEqual(before, .ignoredNoSignal)
         XCTAssertEqual(duplicate, .duplicate)

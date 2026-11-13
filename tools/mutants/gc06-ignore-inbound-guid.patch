@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ConfigGroupAuthorization.swift
++++ b/Sources/GenieCore/ConfigGroupAuthorization.swift
+@@ -36,7 +36,7 @@
+ 
+     func permitsReceive(_ id: Int64, guid: String?) -> Bool {
+         guard let expected = resolved[id] else { return false }
+-        return guid == nil || guid == expected
++        return guid == nil || !expected.isEmpty
+     }
+ 
+     func expectedGUIDs(for id: Int64) -> [String] {

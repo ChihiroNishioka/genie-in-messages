@@ -20,5 +20,7 @@
   "notion_data_source_id": "",
   "self_sender_name": "me",
   "sender_names": {},
-  "self_chat_ids": []
+  "self_chat_ids": [],
+  "group_chat_guids": [],
+  "reply_marker": "🧞‍♂️"
 }

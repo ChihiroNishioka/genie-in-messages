@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/GenieConfig.swift
++++ b/Sources/GenieCore/GenieConfig.swift
+@@ -178,7 +178,7 @@
+         let defaults = GenieConfig.productDefaults
+         let c = try decoder.container(keyedBy: CodingKeys.self)
+         groupChatGUIDs = try c.decodeIfPresent([String].self, forKey: .groupChatGUIDs) ?? []
+-        replyMarker = try c.decodeIfPresent(String.self, forKey: .replyMarker) ?? ReplyComposer.markerText
++        replyMarker = ReplyComposer.markerText
+         replyMarkerInvalid = false
+         jobWebhookURL = try c.decodeIfPresent(String.self, forKey: .jobWebhookURL) ?? defaults.jobWebhookURL
+         jobChatIDs = try Self.decodeJobChatIDs(c)

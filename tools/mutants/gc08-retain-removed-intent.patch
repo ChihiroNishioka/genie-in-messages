@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1637,7 +1637,7 @@
+     private func refreshConfig() {
+         do {
+             config = try configProvider.load().sanitized()
+-            configGroups.refresh(guids: config.groupChatGUIDs)
++            if !config.groupChatGUIDs.isEmpty { configGroups.refresh(guids: config.groupChatGUIDs) }
+             noteConfigGroups()
+             if config.replyMarkerInvalid {
+                 if noticeLog.shouldLog("reply_marker_invalid") {

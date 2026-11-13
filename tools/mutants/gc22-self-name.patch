@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -660,7 +660,7 @@
+     /// 表示名。対応表が無くても、ここは反応の可否を変えない。ハンドルは返さない。
+     private func payloadSenderName(_ event: WatchEvent) -> String {
+         if event.isFromMe {
+-            return config.selfSenderName
++            return ""
+         }
+         if let mapped = config.displayName(matching: event.sender) {
+             return mapped

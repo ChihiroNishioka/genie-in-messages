@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/ChatAllowlist.swift
++++ b/Sources/GenieCore/ChatAllowlist.swift
+@@ -60,6 +60,6 @@
+ }
+ 
+ package func configGroupNotice(unresolved: Int) -> String? {
+-    guard unresolved > 0 else { return nil }
++    guard unresolved > 2 else { return nil }
+     return "設定のグループ \(unresolved) 件を一覧で確かめられません（chats_limit を増やすと入ることがあります）"
+ }

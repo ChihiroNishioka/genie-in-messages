@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1268,7 +1268,7 @@
+         if let entry = allowlist.entries.first(where: { $0.id == chatID }) {
+             expected.append(entry.guid)
+         }
+-        let allowed = expected.first(where: { $0 != current }) ?? expected.first ?? ""
++        let allowed = configGroups.resolved[chatID] ?? expected.first ?? ""
+         if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
+             return false
+         }

@@ -23,6 +23,7 @@ package actor GenieEngine {
     private var directoryHandleKeys: Set<String> = []
     /// watch の `destination_caller_id`。chats が読めなくても残る。
     private var watchHandleKeys: Set<String> = []
+    private var configGroups = ConfigGroupAuthorization()
     private var directoryChats: [Int64: DirectoryChat] = [:]
     /// 直近の一覧で見えた chat_id とその guid。空の guid は入れない。
     private var directoryGUIDs: [Int64: String] = [:]
@@ -182,7 +183,7 @@ package actor GenieEngine {
         }
         log.record(
             level: .info,
-            code: enabled ? "allowlist_on" : "allowlist_off",
+            code: enabled ? "allowlist_on" : (configGroups.permitsSend(id) ? "allowlist_off_config_locked" : "allowlist_off"),
             chatID: id,
             guid: nil,
             rowid: nil
@@ -250,6 +251,8 @@ package actor GenieEngine {
             }
         }
         if !reset {
+            configGroups.observe(chats, guids: config.groupChatGUIDs)
+            noteConfigGroups()
             if allowlistVerified() {
                 lastFetchVerified = true
                 clearWaitingLayers()
@@ -342,7 +345,7 @@ package actor GenieEngine {
         EngineSnapshot(
             paused: paused,
             cursorRowID: persisted.cursorRowID,
-            enabledChatIDs: allowlist.ids.sorted(),
+            enabledChatIDs: allowlist.ids.union(configGroups.resolved.keys).sorted(),
             haltedChatIDs: persisted.haltedChatIDs.sorted(),
             heldCount: holds.count,
             heldLockCount: holds.filter {
@@ -358,7 +361,9 @@ package actor GenieEngine {
             jobWebhookConfigured: !config.jobChatIDs.isEmpty
                 && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
             jobRouteState: JobRouteState(config: config),
-            webhookConfigured: EndpointURL.https(config.webhookURL) != nil
+            webhookConfigured: EndpointURL.https(config.webhookURL) != nil,
+            configChatIDs: configGroups.resolved.keys.sorted(),
+            configGroupUnresolved: configGroups.notFound + configGroups.notGroup
         )
     }
 
@@ -604,10 +609,13 @@ package actor GenieEngine {
             return finish(event, .ignoredFingerprint)
         }
         let normalized = TextNormalizer.nfc(event.text)
+        if ReplyComposer.isReplyMarker(normalized, marker: config.replyMarker) {
+            return finish(event, .ignoredReplyMarker)
+        }
         if !Signal.matches(normalized) {
             return finish(event, .ignoredNoSignal)
         }
-        guard let chatID = event.chatID, allowlist.contains(chatID) else {
+        guard let chatID = event.chatID, allowsReceive(chatID, guid: event.chatGUID) else {
             return finish(event, .ignoredNotAllowed)
         }
         if let key = SenderHandle.normalize(event.destinationCallerID) {
@@ -680,23 +688,6 @@ package actor GenieEngine {
         guard let url = job ? EndpointURL.httpsOrLoopback(rawURL) : EndpointURL.https(rawURL) else {
             return deadLetter(event, error: "url_not_https", attempts: 0, kind: kind, detail: detail)
         }
-        let payload = WebhookPayload(
-            v: 1,
-            event: "message",
-            idempotencyKey: event.guid,
-            guid: event.guid,
-            chatID: chatID,
-            text: text,
-            createdAt: event.createdAt,
-            senderIsMe: senderIsMe,
-            senderName: senderName
-        )
-        let body: Data
-        do {
-            body = try payload.encodeData()
-        } catch {
-            return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail)
-        }
         if !event.guid.isEmpty {
             rememberRoute(guid: event.guid, chatID: chatID)
             if !persist() {
@@ -708,11 +699,12 @@ package actor GenieEngine {
         var last = "webhook_transport"
         var attempt = 0
         while attempt < maxAttempts {
+            refreshConfig()
             attempt += 1
             if paused {
                 return .deferredPaused
             }
-            if !allowlist.contains(chatID) {
+            if !allowsReceive(chatID, guid: event.chatGUID) {
                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
                 return finish(event, .ignoredNotAllowed)
             }
@@ -739,10 +731,21 @@ package actor GenieEngine {
             if paused {
                 return .deferredPaused
             }
-            if !allowlist.contains(chatID) {
+            if !allowsReceive(chatID, guid: event.chatGUID) {
                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
                 return finish(event, .ignoredNotAllowed)
             }
+            let payload = WebhookPayload(
+                v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
+                chatID: chatID, text: text, createdAt: event.createdAt,
+                senderIsMe: senderIsMe, senderName: senderName,
+                senderHandle: !job && !senderIsMe && !config.selfChatIDs.contains(chatID)
+                    && configGroups.permitsReceive(chatID, guid: event.chatGUID)
+                    ? (SenderHandle.normalize(event.sender) ?? "") : nil
+            )
+            let body: Data
+            do { body = try payload.encodeData() }
+            catch { return deadLetter(event, error: "webhook_encode_failed", attempts: attempt, kind: kind, detail: detail) }
             do {
                 let response = try await webhook.post(
                     url: url,
@@ -846,14 +849,14 @@ package actor GenieEngine {
             return
         }
         let chatID = route.chatID
-        if !allowlist.contains(chatID) {
+        if !allowsSend(chatID) {
             log.record(level: .info, code: "reply_chat_disabled", chatID: chatID, guid: nil, rowid: nil)
             markReplyHandled(reply.id)
             persist()
             return
         }
         let body: String
-        switch ReplyComposer.split(body: reply.text) {
+        switch ReplyComposer.split(body: reply.text, marker: config.replyMarker) {
         case .emptyBody:
             markReplyHandled(reply.id)
             persisted.partialReplies.removeAll { $0.replyID == reply.id }
@@ -941,7 +944,7 @@ package actor GenieEngine {
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "marker"); return }
+        guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "marker"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
@@ -957,7 +960,7 @@ package actor GenieEngine {
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "marker"); return }
+        guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "marker"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
@@ -984,7 +987,7 @@ package actor GenieEngine {
         }
         let reservedAt = clock.now()
         countRate(chatID: chatID, at: reservedAt)
-        recordIntent(replyID: replyID, chatID: chatID, text: ReplyComposer.markerText,
+        recordIntent(replyID: replyID, chatID: chatID, text: config.replyMarker,
                      at: reservedAt, rateCounted: true, part: .marker)
         guard persist() else {
             releaseRate(chatID: chatID, at: reservedAt)
@@ -1002,7 +1005,7 @@ package actor GenieEngine {
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        if !allowlist.contains(chatID) {
+        if !allowsSend(chatID) {
             releaseRate(chatID: chatID, at: reservedAt)
             rollbackIntent(replyID: replyID)
             dropDisabled(replyID: replyID, chatID: chatID, detail: "marker")
@@ -1017,7 +1020,7 @@ package actor GenieEngine {
             return
         }
         let result: Result<SendReceipt, SendFailure>
-        do { result = .success(try await sender.send(chatID: chatID, text: ReplyComposer.markerText)) }
+        do { result = .success(try await sender.send(chatID: chatID, text: config.replyMarker)) }
         catch let failure as SendFailure { result = .failure(failure) }
         catch { result = .failure(.failed) }
         if generation != databaseGeneration {
@@ -1107,7 +1110,7 @@ package actor GenieEngine {
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+        guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
@@ -1123,7 +1126,7 @@ package actor GenieEngine {
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+        guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
@@ -1162,7 +1165,7 @@ package actor GenieEngine {
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
             return
         }
-        if !allowlist.contains(chatID) {
+        if !allowsSend(chatID) {
             rollbackIntent(replyID: replyID)
             dropDisabled(replyID: replyID, chatID: chatID, detail: "body")
             return
@@ -1261,7 +1264,11 @@ package actor GenieEngine {
     /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
         let current = directoryGUIDs[chatID] ?? ""
-        let allowed = allowlist.entries.first { $0.id == chatID }?.guid ?? ""
+        var expected = configGroups.expectedGUIDs(for: chatID)
+        if let entry = allowlist.entries.first(where: { $0.id == chatID }) {
+            expected.append(entry.guid)
+        }
+        let allowed = expected.first(where: { $0 != current }) ?? expected.first ?? ""
         if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
             return false
         }
@@ -1610,9 +1617,35 @@ package actor GenieEngine {
         }
     }
 
+    private func allowsReceive(_ id: Int64, guid: String?) -> Bool {
+        allowlist.contains(id) || configGroups.permitsReceive(id, guid: guid)
+    }
+
+    private func allowsSend(_ id: Int64) -> Bool {
+        allowlist.contains(id) || configGroups.permitsSend(id)
+    }
+
+    private func noteConfigGroups() {
+        for (code, count) in [("group_chat_not_found", configGroups.notFound), ("group_chat_not_group", configGroups.notGroup)] {
+            if count == 0 { noticeLog.resolve([code]) }
+            else if noticeLog.shouldLog(code) {
+                log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil, detail: String(count))
+            }
+        }
+    }
+
     private func refreshConfig() {
         do {
             config = try configProvider.load().sanitized()
+            configGroups.refresh(guids: config.groupChatGUIDs)
+            noteConfigGroups()
+            if config.replyMarkerInvalid {
+                if noticeLog.shouldLog("reply_marker_invalid") {
+                    log.record(level: .warning, code: "reply_marker_invalid", chatID: nil, guid: nil, rowid: nil)
+                }
+            } else {
+                noticeLog.resolve(["reply_marker_invalid"])
+            }
         } catch {
             lastError = "config_unreadable"
             log.record(level: .error, code: "config_unreadable", chatID: nil, guid: nil, rowid: nil)
@@ -1670,6 +1703,7 @@ package actor GenieEngine {
 
     private func resetForDatabaseSwap(_ identity: ChatIdentity) {
         databaseGeneration &+= 1
+        configGroups = ConfigGroupAuthorization()
         persisted.knownChats = [identity]
         persisted.cursorRowID = 0
         persisted.routes = []

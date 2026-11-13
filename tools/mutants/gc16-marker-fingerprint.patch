@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -987,7 +987,7 @@
+         }
+         let reservedAt = clock.now()
+         countRate(chatID: chatID, at: reservedAt)
+-        recordIntent(replyID: replyID, chatID: chatID, text: config.replyMarker,
++        recordIntent(replyID: replyID, chatID: chatID, text: ReplyComposer.markerText,
+                      at: reservedAt, rateCounted: true, part: .marker)
+         guard persist() else {
+             releaseRate(chatID: chatID, at: reservedAt)

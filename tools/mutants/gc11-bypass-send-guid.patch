@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1263,6 +1263,8 @@
+     /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
+     /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
+     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
++        return false
++
+         let current = directoryGUIDs[chatID] ?? ""
+         var expected = configGroups.expectedGUIDs(for: chatID)
+         if let entry = allowlist.entries.first(where: { $0.id == chatID }) {

@@ -1,9 +1,9 @@
 --- a/Sources/GenieCore/ReplyComposer.swift
 +++ b/Sources/GenieCore/ReplyComposer.swift
-@@ -42,7 +42,7 @@
-                Array(scalars.prefix(genie.count)).map(\.value) == genie {
-                 scalars.removeFirst(genie.count)
-                 if scalars.first?.value == 0xFE0F { scalars.removeFirst() }
+@@ -64,7 +64,7 @@
+             }
+             if let count = prefixes.compactMap({ prefixLength($0, in: scalars) }).first {
+                 scalars.removeFirst(count)
 -                changed = true
 +                changed = false
              }

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -739,7 +739,7 @@
+                 v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
+                 chatID: chatID, text: text, createdAt: event.createdAt,
+                 senderIsMe: senderIsMe, senderName: senderName,
+-                senderHandle: !job && !senderIsMe && !config.selfChatIDs.contains(chatID)
++                senderHandle: !senderIsMe && !config.selfChatIDs.contains(chatID)
+                     && configGroups.permitsReceive(chatID, guid: event.chatGUID)
+                     ? (SenderHandle.normalize(event.sender) ?? "") : nil
+             )

@@ -1,7 +1,7 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -980,7 +980,7 @@
-         do { result = .success(try await sender.send(chatID: chatID, text: ReplyComposer.markerText)) }
+@@ -1023,7 +1023,7 @@
+         do { result = .success(try await sender.send(chatID: chatID, text: config.replyMarker)) }
          catch let failure as SendFailure { result = .failure(failure) }
          catch { result = .failure(.failed) }
 -        if generation != databaseGeneration {

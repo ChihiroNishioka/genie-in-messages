@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1644,7 +1644,7 @@
+                     log.record(level: .warning, code: "reply_marker_invalid", chatID: nil, guid: nil, rowid: nil)
+                 }
+             } else {
+-                noticeLog.resolve(["reply_marker_invalid"])
++                noticeLog.resolve([])
+             }
+         } catch {
+             lastError = "config_unreadable"

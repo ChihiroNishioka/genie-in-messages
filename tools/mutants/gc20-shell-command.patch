@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/ImsgCommand.swift
++++ b/Sources/GenieCore/ImsgCommand.swift
+@@ -18,6 +18,6 @@
+     /// imsg 0.19.1 の `send` は本文を `--text` でしか受けない。標準入力も本文ファイルもない。
+     /// `--file` は添付であって本文ではない。
+     package static func sendArguments(chatID: Int64, text: String) -> [String] {
+-        ["send", "--chat-id", String(chatID), "--text", text, "--json"]
++        ["/bin/sh", "-c", "imsg send --chat-id \(chatID) --text \(text) --json"]
+     }
+ }

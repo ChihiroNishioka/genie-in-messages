@@ -89,6 +89,8 @@ package struct EngineSnapshot: Equatable {
     package var jobWebhookConfigured: Bool = false
     package var jobRouteState: JobRouteState = .ordinary
     package var webhookConfigured: Bool
+    package var configChatIDs: [Int64] = []
+    package var configGroupUnresolved: Int = 0
 }
 
 package enum IngestResult: Equatable {
@@ -99,6 +101,7 @@ package enum IngestResult: Equatable {
     case ignoredNotFromMe
     case ignoredNotAllowed
     case ignoredNoSignal
+    case ignoredReplyMarker
     case ignoredMutation
     case ignoredSentGUID
     case ignoredFingerprint

@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -168,6 +168,7 @@
+     }
+ 
+     package func setChatEnabled(_ id: Int64, guid: String = "", enabled: Bool) {
++        if !enabled { configGroups = ConfigGroupAuthorization() }
+         let previous = allowlist
+         allowlist.entries.removeAll { $0.id == id }
+         if enabled {

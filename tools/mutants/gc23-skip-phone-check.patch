@@ -1,0 +1,11 @@
+--- a/scripts/check-tracked-text.py
++++ b/scripts/check-tracked-text.py
+@@ -106,7 +106,7 @@
+     if TOKEN.search(text):
+         found.add("token")
+     if any(phone_is_personal(item.group(0)) for item in PHONE.finditer(text)):
+-        found.add("phone")
++        pass
+     if ADDRESS.search(text):
+         found.add("address")
+     return found

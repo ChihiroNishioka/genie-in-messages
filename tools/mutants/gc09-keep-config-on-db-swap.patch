@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1703,7 +1703,7 @@
+ 
+     private func resetForDatabaseSwap(_ identity: ChatIdentity) {
+         databaseGeneration &+= 1
+-        configGroups = ConfigGroupAuthorization()
++        // Mutant retains the old database binding.
+         persisted.knownChats = [identity]
+         persisted.cursorRowID = 0
+         persisted.routes = []
