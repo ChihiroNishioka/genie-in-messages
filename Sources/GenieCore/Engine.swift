@@ -203,6 +203,7 @@ package actor GenieEngine {
     /// 一覧の読み取り結果を反映する。止まっていたら、状態を変えずに捨てる。
     package func applyChatList(_ read: ChatListRead) -> ChatListApplyResult {
         if stop.isStopped { return .discarded }
+        if paused { refreshConfig() }
         switch read {
         case .failed:
             noteFetchFailure()
@@ -352,7 +353,8 @@ package actor GenieEngine {
     }
 
     package func snapshot() -> EngineSnapshot {
-        EngineSnapshot(
+        if paused { refreshConfig() }
+        return EngineSnapshot(
             paused: paused,
             cursorRowID: persisted.cursorRowID,
             enabledChatIDs: allowlist.ids.union(configGroups.resolved.keys).sorted(),

@@ -728,5 +728,10 @@
     "name": "G-GC-FIX1-NONGROUP-ADVICE",
     "patch": "gc-fix1-nongroup-list-advice.patch",
     "filter": "GroupNoticeTests.testNotGroupNoticeRecommendsReviewingConfigInsteadOfIncreasingListLimit"
+  },
+  {
+    "name": "GF2-PAUSED-CONFIG-STALE",
+    "patch": "fix2-paused-config-stale.patch",
+    "filter": "GroupChatTests.testPausedConfigRefreshUpdatesRowsWithoutRestartingTraffic"
   }
 ]

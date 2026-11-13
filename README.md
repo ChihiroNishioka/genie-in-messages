@@ -23,6 +23,8 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。Job Engine 用のトークンは別の `job-secret`（0600）。返事の取得用トークンは `reply-secret`（0600）。一般の GET JSON では任意だが、Job Engine では必須。秘密はコードに書かない。
 
+一時停止中に設定を変えたら、許可ウィンドウの「一覧を更新」を押して表示を確認します。一時停止中は「一覧を更新」と snapshot のときにも設定を読み直します。受信・送信・再試行・返信のポーリングは再開しません。
+
 誰が呼べるかは、メニューのチャット許可と、設定で許可したグループの和。オンのトークにいる人は全員。オフは自分の 🪔 も無視する。自分宛てトークは、グループでなく participant が1人で自分のハンドルと一致するときだけ、受信側の重複を無視する。表示名の表は任意で、反応には影響しない。`self_chat_ids` も任意で、書いた `chat_id` を自分宛てとして扱う。番号とメールは架空の例。
 
 ```json

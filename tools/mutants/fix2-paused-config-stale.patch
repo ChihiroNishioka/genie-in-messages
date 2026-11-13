@@ -1,0 +1,18 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -203,7 +203,6 @@
+     /// 一覧の読み取り結果を反映する。止まっていたら、状態を変えずに捨てる。
+     package func applyChatList(_ read: ChatListRead) -> ChatListApplyResult {
+         if stop.isStopped { return .discarded }
+-        if paused { refreshConfig() }
+         switch read {
+         case .failed:
+             noteFetchFailure()
+@@ -353,7 +352,6 @@
+     }
+ 
+     package func snapshot() -> EngineSnapshot {
+-        if paused { refreshConfig() }
+         return EngineSnapshot(
+             paused: paused,
+             cursorRowID: persisted.cursorRowID,

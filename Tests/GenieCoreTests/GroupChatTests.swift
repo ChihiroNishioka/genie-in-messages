@@ -46,6 +46,62 @@ final class GroupChatTests: XCTestCase {
         h.replies.pages = [ReplyPage(replies: [routedReply(id, chat: chat, text: "answer", guid: origin)], nextCursor: nil)]
     }
 
+    func testPausedConfigRefreshUpdatesRowsWithoutRestartingTraffic() async throws {
+        for refreshList in [false, true] {
+            let (h, p, e) = try setup()
+            await e.showChats(chats())
+            let initial = await receive(e, input())
+            XCTAssertEqual(initial, .delivered)
+            h.lock.locked = true
+            reply(h)
+            _ = await e.pollReplies()
+            let held = await e.snapshot()
+            XCTAssertEqual(held.heldCount, 1)
+            await e.setPaused(true)
+            h.lock.locked = false
+            p.config.groupChatGUIDs = []
+            _ = await e.ingestWatchLine("")
+            p.config.groupChatGUIDs = [group, other]
+            let fetches = h.replies.cursors.count
+            let deliveries = h.webhook.bodies.count
+            let reader = ScriptedChatLists(script: [
+                .parsed(ChatListParse(chats: chats(), failedLineCount: 0))
+            ])
+            let poller = GeniePoller(engine: e, reader: reader, configProvider: p,
+                clock: h.clock, stop: h.stop)
+            if refreshList {
+                await poller.requestChatsRefresh()
+                _ = await poller.tick()
+                XCTAssertTrue(h.log.records.contains { $0.code == "group_chat_not_found" })
+            }
+            let snapshot = await e.snapshot()
+            XCTAssertTrue(snapshot.paused)
+            XCTAssertEqual(snapshot.configChatIDs, [42])
+            XCTAssertEqual(snapshot.configGroupNotFound, 1)
+            XCTAssertEqual(snapshot.configGroupUnresolved, 1)
+            let rows = AllowlistOrdering.rows(chats: chats(), enabledIDs: Set(snapshot.enabledChatIDs),
+                query: "", configIDs: Set(snapshot.configChatIDs))
+            XCTAssertEqual(rows.first?.kindLabel, "グループ（設定）")
+            XCTAssertEqual(rows.first?.configLocked, true)
+            if !refreshList { _ = await poller.tick() }
+            let pausedPoll = await e.pollReplies()
+            XCTAssertEqual(pausedPoll, .skippedPaused)
+            await e.retryHolds()
+            let received = await receive(e, input(2))
+            XCTAssertEqual(received, .deferredPaused)
+            XCTAssertEqual(h.webhook.bodies.count, deliveries)
+            XCTAssertEqual(h.replies.cursors.count, fetches)
+            XCTAssertTrue(h.sender.sent.isEmpty)
+            let stillPaused = await e.snapshot()
+            XCTAssertEqual(stillPaused.heldCount, 1)
+            await e.setPaused(false)
+            let resumed = await receive(e, input(2))
+            XCTAssertEqual(resumed, .delivered)
+            await e.retryHolds()
+            XCTAssertEqual(h.sender.sent.map(\.chatID), [42, 42])
+        }
+    }
+
     func testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges() async throws {
         for changedGUID in [false, true] {
             let (_, p, e) = try setup(menu: true)

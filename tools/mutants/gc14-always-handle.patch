@@ -1,11 +1,11 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -741,7 +741,7 @@
+@@ -707,7 +707,7 @@
                  senderIsMe: senderIsMe, senderName: senderName,
                  senderHandle: !job && !senderIsMe && !config.selfChatIDs.contains(chatID)
                      && configGroups.permitsReceive(chatID, guid: event.chatGUID)
 -                    ? (SenderHandle.normalize(event.sender) ?? "") : nil
 +                    ? (SenderHandle.normalize(event.sender) ?? "") : ""
              )
-             let body: Data
-             do { body = try payload.encodeData() }
+             return try payload.encodeData()
+         }

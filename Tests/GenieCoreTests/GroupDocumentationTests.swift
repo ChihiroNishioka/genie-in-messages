@@ -1,4 +1,5 @@
 import XCTest
+@testable import GenieCore
 
 final class GroupDocumentationTests: XCTestCase {
     private func readme() throws -> String {
@@ -49,6 +50,37 @@ final class GroupDocumentationTests: XCTestCase {
         for required in ["### 4.11 設定で許可するグループ", "21. 設定で許可するグループ", "22. 返信の目印", "`group_chat_guids`", "`reply_marker`", "`sender_handle`", "最後の対応先", "各試行の前に", "設定から作る許可表", "メモリ"] {
             XCTAssertTrue(spec.contains(required), required)
         }
+    }
+
+    func testSpecDescribesConfigLockedMutationsWithoutChangingEitherPermission() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        XCTAssertTrue(spec.contains("設定の行では `setChatEnabled` のオン・オフと `toggleChat` はどちらも許可を変更しない"))
+        XCTAssertTrue(spec.contains("`allowlist_off_config_locked` は info、chat_id だけを記録する"))
+        XCTAssertFalse(spec.contains("`setChatEnabled(_, enabled: false)` はメニュー側だけを外し"))
+    }
+
+    func testSpecStopsBothPermissionSourcesInOrder() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let pause = try XCTUnwrap(spec.range(of: "対象のグループを止めるときは、まず全体を一時停止する。"))
+        let remove = try XCTUnwrap(spec.range(of: "次に `group_chat_guids` から対象の guid を消す。"))
+        let disable = try XCTUnwrap(spec.range(of: "メニューでも許可していた場合は、設定から消したあとにメニューのスイッチをオフにする。"))
+        XCTAssertLessThan(pause.lowerBound, remove.lowerBound)
+        XCTAssertLessThan(remove.lowerBound, disable.lowerBound)
+        XCTAssertFalse(spec.contains("止めるときは全体を一時停止するか設定から消す"))
+    }
+
+    func testSpecDescribesSeparateUnresolvedNoticesAndSnapshotFields() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        for notice in [configGroupNotice(notFound: 1, notGroup: 0), configGroupNotice(notFound: 0, notGroup: 1)] {
+            XCTAssertTrue(spec.contains(try XCTUnwrap(notice)))
+        }
+        for field in ["configChatIDs: [Int64]", "configGroupUnresolved: Int", "configGroupNotFound: Int", "configGroupNotGroup: Int"] {
+            XCTAssertTrue(spec.contains("`\(field)`"), field)
+        }
+        XCTAssertTrue(spec.contains("`configChatIDs` は設定の意思に対応する最後の chat_id"))
+        XCTAssertTrue(spec.contains("`configGroupUnresolved` は2種類の未解決件数の合計"))
+        XCTAssertFalse(spec.contains("設定のグループ N 件を一覧で確かめられません"))
+        XCTAssertFalse(spec.contains("`configGroupUnresolved: Int` のみ"))
     }
 
     func testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph() throws {
