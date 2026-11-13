@@ -91,6 +91,8 @@ package struct EngineSnapshot: Equatable {
     package var webhookConfigured: Bool
     package var configChatIDs: [Int64] = []
     package var configGroupUnresolved: Int = 0
+    package var configGroupNotFound: Int = 0
+    package var configGroupNotGroup: Int = 0
 }
 
 package enum IngestResult: Equatable {

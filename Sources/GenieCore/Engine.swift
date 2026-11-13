@@ -154,6 +154,11 @@ package actor GenieEngine {
     /// いまの許可から反転する。連打はアクターの中で順に効く。
     /// 一覧外の行は guid を持たないので、オンに戻すときは知っている guid を使う。
     package func toggleChat(id: Int64, guid: String) {
+        refreshConfig()
+        if configGroups.intentChatIDs.contains(id) {
+            log.record(level: .info, code: "allowlist_off_config_locked", chatID: id, guid: nil, rowid: nil)
+            return
+        }
         let enabled = !allowlist.contains(id)
         let resolved: String
         if enabled && guid.isEmpty {
@@ -168,6 +173,11 @@ package actor GenieEngine {
     }
 
     package func setChatEnabled(_ id: Int64, guid: String = "", enabled: Bool) {
+        refreshConfig()
+        if configGroups.intentChatIDs.contains(id) {
+            log.record(level: .info, code: "allowlist_off_config_locked", chatID: id, guid: nil, rowid: nil)
+            return
+        }
         let previous = allowlist
         allowlist.entries.removeAll { $0.id == id }
         if enabled {
@@ -183,7 +193,7 @@ package actor GenieEngine {
         }
         log.record(
             level: .info,
-            code: enabled ? "allowlist_on" : (configGroups.permitsSend(id) ? "allowlist_off_config_locked" : "allowlist_off"),
+            code: enabled ? "allowlist_on" : "allowlist_off",
             chatID: id,
             guid: nil,
             rowid: nil
@@ -362,8 +372,10 @@ package actor GenieEngine {
                 && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
             jobRouteState: JobRouteState(config: config),
             webhookConfigured: EndpointURL.https(config.webhookURL) != nil,
-            configChatIDs: configGroups.resolved.keys.sorted(),
-            configGroupUnresolved: configGroups.notFound + configGroups.notGroup
+            configChatIDs: configGroups.intentChatIDs.sorted(),
+            configGroupUnresolved: configGroups.notFound + configGroups.notGroup,
+            configGroupNotFound: configGroups.notFound,
+            configGroupNotGroup: configGroups.notGroup
         )
     }
 
@@ -688,6 +700,19 @@ package actor GenieEngine {
         guard let url = job ? EndpointURL.httpsOrLoopback(rawURL) : EndpointURL.https(rawURL) else {
             return deadLetter(event, error: "url_not_https", attempts: 0, kind: kind, detail: detail)
         }
+        func encodePayload() throws -> Data {
+            let payload = WebhookPayload(
+                v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
+                chatID: chatID, text: text, createdAt: event.createdAt,
+                senderIsMe: senderIsMe, senderName: senderName,
+                senderHandle: !job && !senderIsMe && !config.selfChatIDs.contains(chatID)
+                    && configGroups.permitsReceive(chatID, guid: event.chatGUID)
+                    ? (SenderHandle.normalize(event.sender) ?? "") : nil
+            )
+            return try payload.encodeData()
+        }
+        do { _ = try encodePayload() }
+        catch { return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail) }
         if !event.guid.isEmpty {
             rememberRoute(guid: event.guid, chatID: chatID)
             if !persist() {
@@ -735,16 +760,8 @@ package actor GenieEngine {
                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
                 return finish(event, .ignoredNotAllowed)
             }
-            let payload = WebhookPayload(
-                v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
-                chatID: chatID, text: text, createdAt: event.createdAt,
-                senderIsMe: senderIsMe, senderName: senderName,
-                senderHandle: !job && !senderIsMe && !config.selfChatIDs.contains(chatID)
-                    && configGroups.permitsReceive(chatID, guid: event.chatGUID)
-                    ? (SenderHandle.normalize(event.sender) ?? "") : nil
-            )
             let body: Data
-            do { body = try payload.encodeData() }
+            do { body = try encodePayload() }
             catch { return deadLetter(event, error: "webhook_encode_failed", attempts: attempt, kind: kind, detail: detail) }
             do {
                 let response = try await webhook.post(
@@ -1703,7 +1720,7 @@ package actor GenieEngine {
 
     private func resetForDatabaseSwap(_ identity: ChatIdentity) {
         databaseGeneration &+= 1
-        configGroups = ConfigGroupAuthorization()
+        configGroups.resetVerification()
         persisted.knownChats = [identity]
         persisted.cursorRowID = 0
         persisted.routes = []

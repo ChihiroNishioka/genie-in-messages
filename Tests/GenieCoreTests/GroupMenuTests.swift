@@ -31,8 +31,8 @@ final class GroupMenuTests: XCTestCase {
     }
 
     func testUnresolvedGroupNoticeContainsOnlyCountAndAdvice() {
-        XCTAssertNil(configGroupNotice(unresolved: 0))
-        XCTAssertEqual(configGroupNotice(unresolved: 2), "設定のグループ 2 件を一覧で確かめられません（chats_limit を増やすと入ることがあります）")
+        XCTAssertNil(configGroupNotice(notFound: 0, notGroup: 0))
+        XCTAssertEqual(configGroupNotice(notFound: 2, notGroup: 0), "設定のグループ 2 件が一覧に見つかりません（chats_limit を増やすと入ることがあります）")
     }
 
     func testGroupNoticeDoesNotChangeLampState() {

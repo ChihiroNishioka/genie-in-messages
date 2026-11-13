@@ -1,0 +1,11 @@
+--- a/README.md
++++ b/README.md
+@@ -81,7 +81,7 @@
+ 
+ 通常の webhook には、設定で許可したグループの他メンバーからの合図だけに `sender_handle` を付けます。他メンバーの sender の形と、受け側が未知のキーを受け付けるかは実機未確認です。正規化したハンドルで、例えば `tel:+15550100000` や `email:family@example.com`。自分、自分宛て、1対1、メニューだけのグループには付けません。ログ、state、deadletter、allowlist、snapshot、メニューにはハンドルを残しません。設定の guid もログとメニューへ出しません。
+ 
+-`reply_marker` は、先頭の書記素が絵文字のときだけ有効です。先頭が Emoji_Presentation の絵文字、または U+FE0F（VS16）付きの絵文字である必要があります。`A`、`あ`、`#`、VS16 のない `🕊` は無効で、`🕊️` は有効です。無効な値は既定の 🧞‍♂️ に戻し、値を出さず `reply_marker_invalid` をログに記録します。ほかの長さや不可視文字の制約は SPEC の 4.9 を参照してください。
++`reply_marker` は、任意の文字列を指定できます。`A`、`あ`、`#`、VS16 のない `🕊` は無効で、`🕊️` は有効です。無効な値は既定の 🧞‍♂️ に戻し、値を出さず `reply_marker_invalid` をログに記録します。ほかの長さや不可視文字の制約は SPEC の 4.9 を参照してください。
+ 
+ Job 経路には `sender_handle` を付けない規則です。Job Engine は他メンバーの合図を200 `ignored` にして返事しないため、家族のグループは `job_chat_ids` に入れません。`job_webhook_url` が空で通常経路に戻る場合は、通常 webhook の規則になります。
+ 

@@ -658,5 +658,75 @@
     "name": "GC-RETRY-NO-CONFIG-REFRESH",
     "patch": "gc-retry-no-config-refresh.patch",
     "filter": "GroupChatTests.testRetryRefreshRevokesPermissionOrHandleSharing"
+  },
+  {
+    "name": "GF1-SNAPSHOT-RESOLVED-ONLY",
+    "patch": "fix1-snapshot-resolved-only.patch",
+    "filter": "GroupChatTests.testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges"
+  },
+  {
+    "name": "GF1-RESET-FORGETS-INTENT",
+    "patch": "fix1-reset-forgets-intent.patch",
+    "filter": "GroupChatTests.testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges"
+  },
+  {
+    "name": "GF1-ENGINE-UNLOCKS-CONFIG",
+    "patch": "fix1-engine-unlocks-config.patch",
+    "filter": "GroupChatTests.testConfigLockedEngineMutationsLeaveMenuPermissionUntouched"
+  },
+  {
+    "name": "GF1-ALLOWLIST-FILE",
+    "patch": "fix1-engine-unlocks-config.patch",
+    "filter": "GroupChatTests.testConfigOnlyGroupIsNeverWrittenToAllowlistFile"
+  },
+  {
+    "name": "GF1-FORGET-MENU-OFF",
+    "patch": "fix1-forget-menu-off.patch",
+    "filter": "GroupChatTests.testRemovingConfigThenTurningMenuOffStopsReceiving"
+  },
+  {
+    "name": "GF1-PAYLOAD-AFTER-ROUTE",
+    "patch": "fix1-payload-after-route.patch",
+    "filter": "GroupTransportTests.testPayloadEncodingFailurePrecedesRouteRecording"
+  },
+  {
+    "name": "GF1-MERGE-UNRESOLVED-COUNTS",
+    "patch": "fix1-merge-unresolved-counts.patch",
+    "filter": "GroupNoticeTests.testMixedUnresolvedNoticeKeepsEachCountAndAdviceWithoutGUIDs"
+  },
+  {
+    "name": "GF1-DOC-MARKER",
+    "patch": "fix1-doc-marker.patch",
+    "filter": "GroupDocumentationTests.testMarkerDocumentsFirstGraphemeEmojiConstraint"
+  },
+  {
+    "name": "GF1-DOC-STOP",
+    "patch": "fix1-doc-stop.patch",
+    "filter": "GroupDocumentationTests.testReadmeStopsBothPermissionSourcesInOrder"
+  },
+  {
+    "name": "GF1-DOC-DISPLAY",
+    "patch": "fix1-doc-display.patch",
+    "filter": "GroupDocumentationTests.testReadmePlacesUnverifiedCaveatsNearGroupBehavior"
+  },
+  {
+    "name": "GF1-DOC-SENDER",
+    "patch": "fix1-doc-sender.patch",
+    "filter": "GroupDocumentationTests.testReadmePlacesUnverifiedCaveatsNearGroupBehavior"
+  },
+  {
+    "name": "GF1-DOC-PHONE",
+    "patch": "fix1-doc-phone.patch",
+    "filter": "GroupDocumentationTests.testReadmeContrastsPhoneNumberSeparators"
+  },
+  {
+    "name": "G-GC-FIX1-EMOJI",
+    "patch": "gc-fix1-allow-nonemoji-marker.patch",
+    "filter": "GroupMarkerTests.testReplyMarkerRequiresEmojiFirstGraphemeAndReportsInvalidWithoutTruncatingText"
+  },
+  {
+    "name": "G-GC-FIX1-NONGROUP-ADVICE",
+    "patch": "gc-fix1-nongroup-list-advice.patch",
+    "filter": "GroupNoticeTests.testNotGroupNoticeRecommendsReviewingConfigInsteadOfIncreasingListLimit"
   }
 ]

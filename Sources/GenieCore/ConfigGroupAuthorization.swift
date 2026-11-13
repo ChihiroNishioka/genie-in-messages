@@ -4,6 +4,17 @@ import Foundation
 struct ConfigGroupAuthorization {
     private var chats: [ChatSummary]?
     private var lastIDs: [String: Int64] = [:]
+    private var intendedIDs: [String: Int64] = [:]
+
+    var intentChatIDs: Set<Int64> { Set(intendedIDs.values) }
+
+    mutating func resetVerification() {
+        chats = nil
+        lastIDs = [:]
+        resolved = [:]
+        notFound = 0
+        notGroup = 0
+    }
     private(set) var resolved: [Int64: String] = [:]
     private(set) var notFound = 0
     private(set) var notGroup = 0
@@ -16,6 +27,7 @@ struct ConfigGroupAuthorization {
     mutating func refresh(guids: [String]) {
         let intended = Set(guids)
         lastIDs = lastIDs.filter { intended.contains($0.key) }
+        intendedIDs = intendedIDs.filter { intended.contains($0.key) }
         resolved = [:]
         notFound = 0
         notGroup = 0
@@ -29,6 +41,7 @@ struct ConfigGroupAuthorization {
                 notGroup += 1
                 continue
             }
+            intendedIDs[guid] = chat.id
             lastIDs[guid] = chat.id
             resolved[chat.id] = guid
         }

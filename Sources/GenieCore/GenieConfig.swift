@@ -115,7 +115,10 @@ package struct GenieConfig: Equatable, Sendable {
 
     private static func isValidReplyMarker(_ marker: String) -> Bool {
         guard !TextNormalizer.isBlank(marker),
-              let first = marker.unicodeScalars.first, !TextNormalizer.isInvisible(first),
+              let firstGrapheme = marker.first,
+              let first = firstGrapheme.unicodeScalars.first, !TextNormalizer.isInvisible(first),
+              first.properties.isEmojiPresentation || (first.properties.isEmoji
+                  && firstGrapheme.unicodeScalars.dropFirst().first?.value == 0xFE0F),
               !marker.unicodeScalars.contains(where: { $0.value == 0x1FA94 }),
               !marker.unicodeScalars.contains(where: {
                   $0.properties.generalCategory == .control || CharacterSet.newlines.contains($0)

@@ -59,7 +59,13 @@ package enum AllowlistOrdering {
     }
 }
 
-package func configGroupNotice(unresolved: Int) -> String? {
-    guard unresolved > 0 else { return nil }
-    return "設定のグループ \(unresolved) 件を一覧で確かめられません（chats_limit を増やすと入ることがあります）"
+package func configGroupNotice(notFound: Int, notGroup: Int) -> String? {
+    var notices: [String] = []
+    if notFound > 0 {
+        notices.append("設定のグループ \(notFound) 件が一覧に見つかりません（chats_limit を増やすと入ることがあります）")
+    }
+    if notGroup > 0 {
+        notices.append("設定の \(notGroup) 件はグループではありません（1対1や自分宛てを指しているため、設定を見直してください）")
+    }
+    return notices.isEmpty ? nil : notices.joined(separator: "\n")
 }

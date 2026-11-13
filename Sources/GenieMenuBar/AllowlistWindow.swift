@@ -54,7 +54,7 @@ struct AllowlistView: View {
                     Task { await model.refreshChats() }
                 }
             }
-            if let notice = configGroupNotice(unresolved: model.snapshot?.configGroupUnresolved ?? 0) {
+            if let notice = configGroupNotice(notFound: model.snapshot?.configGroupNotFound ?? 0, notGroup: model.snapshot?.configGroupNotGroup ?? 0) {
                 Text(notice)
                     .font(.caption)
                     .foregroundStyle(.secondary)

@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/ConfigGroupAuthorization.swift
++++ b/Sources/GenieCore/ConfigGroupAuthorization.swift
+@@ -9,6 +9,7 @@
+     var intentChatIDs: Set<Int64> { Set(intendedIDs.values) }
+ 
+     mutating func resetVerification() {
++        intendedIDs = [:]
+         chats = nil
+         lastIDs = [:]
+         resolved = [:]

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -711,8 +711,6 @@
+             )
+             return try payload.encodeData()
+         }
+-        do { _ = try encodePayload() }
+-        catch { return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail) }
+         if !event.guid.isEmpty {
+             rememberRoute(guid: event.guid, chatID: chatID)
+             if !persist() {

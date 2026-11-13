@@ -31,13 +31,13 @@ final class GroupConfigTests: XCTestCase {
     }
 
     func testGC17MarkerValidationAndNFC() throws {
-        let invalid = ["", " \t ", "\u{200B}", "🪔", "x🪔", "\u{200B}🕊️", "a\nb", "a\tb", "a\u{7F}b", "123456789", "a" + String(repeating: "\u{301}", count: 33)]
+        let invalid = ["", " \t ", "\u{200B}", "🪔", "🕊️🪔", "\u{200B}🕊️", "a\nb", "a\tb", "a\u{7F}b", "123456789", "a" + String(repeating: "\u{301}", count: 33)]
         for marker in invalid {
             let data = try JSONSerialization.data(withJSONObject: ["reply_marker": marker])
             let config = try JSONDecoder().decode(GenieConfig.self, from: data)
             XCTAssertEqual(try object(config)["reply_marker"] as? String, "🧞‍♂️")
         }
-        let valid = try decode(#"{"reply_marker":"  e\u0301  "}"#)
-        XCTAssertEqual(try object(valid)["reply_marker"] as? String, "é")
+        let valid = try decode(#"{"reply_marker":"  🕊️e\u0301  "}"#)
+        XCTAssertEqual(try object(valid)["reply_marker"] as? String, "🕊️é")
     }
 }

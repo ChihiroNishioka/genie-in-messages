@@ -198,7 +198,7 @@ flowchart LR
   - `config.json` の主な項目: `notion_data_source_id`、`route_ttl_seconds`（既定 604800）、`send_timeout_seconds`、`chats_timeout_seconds`、`reply_page_limit`（既定 100）、`self_sender_name`（既定 `me`）、`sender_names`（任意。既定は空）、`self_chat_ids`（任意。既定は空）
 - `self_sender_name`、`sender_names`、`self_chat_ids` が無い古い `config.json` も読める。反応の対象は許可リストのオン・オフと 4.10 の判定で、表示名の表が無くても反応は変わらない。デコードでは落とさない
 - `group_chat_guids` は文字列配列、既定は空。無い・null は空。各値の前後の空白を除き、空と重複を除く。照合は大文字小文字を区別した完全一致。配列以外や文字列以外の要素は `config_unreadable` にし、直前の設定を使い続ける。
-- `reply_marker` は文字列、既定は 🧞‍♂️。NFC にして前後の空白を除く。空・空白・不可視文字だけ、先頭が不可視、🪔 をどこかに含む、改行や制御文字を含む、8書記素超または32スカラー超は既定へ戻す。値を出さず `reply_marker_invalid` を warning で記録する。`NoticeLogGate` で続く間は1回、復旧後に再発すればもう1回。無い・null は既定で警告なし。文字列でなければ `config_unreadable`。
+- `reply_marker` は文字列、既定は 🧞‍♂️。NFC にして前後の空白を除く。先頭の書記素は Emoji_Presentation の絵文字、または U+FE0F（VS16）付きの絵文字でなければならない。`A`、`あ`、`#`、VS16 のない `🕊` は無効で、`🕊️` は有効。先頭がこの条件を満たさない値も既定へ戻す。空・空白・不可視文字だけ、先頭が不可視、🪔 をどこかに含む、改行や制御文字を含む、8書記素超または32スカラー超は既定へ戻す。値を出さず `reply_marker_invalid` を warning で記録する。`NoticeLogGate` で続く間は1回、復旧後に再発すればもう1回。無い・null は既定で警告なし。文字列でなければ `config_unreadable`。
 - 古い `marker` は `reply_marker` と別で、読み飛ばして送信に使わず警告も出さない。古い設定の更新だけで目印が変わることを防ぐ。環境変数は追加しない。メニューバーアプリは `SMAppService` で起動するため、設定元を config.json にそろえる。ファイルは `chmod 600` を勧める
 - 別の人が使うときは、その人自身のMac、Apple ID、Grok Botで動かす。オーナーの Grok Bot にはつながない
 

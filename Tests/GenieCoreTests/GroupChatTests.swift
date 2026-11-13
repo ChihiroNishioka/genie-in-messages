@@ -46,6 +46,79 @@ final class GroupChatTests: XCTestCase {
         h.replies.pages = [ReplyPage(replies: [routedReply(id, chat: chat, text: "answer", guid: origin)], nextCursor: nil)]
     }
 
+    func testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges() async throws {
+        for changedGUID in [false, true] {
+            let (_, p, e) = try setup(menu: true)
+            await e.showChats(chats())
+            let changed = changedGUID ? chats(guid: other) : []
+            await e.showChats(changed)
+            let snapshot = await e.snapshot()
+            let rows = AllowlistOrdering.rows(chats: changed, enabledIDs: Set(snapshot.enabledChatIDs),
+                query: "", configIDs: Set(snapshot.configChatIDs))
+            XCTAssertEqual(snapshot.configChatIDs, [42])
+            XCTAssertEqual(rows.first { $0.id == 42 }?.kindLabel, "グループ（設定）")
+            XCTAssertEqual(rows.first { $0.id == 42 }?.configLocked, true)
+            p.config.groupChatGUIDs = []
+            _ = await e.ingestWatchLine("")
+            let removed = await e.snapshot()
+            let unlocked = AllowlistOrdering.rows(chats: changed, enabledIDs: Set(removed.enabledChatIDs),
+                query: "", configIDs: Set(removed.configChatIDs))
+            XCTAssertTrue(removed.configChatIDs.isEmpty)
+            XCTAssertFalse(unlocked.first { $0.id == 42 }?.configLocked ?? false)
+        }
+    }
+
+    func testConfigLockedEngineMutationsLeaveMenuPermissionUntouched() async throws {
+        for menu in [false, true] {
+            let (h, _, e) = try setup(menu: menu)
+            await e.showChats(chats())
+            for operation in 0..<3 {
+                if operation == 0 { await e.toggleChat(id: 42, guid: group) }
+                else { await e.setChatEnabled(42, guid: other, enabled: operation == 1) }
+                XCTAssertEqual(h.allow.ids, menu ? [42] : [])
+                XCTAssertEqual(h.allow.guids[42], menu ? group : nil)
+            }
+            let result = await receive(e, input())
+            XCTAssertEqual(result, .delivered)
+            XCTAssertTrue(h.log.records.contains { $0.code == "allowlist_off_config_locked" })
+        }
+    }
+
+    func testConfigOnlyGroupIsNeverWrittenToAllowlistFile() async throws {
+        let (h, p, _) = try setup()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("allowlist.json")
+        let store = FileAllowlistStore(file: file)
+        try store.save(.empty)
+        let before = try Data(contentsOf: file)
+        let e = try GenieEngine(configProvider: p, initialConfig: p.config, stateStore: h.state,
+            allowlistStore: store, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
+        await e.showChats(chats())
+        await e.toggleChat(id: 42, guid: group)
+        XCTAssertEqual(try Data(contentsOf: file), before)
+        await e.setChatEnabled(42, guid: group, enabled: true)
+        XCTAssertEqual(try Data(contentsOf: file), before)
+        XCTAssertTrue(try store.load().isEmpty)
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+    }
+
+    func testRemovingConfigThenTurningMenuOffStopsReceiving() async throws {
+        let (h, p, e) = try setup(menu: true)
+        await e.showChats(chats())
+        let first = await receive(e, input())
+        XCTAssertEqual(first, .delivered)
+        p.config.groupChatGUIDs = []
+        await e.setChatEnabled(42, enabled: false)
+        let stopped = await receive(e, input(2))
+        XCTAssertEqual(stopped, .ignoredNotAllowed)
+        XCTAssertEqual(h.webhook.bodies.count, 1)
+        XCTAssertTrue(h.allow.ids.isEmpty)
+    }
+
     func testGC04ConfigOnlyGroupDeliversAndRepliesToSameChat() async throws {
         let (h, _, e) = try setup()
         await e.showChats(chats())
@@ -101,11 +174,13 @@ final class GroupChatTests: XCTestCase {
     }
 
     func testGC10EveryPermissionSourceMustMatchBeforeSending() async throws {
-        let (h, _, e) = try setup()
+        let (h, p, e) = try setup()
         await e.showChats(chats())
         let delivered = await receive(e, input())
         XCTAssertEqual(delivered, .delivered)
+        p.config.groupChatGUIDs = []
         await e.setChatEnabled(42, guid: other, enabled: true)
+        p.config.groupChatGUIDs = [group]
         reply(h)
         _ = await e.pollReplies()
         XCTAssertTrue(h.sender.sent.isEmpty)
@@ -119,7 +194,7 @@ final class GroupChatTests: XCTestCase {
         await e.setChatEnabled(42, enabled: false)
         let result = await receive(e, input())
         XCTAssertEqual(result, .delivered)
-        XCTAssertTrue(h.allow.ids.isEmpty)
+        XCTAssertEqual(h.allow.ids, [42])
         XCTAssertTrue(h.log.records.contains { $0.code == "allowlist_off_config_locked" })
     }
 

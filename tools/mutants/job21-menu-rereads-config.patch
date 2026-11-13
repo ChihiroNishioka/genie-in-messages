@@ -1,7 +1,7 @@
 --- a/Sources/GenieMenuBar/GenieMenuBarApp.swift
 +++ b/Sources/GenieMenuBar/GenieMenuBarApp.swift
 @@ -237,8 +237,9 @@
-         if let line = configGroupNotice(unresolved: snapshot?.configGroupUnresolved ?? 0) {
+         if let line = configGroupNotice(notFound: snapshot?.configGroupNotFound ?? 0, notGroup: snapshot?.configGroupNotGroup ?? 0) {
              label(line)
          }
 -        if let line = snapshot?.jobRouteState.menuLine {

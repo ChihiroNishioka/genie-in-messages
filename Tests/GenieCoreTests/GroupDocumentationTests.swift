@@ -1,6 +1,42 @@
 import XCTest
 
 final class GroupDocumentationTests: XCTestCase {
+    private func readme() throws -> String {
+        try String(contentsOf: repoRoot().appendingPathComponent("README.md"), encoding: .utf8)
+    }
+
+    func testMarkerDocumentsFirstGraphemeEmojiConstraint() throws {
+        for file in ["README.md", "SPEC.md"] {
+            let text = try String(contentsOf: repoRoot().appendingPathComponent(file), encoding: .utf8)
+            for required in ["先頭の書記素", "Emoji_Presentation", "U+FE0F", "🕊", "既定", "reply_marker_invalid"] {
+                XCTAssertTrue(text.contains(required), "\(file): \(required)")
+            }
+        }
+    }
+
+    func testReadmeStopsBothPermissionSourcesInOrder() throws {
+        let text = try readme()
+        let remove = try XCTUnwrap(text.range(of: "1. `group_chat_guids` から対象の guid を消します。"))
+        let disable = try XCTUnwrap(text.range(of: "2. メニューでも許可していた場合は、設定から消したあとにメニューのスイッチをオフにします。"))
+        XCTAssertLessThan(remove.lowerBound, disable.lowerBound)
+        XCTAssertTrue(text.contains("一時的に止めるときは、メニューで全体を一時停止します。"))
+    }
+
+    func testReadmePlacesUnverifiedCaveatsNearGroupBehavior() throws {
+        let text = try readme()
+        let display = try XCTUnwrap(text.components(separatedBy: "設定の行は「グループ（設定）」").dropFirst().first)
+            .components(separatedBy: "\n\n")[0]
+        XCTAssertTrue(display.contains("macOS の表示とクリック無効は実機未確認"))
+        let sender = try XCTUnwrap(text.components(separatedBy: "`sender_handle` を付けます。").dropFirst().first)
+            .components(separatedBy: "\n\n")[0]
+        XCTAssertTrue(sender.contains("他メンバーの sender の形"))
+        XCTAssertTrue(sender.contains("受け側が未知のキーを受け付けるかは実機未確認"))
+    }
+
+    func testReadmeContrastsPhoneNumberSeparators() throws {
+        XCTAssertTrue(try readme().contains("`+1 555 010 0000` と `+15550100000` は区切りを除くと同じキー"))
+    }
+
     func testExampleUsesEmptyGroupsAndDefaultReplyMarker() throws {
         let data = try Data(contentsOf: repoRoot().appendingPathComponent("config.example.json"))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

@@ -234,7 +234,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         if let snap = snapshot, !snap.webhookConfigured {
             label("webhook の URL が未設定です")
         }
-        if let line = configGroupNotice(unresolved: snapshot?.configGroupUnresolved ?? 0) {
+        if let line = configGroupNotice(notFound: snapshot?.configGroupNotFound ?? 0, notGroup: snapshot?.configGroupNotGroup ?? 0) {
             label(line)
         }
         if let line = snapshot?.jobRouteState.menuLine {

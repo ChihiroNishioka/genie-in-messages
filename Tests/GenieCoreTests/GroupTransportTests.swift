@@ -16,6 +16,18 @@ final class GroupTransportTests: XCTestCase {
         XCTAssertEqual(output.stderr, "")
     }
 
+    func testPayloadEncodingFailurePrecedesRouteRecording() throws {
+        let source = try String(contentsOf: repoRoot().appendingPathComponent("Sources/GenieCore/Engine.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "    private func deliverWebhook("))
+        let end = try XCTUnwrap(source.range(of: "    private func sleepBackoff", range: start.upperBound..<source.endIndex))
+        let delivery = String(source[start.lowerBound..<end.lowerBound])
+        let route = try XCTUnwrap(delivery.range(of: "rememberRoute(guid:"))
+        let beforeRoute = String(delivery[..<route.lowerBound])
+        XCTAssertTrue(beforeRoute.contains("do { _ = try encodePayload() }"))
+        XCTAssertTrue(beforeRoute.contains("error: \"webhook_encode_failed\", attempts: 0"))
+        XCTAssertTrue(delivery[route.upperBound...].contains("body = try encodePayload()"))
+    }
+
     func testSourcesKeepShellAndAppleScriptOutOfMessageDelivery() throws {
         let sources = repoRoot().appendingPathComponent("Sources")
         let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
