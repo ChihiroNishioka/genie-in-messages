@@ -1,9 +1,9 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1637,7 +1637,7 @@
-     private func refreshConfig() {
+@@ -1657,7 +1657,7 @@
          do {
              config = try configProvider.load().sanitized()
+             noticeLog.resolve(["config_unreadable"])
 -            configGroups.refresh(guids: config.groupChatGUIDs)
 +            if !config.groupChatGUIDs.isEmpty { configGroups.refresh(guids: config.groupChatGUIDs) }
              noteConfigGroups()

@@ -733,5 +733,20 @@
     "name": "GF2-PAUSED-CONFIG-STALE",
     "patch": "fix2-paused-config-stale.patch",
     "filter": "GroupChatTests.testPausedConfigRefreshUpdatesRowsWithoutRestartingTraffic"
+  },
+  {
+    "name": "GF3-PAUSED-CONFIG-REPEATED-LOG",
+    "patch": "fix3-paused-config-repeated-log.patch",
+    "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
+  },
+  {
+    "name": "GF3-PAUSED-CONFIG-ERROR-OVERWRITE",
+    "patch": "fix3-paused-config-error-overwrite.patch",
+    "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
+  },
+  {
+    "name": "GF3-PAUSED-CONFIG-NO-RECOVERY",
+    "patch": "fix3-paused-config-no-recovery.patch",
+    "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
   }
 ]

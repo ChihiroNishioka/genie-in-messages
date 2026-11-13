@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1656,7 +1656,6 @@
+     private func refreshConfig(forPausedDisplay: Bool = false) {
+         do {
+             config = try configProvider.load().sanitized()
+-            noticeLog.resolve(["config_unreadable"])
+             configGroups.refresh(guids: config.groupChatGUIDs)
+             noteConfigGroups()
+             if config.replyMarkerInvalid {

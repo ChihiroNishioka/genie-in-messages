@@ -4,7 +4,7 @@
      /// 一覧の読み取り結果を反映する。止まっていたら、状態を変えずに捨てる。
      package func applyChatList(_ read: ChatListRead) -> ChatListApplyResult {
          if stop.isStopped { return .discarded }
--        if paused { refreshConfig() }
+-        if paused { refreshConfig(forPausedDisplay: true) }
          switch read {
          case .failed:
              noteFetchFailure()
@@ -12,7 +12,7 @@
      }
  
      package func snapshot() -> EngineSnapshot {
--        if paused { refreshConfig() }
+-        if paused { refreshConfig(forPausedDisplay: true) }
          return EngineSnapshot(
              paused: paused,
              cursorRowID: persisted.cursorRowID,

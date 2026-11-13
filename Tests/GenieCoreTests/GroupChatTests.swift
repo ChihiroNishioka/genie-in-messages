@@ -46,6 +46,98 @@ final class GroupChatTests: XCTestCase {
         h.replies.pages = [ReplyPage(replies: [routedReply(id, chat: chat, text: "answer", guid: origin)], nextCursor: nil)]
     }
 
+    func testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery() async throws {
+        for refreshList in [false, true] {
+            for priorError: String? in [nil, "send_failed"] {
+                let (h, initial, _) = try setup()
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let file = directory.appendingPathComponent("config.json")
+                try ConfigLoader.write(initial.config, to: file)
+                let provider = FileConfigProvider(url: file)
+                let e = try GenieEngine(configProvider: provider, initialConfig: initial.config,
+                    stateStore: h.state, allowlistStore: h.allow, replySource: h.replies,
+                    sender: h.sender, webhook: h.webhook, secrets: h.secrets,
+                    lock: h.lock, clock: h.clock, log: h.log, stop: h.stop)
+                await e.showChats(chats())
+                let delivered = await receive(e, input())
+                XCTAssertEqual(delivered, .delivered)
+                h.lock.locked = true
+                reply(h)
+                _ = await e.pollReplies()
+                await e.setLastError(priorError)
+                await e.setPaused(true)
+                h.lock.locked = false
+                let before = await e.snapshot()
+                XCTAssertEqual(before.heldCount, 1)
+                let deliveries = h.webhook.bodies.count
+                let fetches = h.replies.cursors.count
+                let sends = h.sender.sent.count
+                let reader = ScriptedChatLists(script: Array(repeating:
+                    .parsed(ChatListParse(chats: chats(), failedLineCount: 0)), count: 10))
+                let poller = GeniePoller(engine: e, reader: reader, configProvider: provider,
+                    clock: h.clock, stop: h.stop)
+                for episode in 1...2 {
+                    if episode == 1 { try Data("{".utf8).write(to: file) }
+                    else { try FileManager.default.removeItem(at: file) }
+                    for _ in 0..<3 {
+                        if refreshList {
+                            await poller.requestChatsRefresh()
+                            _ = await poller.tick()
+                            XCTAssertEqual(h.log.records.filter { $0.code == "config_unreadable" }.count, episode)
+                        }
+                        let snapshot = await e.snapshot()
+                        XCTAssertEqual(h.log.records.filter { $0.code == "config_unreadable" }.count, episode)
+                        XCTAssertEqual(snapshot.lastError, priorError)
+                        XCTAssertTrue(snapshot.paused)
+                        XCTAssertEqual(snapshot.enabledChatIDs, before.enabledChatIDs)
+                        XCTAssertEqual(snapshot.configChatIDs, before.configChatIDs)
+                        XCTAssertEqual(snapshot.configGroupUnresolved, episode - 1)
+                        XCTAssertEqual(snapshot.cursorRowID, before.cursorRowID)
+                        XCTAssertEqual(snapshot.heldCount, 1)
+                    }
+                    let polled = await e.pollReplies()
+                    XCTAssertEqual(polled, .skippedPaused)
+                    await e.retryHolds()
+                    _ = await poller.tick()
+                    XCTAssertEqual(h.webhook.bodies.count, deliveries)
+                    XCTAssertEqual(h.replies.cursors.count, fetches)
+                    XCTAssertEqual(h.sender.sent.count, sends)
+                    var repaired = initial.config
+                    repaired.groupChatGUIDs = [group, other]
+                    try ConfigLoader.write(repaired, to: file)
+                    if refreshList {
+                        await poller.requestChatsRefresh()
+                        _ = await poller.tick()
+                    }
+                    let recovered = await e.snapshot()
+                    XCTAssertTrue(recovered.paused)
+                    XCTAssertEqual(recovered.lastError, priorError)
+                    XCTAssertEqual(recovered.configGroupNotFound, 1)
+                    XCTAssertEqual(recovered.configChatIDs, [42])
+                    XCTAssertEqual(recovered.heldCount, 1)
+                    let received = await receive(e, input(2))
+                    XCTAssertEqual(received, .deferredPaused)
+                    let afterTraffic = await e.snapshot()
+                    XCTAssertEqual(afterTraffic.cursorRowID, before.cursorRowID)
+                    XCTAssertEqual(afterTraffic.lastError, priorError)
+                    XCTAssertEqual(h.webhook.bodies.count, deliveries)
+                    XCTAssertEqual(h.replies.cursors.count, fetches)
+                    XCTAssertEqual(h.sender.sent.count, sends)
+                }
+                await e.setPaused(false)
+                try Data("{".utf8).write(to: file)
+                let errors = h.log.records.filter { $0.code == "config_unreadable" }.count
+                _ = await e.ingestWatchLine("")
+                _ = await e.ingestWatchLine("")
+                let active = await e.snapshot()
+                XCTAssertEqual(active.lastError, "config_unreadable")
+                XCTAssertEqual(h.log.records.filter { $0.code == "config_unreadable" }.count, errors + 2)
+            }
+        }
+    }
+
     func testPausedConfigRefreshUpdatesRowsWithoutRestartingTraffic() async throws {
         for refreshList in [false, true] {
             let (h, p, e) = try setup()

@@ -203,7 +203,7 @@ package actor GenieEngine {
     /// 一覧の読み取り結果を反映する。止まっていたら、状態を変えずに捨てる。
     package func applyChatList(_ read: ChatListRead) -> ChatListApplyResult {
         if stop.isStopped { return .discarded }
-        if paused { refreshConfig() }
+        if paused { refreshConfig(forPausedDisplay: true) }
         switch read {
         case .failed:
             noteFetchFailure()
@@ -353,7 +353,7 @@ package actor GenieEngine {
     }
 
     package func snapshot() -> EngineSnapshot {
-        if paused { refreshConfig() }
+        if paused { refreshConfig(forPausedDisplay: true) }
         return EngineSnapshot(
             paused: paused,
             cursorRowID: persisted.cursorRowID,
@@ -1653,9 +1653,10 @@ package actor GenieEngine {
         }
     }
 
-    private func refreshConfig() {
+    private func refreshConfig(forPausedDisplay: Bool = false) {
         do {
             config = try configProvider.load().sanitized()
+            noticeLog.resolve(["config_unreadable"])
             configGroups.refresh(guids: config.groupChatGUIDs)
             noteConfigGroups()
             if config.replyMarkerInvalid {
@@ -1666,8 +1667,14 @@ package actor GenieEngine {
                 noticeLog.resolve(["reply_marker_invalid"])
             }
         } catch {
-            lastError = "config_unreadable"
-            log.record(level: .error, code: "config_unreadable", chatID: nil, guid: nil, rowid: nil)
+            if forPausedDisplay {
+                if noticeLog.shouldLog("config_unreadable") {
+                    log.record(level: .error, code: "config_unreadable", chatID: nil, guid: nil, rowid: nil)
+                }
+            } else {
+                lastError = "config_unreadable"
+                log.record(level: .error, code: "config_unreadable", chatID: nil, guid: nil, rowid: nil)
+            }
         }
     }
 
