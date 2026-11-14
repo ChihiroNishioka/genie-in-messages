@@ -882,7 +882,7 @@
   {
     "name": "UPD-MANUALRESET",
     "patch": "upd-manualreset.patch",
-    "filter": "UpdateCheckerTests.testManualCheckBypassesIntervalAndResetsScheduleFromCompletion"
+    "filter": "UpdateCoreTests.testManualSuccessfulAttemptStartsAnewTwentyFourHourInterval"
   },
   {
     "name": "UPD-DEVCALL",

@@ -114,6 +114,7 @@ final class UpdateCoreTests: XCTestCase {
         var schedule = UpdateSchedule()
         schedule.record(.success, completedAt: t0)
         schedule.record(.success, completedAt: t0.addingTimeInterval(5 * 60 * 60))
+        XCTAssertFalse(schedule.isDue(now: t0.addingTimeInterval(24 * 60 * 60)))
         XCTAssertFalse(schedule.isDue(now: t0.addingTimeInterval(29 * 60 * 60 - 1)))
         XCTAssertTrue(schedule.isDue(now: t0.addingTimeInterval(29 * 60 * 60)))
     }
