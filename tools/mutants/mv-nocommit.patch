@@ -7,7 +7,7 @@ diff --git a/Sources/GenieCore/AppVersion.swift b/Sources/GenieCore/AppVersion.s
              let version = info["GenieReleaseVersion"] as? String,
 -            let commit = info["GenieGitCommit"] as? String,
 -            matches(commit, pattern: "^[0-9a-f]{7}$")
-+            let commit = info["GenieGitCommit"] as? String ?? ""
++            let commit = info["GenieGitCommit"] as? String
          else {
              return MenuVersion.unknown.line
          }
