@@ -1,0 +1,11 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -465,6 +465,7 @@
+             await emit(result: name, current: currentVersion, latest: latest, code: nil, status: nil, gateKey: name)
+         case .failure(let failure, let reset):
+             self.failure = failure
++            decision = nil
+             rateLimitReset = reset
+             schedule.record(.failure(failure, rateLimitReset: reset), completedAt: completedAt)
+             await emit(

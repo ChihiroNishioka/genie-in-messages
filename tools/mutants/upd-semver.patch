@@ -1,0 +1,14 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -25,9 +25,7 @@
+     package var tag: String { "v\(description)" }
+ 
+     package static func < (lhs: ReleaseVersion, rhs: ReleaseVersion) -> Bool {
+-        if lhs.major != rhs.major { return lhs.major < rhs.major }
+-        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+-        return lhs.patch < rhs.patch
++        lhs.description < rhs.description
+     }
+ 
+     private static func parse(_ text: String, allowLeadingZero: Bool) -> ReleaseVersion? {

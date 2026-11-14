@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -94,7 +94,7 @@
+     ) -> UpdateDecision {
+         guard let latest else { return .noStableRelease }
+         guard latest > current else { return .upToDate(current) }
+-        if let skipped, latest <= skipped { return .skipped(latest) }
++        if let skipped, latest != skipped { return .skipped(latest) }
+         return .available(latest)
+     }
+ }

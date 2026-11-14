@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -73,7 +73,7 @@
+ package enum ReleaseSelection {
+     package static func latestStable(in entries: [ReleaseEntry]) -> ReleaseVersion? {
+         entries.lazy
+-            .filter { !$0.draft && !$0.prerelease }
++            .filter { !$0.draft }
+             .compactMap { ReleaseVersion(tag: $0.tag) }
+             .max()
+     }

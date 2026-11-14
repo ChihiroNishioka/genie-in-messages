@@ -848,5 +848,70 @@
     "name": "WN-LAUNCHPRESENT",
     "patch": "wn-launchpresent.patch",
     "filter": "LaunchWindowTests.testAllowlistPresentIsCalledOnlyByShowAllowlist"
+  },
+  {
+    "name": "UPD-SEMVER",
+    "patch": "upd-semver.patch",
+    "filter": "UpdateCoreTests.testReleaseVersionComparesComponentsNumerically"
+  },
+  {
+    "name": "UPD-PRERELEASE",
+    "patch": "upd-prerelease.patch",
+    "filter": "UpdateCoreTests.testLatestStableUsesHighestVersionAndIgnoresUnstableOrMalformedTags"
+  },
+  {
+    "name": "UPD-TAGRE",
+    "patch": "upd-tagre.patch",
+    "filter": "UpdateCoreTests.testReleaseVersionParsesOnlyCanonicalTagsAndRejectsOverflow"
+  },
+  {
+    "name": "UPD-DATEORDER",
+    "patch": "upd-dateorder.patch",
+    "filter": "UpdateCoreTests.testLatestStableUsesHighestVersionAndIgnoresUnstableOrMalformedTags"
+  },
+  {
+    "name": "UPD-SKIPEQ",
+    "patch": "upd-skipeq.patch",
+    "filter": "UpdateCoreTests.testUpdatePolicyComparesCurrentLatestAndSkippedVersions"
+  },
+  {
+    "name": "UPD-FAILDELAY",
+    "patch": "upd-faildelay.patch",
+    "filter": "UpdateCoreTests.testUpdateScheduleUsesOneHourAfterOrdinaryFailure"
+  },
+  {
+    "name": "UPD-MANUALRESET",
+    "patch": "upd-manualreset.patch",
+    "filter": "UpdateCoreTests.testManualSuccessfulAttemptStartsAnewTwentyFourHourInterval"
+  },
+  {
+    "name": "UPD-DEVCALL",
+    "patch": "upd-devcall.patch",
+    "filter": "UpdateCheckerTests.testDevelopmentAndUnknownBuildNeverCallFetcherEvenForManualRequests"
+  },
+  {
+    "name": "UPD-INFLIGHT",
+    "patch": "upd-inflight.patch",
+    "filter": "UpdateCheckerTests.testTickReturnsWhileFetchIsBlockedAndManualRequestsDoNotQueue"
+  },
+  {
+    "name": "UPD-KEEPRESULT",
+    "patch": "upd-keepresult.patch",
+    "filter": "UpdateCheckerTests.testFailureKeepsPriorSuccessAndDisplaysTheLatestAttemptError"
+  },
+  {
+    "name": "UPD-AUTH",
+    "patch": "upd-auth.patch",
+    "filter": "UpdateNetworkTests.testRequestDoesNotUseAuthorizationOrCookies"
+  },
+  {
+    "name": "UPD-HTMLURL",
+    "patch": "upd-htmlurl.patch",
+    "filter": "UpdateMenuTests.testReleaseURLIsConstructedFromValidatedTagAndTokyoDateRollsOver"
+  },
+  {
+    "name": "UPD-TZ",
+    "patch": "upd-tz.patch",
+    "filter": "UpdateMenuTests.testReleaseURLIsConstructedFromValidatedTagAndTokyoDateRollsOver"
   }
 ]

@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -75,7 +75,7 @@
+         entries.lazy
+             .filter { !$0.draft && !$0.prerelease }
+             .compactMap { ReleaseVersion(tag: $0.tag) }
+-            .max()
++            .first
+     }
+ }
+ 

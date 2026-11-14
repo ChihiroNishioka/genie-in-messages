@@ -1,0 +1,17 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -188,11 +188,11 @@
+ 
+     package mutating func record(_ attempt: UpdateAttempt, completedAt: Date) {
+         self.attempt = attempt
+-        self.completedAt = completedAt
++        if self.completedAt == nil { self.completedAt = completedAt }
+         switch attempt {
+         case .success:
+             rateLimitReset = nil
+-            nextDue = completedAt.addingTimeInterval(24 * 60 * 60)
++            nextDue = (self.completedAt ?? completedAt).addingTimeInterval(24 * 60 * 60)
+         case .failure(let failure, let reset):
+             if failure == .rateLimited {
+                 rateLimitReset = reset

@@ -1,0 +1,21 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -407,7 +407,7 @@
+ 
+         let now = clock.now()
+         let manual = manualRequested
+-        manualRequested = false
++        if phase == .idle { manualRequested = false }
+         guard phase == .idle else { return }
+         if manual, schedule.isRateLimited(now: now) { return }
+         guard manual || schedule.isDue(now: now) else { return }
+@@ -421,7 +421,7 @@
+     }
+ 
+     package func requestCheck() {
+-        guard case .release = build, phase == .idle else { return }
++        guard case .release = build else { return }
+         manualRequested = true
+     }
+ 

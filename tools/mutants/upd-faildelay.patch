@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -200,7 +200,7 @@
+                 nextDue = max(oneHour, reset ?? oneHour)
+             } else {
+                 rateLimitReset = nil
+-                nextDue = completedAt.addingTimeInterval(60 * 60)
++                nextDue = completedAt.addingTimeInterval(24 * 60 * 60)
+             }
+         }
+     }
