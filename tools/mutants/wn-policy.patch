@@ -1,0 +1,19 @@
+diff --git a/Sources/GenieMenuBar/GenieMenuBarApp.swift b/Sources/GenieMenuBar/GenieMenuBarApp.swift
+--- a/Sources/GenieMenuBar/GenieMenuBarApp.swift
++++ b/Sources/GenieMenuBar/GenieMenuBarApp.swift
+@@ -9,7 +9,6 @@
+     static func main() {
+         WindowRestorationPolicy.disable(in: .standard)
+         let app = NSApplication.shared
+-        app.setActivationPolicy(.accessory)
+         let delegate = AppDelegate()
+         app.delegate = delegate
+         app.run()
+@@ -21,6 +20,7 @@
+     private let model = AppModel()
+ 
+     func applicationDidFinishLaunching(_ notification: Notification) {
++        NSApp.setActivationPolicy(.accessory)
+         for window in NSApp.windows { window.close() }
+         model.installStatusItem()
+     }

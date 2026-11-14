@@ -17,6 +17,7 @@ enum AllowlistPanel {
             created.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             created.setContentSize(NSSize(width: 440, height: 560))
             created.minSize = NSSize(width: 360, height: 320)
+            created.isRestorable = false
             created.isReleasedWhenClosed = false
             created.hidesOnDeactivate = false
             created.level = .normal

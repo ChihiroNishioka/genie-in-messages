@@ -1,0 +1,10 @@
+diff --git a/Sources/GenieCore/WindowRestorationPolicy.swift b/Sources/GenieCore/WindowRestorationPolicy.swift
+--- a/Sources/GenieCore/WindowRestorationPolicy.swift
++++ b/Sources/GenieCore/WindowRestorationPolicy.swift
+@@ -2,6 +2,5 @@
+ 
+ public enum WindowRestorationPolicy {
+     public static func disable(in defaults: UserDefaults) {
+-        defaults.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+     }
+ }

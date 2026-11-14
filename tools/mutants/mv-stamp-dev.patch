@@ -1,0 +1,12 @@
+diff --git a/scripts/stamp-version.py b/scripts/stamp-version.py
+--- a/scripts/stamp-version.py
++++ b/scripts/stamp-version.py
+@@ -19,7 +19,7 @@
+ 
+     info["GenieReleaseVersion"] = release
+     info["GenieGitCommit"] = commit
+-    if release:
++    if True:
+         info["CFBundleShortVersionString"] = release
+ 
+     with plist_path.open("wb") as target:

@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/AppVersion.swift b/Sources/GenieCore/AppVersion.swift
+--- a/Sources/GenieCore/AppVersion.swift
++++ b/Sources/GenieCore/AppVersion.swift
+@@ -15,7 +15,7 @@
+             return MenuVersion.development(commit: commit).line
+         }
+ 
+-        guard matches(version, pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$") else {
++        guard matches(version, pattern: "^v?[0-9]+\\.[0-9]+\\.[0-9]+$") else {
+             return MenuVersion.unknown.line
+         }
+         return MenuVersion.release(version: version, commit: commit).line

@@ -1,0 +1,11 @@
+diff --git a/Sources/GenieMenuBar/GenieMenuBarApp.swift b/Sources/GenieMenuBar/GenieMenuBarApp.swift
+--- a/Sources/GenieMenuBar/GenieMenuBarApp.swift
++++ b/Sources/GenieMenuBar/GenieMenuBarApp.swift
+@@ -22,6 +22,7 @@
+ 
+     func applicationDidFinishLaunching(_ notification: Notification) {
+         for window in NSApp.windows { window.close() }
++        AllowlistPanel.present(model: model)
+         model.installStatusItem()
+     }
+ 

@@ -1,0 +1,12 @@
+diff --git a/scripts/build-version.sh b/scripts/build-version.sh
+--- a/scripts/build-version.sh
++++ b/scripts/build-version.sh
+@@ -23,7 +23,7 @@
+       if [ "$tags_result" -ne 0 ]; then
+         warning=1
+       else
+-        latest=$(printf '%s\n' "$tags" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
++        latest=$(printf '%s\n' "$tags" | cat | sort -V | tail -n 1)
+         release=${latest#v}
+       fi
+     fi

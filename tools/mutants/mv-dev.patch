@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/AppVersion.swift b/Sources/GenieCore/AppVersion.swift
+--- a/Sources/GenieCore/AppVersion.swift
++++ b/Sources/GenieCore/AppVersion.swift
+@@ -37,7 +37,7 @@
+             case .release(let version, let commit):
+                 "バージョン: v\(version)（\(commit)）"
+             case .development(let commit):
+-                "バージョン: 開発版（\(commit)）"
++                "バージョン: 開発（\(commit)）"
+             case .unknown:
+                 "バージョン: 不明"
+             }
