@@ -131,7 +131,7 @@ package struct GenieConfig: Equatable, Sendable {
     private static func indexNames(_ names: [String: String]) -> [String: String] {
         var indexed: [String: String] = [:]
         for handle in names.keys.sorted() {
-            let name = names[handle]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let name = names[handle] ?? ""
             guard !TextNormalizer.isBlank(name) else { continue }
             guard let key = SenderHandle.normalize(handle) else { continue }
             if indexed[key] == nil {
@@ -143,7 +143,12 @@ package struct GenieConfig: Equatable, Sendable {
 
     func displayName(matching handle: String) -> String? {
         guard let key = SenderHandle.normalize(handle) else { return nil }
-        return senderNameKeys[key]
+        return senderNameKeys[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func replyAddressee(matching handle: String) -> String? {
+        guard let key = SenderHandle.normalize(handle) else { return nil }
+        return ReplyComposer.validatedAddressee(senderNameKeys[key], sender: handle, marker: replyMarker)
     }
 }
 

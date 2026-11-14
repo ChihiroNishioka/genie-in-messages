@@ -7,5 +7,5 @@
 -        do { _ = try encodePayload() }
 -        catch { return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail) }
          if !event.guid.isEmpty {
-             rememberRoute(guid: event.guid, chatID: chatID)
+             rememberRoute(guid: event.guid, chatID: chatID, addressee: replyAddressee(event, chatID: chatID))
              if !persist() {

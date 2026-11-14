@@ -723,7 +723,7 @@ package actor GenieEngine {
         do { _ = try encodePayload() }
         catch { return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail) }
         if !event.guid.isEmpty {
-            rememberRoute(guid: event.guid, chatID: chatID)
+            rememberRoute(guid: event.guid, chatID: chatID, addressee: replyAddressee(event, chatID: chatID))
             if !persist() {
                 return .blocked
             }
@@ -901,7 +901,9 @@ package actor GenieEngine {
             persist()
             return
         case .send(let value):
-            body = value
+            let candidate = ReplyComposer.withAddressee(route.addressee, to: value)
+            body = Signal.matches(candidate) || ReplyComposer.isReplyMarker(candidate, marker: config.replyMarker)
+                ? value : candidate
         }
 
         if let partial = persisted.partialReplies.first(where: { $0.replyID == reply.id }) {
@@ -1689,15 +1691,22 @@ package actor GenieEngine {
         }
     }
 
-    private func rememberRoute(guid: String, chatID: Int64) {
+    private func rememberRoute(guid: String, chatID: Int64, addressee: String? = nil) {
         let now = clock.now()
         persisted.routes.removeAll {
             $0.guid == guid || now.timeIntervalSince($0.at) > config.routeTTLSeconds
         }
-        persisted.routes.append(MessageRoute(guid: guid, chatID: chatID, at: now))
+        persisted.routes.append(MessageRoute(guid: guid, chatID: chatID, at: now, addressee: addressee))
         if persisted.routes.count > 5000 {
             persisted.routes.removeFirst(persisted.routes.count - 5000)
         }
+    }
+
+    private func replyAddressee(_ event: WatchEvent, chatID: Int64) -> String? {
+        guard !event.isFromMe,
+              echoParticipants(for: event).isGroup,
+              !config.selfChatIDs.contains(chatID) else { return nil }
+        return config.replyAddressee(matching: event.sender)
     }
 
     private func route(for guid: String) -> MessageRoute? {

@@ -1,5 +1,10 @@
 [
   {
+    "name": "NAMEPREFIX1",
+    "patch": "name-prefix-omit.patch",
+    "filter": "GroupReplyNameTests.testConfiguredGroupNamePrefixesOnlyTheBodyAndStaysPrivate"
+  },
+  {
     "name": "M4",
     "patch": "m4-refresh-in-flight.patch",
     "filter": "PollerCoverageTests.testRequestsDuringTheFirstReadCollapse"
