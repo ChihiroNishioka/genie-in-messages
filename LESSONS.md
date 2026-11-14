@@ -79,3 +79,6 @@ CI の macOS は Xcode をはっきり選ぶ。イメージの標準に任せる
 返事は印と本文の2通に分け、本文の送り直しは保存した回数で1回までにする。`SplitReplyTests` と変異テストが順序、保留、再起動、上限を確かめる。
 Notion の返事は同じトークの先行返事を待ち、別トークの取得枠を塞がない。`NotionReplyTests.testWaitingSameChatRepliesDoNotBlockAnotherChat` が見る。
 `tools/check-mutants.py` はアサーション失敗だけを `KILLED` とし、CI は判定プローブを本体の前に実行する。
+
+送り先は許可判定のあとで一度選び、再送中は固定する。Job の秘密やURLが使えなくても通常へ切り替えない。
+複数の返信取得元では cursor の内容で規則を選ばず、取得元で決める。片方の失敗で、もう片方の取得を止めない。

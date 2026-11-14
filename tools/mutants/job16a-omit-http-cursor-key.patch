@@ -1,0 +1,18 @@
+--- a/Sources/GenieCore/StateStore.swift
++++ b/Sources/GenieCore/StateStore.swift
+@@ -158,7 +158,6 @@
+         case fingerprints
+         case handledReplyIDs = "handled_reply_ids"
+         case replyCursor = "reply_cursor"
+-        case httpReplyCursor = "http_reply_cursor"
+         case haltedChatIDs = "halted_chat_ids"
+         case rateEvents = "rate_events"
+         case routes
+@@ -208,7 +207,6 @@
+         fingerprints = try container.decodeIfPresent([SentFingerprint].self, forKey: .fingerprints) ?? []
+         handledReplyIDs = try container.decodeIfPresent([String].self, forKey: .handledReplyIDs) ?? []
+         replyCursor = try container.decodeIfPresent(String.self, forKey: .replyCursor)
+-        httpReplyCursor = try container.decodeIfPresent(String.self, forKey: .httpReplyCursor)
+         haltedChatIDs = try container.decodeIfPresent([Int64].self, forKey: .haltedChatIDs) ?? []
+         rateEvents = try container.decodeIfPresent([RateEvent].self, forKey: .rateEvents) ?? []
+         routes = try container.decodeIfPresent([MessageRoute].self, forKey: .routes) ?? []

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -664,7 +664,7 @@
+         if rawURL.isEmpty {
+             return deadLetter(event, error: "webhook_not_configured", attempts: 0, kind: kind, detail: detail)
+         }
+-        guard let url = job ? EndpointURL.httpsOrLoopback(rawURL) : EndpointURL.https(rawURL) else {
++        guard let url = EndpointURL.httpsOrLoopback(rawURL) else {
+             return deadLetter(event, error: "url_not_https", attempts: 0, kind: kind, detail: detail)
+         }
+         let payload = WebhookPayload(

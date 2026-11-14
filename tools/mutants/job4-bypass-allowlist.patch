@@ -1,0 +1,29 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -594,7 +594,7 @@
+         if !Signal.matches(normalized) {
+             return finish(event, .ignoredNoSignal)
+         }
+-        guard let chatID = event.chatID, allowlist.contains(chatID) else {
++        guard let chatID = event.chatID, allowlist.contains(chatID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty) else {
+             return finish(event, .ignoredNotAllowed)
+         }
+         if let key = SenderHandle.normalize(event.destinationCallerID) {
+@@ -699,7 +699,7 @@
+             if paused {
+                 return .deferredPaused
+             }
+-            if !allowlist.contains(chatID) {
++            if !allowlist.contains(chatID) && !(config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty) {
+                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
+                 return finish(event, .ignoredNotAllowed)
+             }
+@@ -726,7 +726,7 @@
+             if paused {
+                 return .deferredPaused
+             }
+-            if !allowlist.contains(chatID) {
++            if !allowlist.contains(chatID) && !(config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty) {
+                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
+                 return finish(event, .ignoredNotAllowed)
+             }

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -485,7 +485,7 @@
+                     let next: String?
+                     if lane == .notion {
+                         next = NotionCursor.reconcile(proposed: proposed, unhandled: unhandled)
+-                    } else if unhandled.isEmpty {
++                    } else if lane == .http || unhandled.isEmpty {
+                         next = proposed
+                     } else {
+                         next = nil

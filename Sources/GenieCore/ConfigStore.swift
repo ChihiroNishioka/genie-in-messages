@@ -5,6 +5,7 @@ package struct ConfigPaths: Equatable {
     package var logFile: URL
 
     package var configFile: URL { root.appendingPathComponent("config.json") }
+    package var jobSecretFile: URL { root.appendingPathComponent("job-secret") }
     package var secretFile: URL { root.appendingPathComponent("secret") }
     package var replySecretFile: URL { root.appendingPathComponent("reply-secret") }
     package var notionTokenFile: URL { root.appendingPathComponent("notion-token") }
@@ -102,6 +103,7 @@ enum SecretFile {
 
 package protocol SecretProviding: Sendable {
     func webhookSecret() throws -> String
+    func jobWebhookSecret() throws -> String
     /// ファイルが無ければ nil。モードが 0600 でなければ投げる。
     func replySecret() throws -> String?
     /// 使うたびに読む。ファイルが無い、空、0600 でないときは投げる。
@@ -172,6 +174,10 @@ package struct FileSecretProvider: SecretProviding {
         try SecretFile.readToken(at: paths.secretFile)
     }
 
+    package func jobWebhookSecret() throws -> String {
+        try SecretFile.readToken(at: paths.jobSecretFile)
+    }
+
     package func replySecret() throws -> String? {
         if !FileManager.default.fileExists(atPath: paths.replySecretFile.path) {
             return nil
@@ -187,8 +193,15 @@ package struct FileSecretProvider: SecretProviding {
 struct StaticSecret: SecretProviding, Sendable {
     var webhook: String
     var reply: String?
+    var job: String? = nil
     var notion: String? = nil
     func webhookSecret() throws -> String { webhook }
+    func jobWebhookSecret() throws -> String {
+        guard let job else { throw SecretReadError.missing }
+        let trimmed = job.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw SecretReadError.empty }
+        return trimmed
+    }
     func replySecret() throws -> String? { reply }
     func notionToken() throws -> String {
         guard let notion else { throw SecretReadError.missing }

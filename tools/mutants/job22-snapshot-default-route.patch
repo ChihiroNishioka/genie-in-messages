@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -356,7 +356,7 @@
+                 || EndpointURL.httpsOrLoopback(config.replyFetchURL) != nil,
+             jobWebhookConfigured: !config.jobChatIDs.isEmpty
+                 && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
+-            jobRouteState: JobRouteState(config: config),
++            jobRouteState: .ordinary,
+             webhookConfigured: EndpointURL.https(config.webhookURL) != nil
+         )
+     }

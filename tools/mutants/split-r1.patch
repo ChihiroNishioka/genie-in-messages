@@ -1,7 +1,7 @@
 --- a/Sources/GenieCore/GenieConfig.swift
 +++ b/Sources/GenieCore/GenieConfig.swift
-@@ -32,7 +32,7 @@
-     package static let productDefaults = GenieConfig(
+@@ -36,7 +36,7 @@
+         jobChatIDs: [],
          webhookURL: "",
          replyFetchURL: "",
 -        marker: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}",

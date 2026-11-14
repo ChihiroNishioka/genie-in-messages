@@ -1,0 +1,12 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -353,8 +353,7 @@
+             screenLock: screenLock,
+             replyFetchConfigured: !config.notionDataSourceID.isEmpty
+                 || EndpointURL.httpsOrLoopback(config.replyFetchURL) != nil,
+-            jobWebhookConfigured: !config.jobChatIDs.isEmpty
+-                && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
++            jobWebhookConfigured: EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
+             jobRouteState: JobRouteState(config: config),
+             webhookConfigured: EndpointURL.https(config.webhookURL) != nil
+         )

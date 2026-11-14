@@ -290,7 +290,7 @@ final class ReviewFixesTests: XCTestCase {
         let harness = Harness()
         harness.allow.ids = [1]
         harness.config.webhookURL = "http://127.0.0.1/webhook"
-        harness.config.replyFetchURL = "http://127.0.0.1/replies"
+        harness.config.replyFetchURL = "http://example.com/replies"
         seedRoute(harness, guid: "g", chat: 1)
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r", chat: 1, text: "x", guid: "g")], nextCursor: nil),
@@ -301,7 +301,9 @@ final class ReviewFixesTests: XCTestCase {
         ))
         XCTAssertEqual(result, .deadLettered("url_not_https"))
         XCTAssertTrue(harness.webhook.bodies.isEmpty)
-        await engine.pollReplies()
+        let pollResult = await engine.pollReplies()
+        XCTAssertEqual(pollResult, .fetchFailed)
+        XCTAssertTrue(harness.replies.cursors.isEmpty)
         XCTAssertTrue(harness.sender.sent.isEmpty)
     }
 

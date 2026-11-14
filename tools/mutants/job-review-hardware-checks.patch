@@ -1,0 +1,10 @@
+--- a/SPEC.md
++++ b/SPEC.md
+@@ -377,7 +377,6 @@
+ - macOS の ATS が Job と HTTP 返信取得の loopback の http を許すか。Linux の検証では確認できない
+ - Job Engine との疎通。Job の登録、HTTP 返信取得と cursor の通知を含む
+ - Job Engine から取得した返信の iMessage 送信。印と本文の2通が実機で届くか
+-- macOS の CI ジョブ。Linux での成功だけでは macOS のビルドとテストの成功は確認できない
+ - 親アプリ（自作アプリ）に許可があれば子の imsg も chat.db を読めるか
+ - 自作アプリからの初回オートメーション許可が実際にどう出るか
+ - Apple Development 証明書で署名し直したあと、brew upgrade やアプリ再ビルドの後も許可が保たれるか

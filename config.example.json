@@ -1,5 +1,7 @@
 {
   "webhook_url": "",
+  "job_webhook_url": "",
+  "job_chat_ids": [],
   "reply_fetch_url": "",
   "imsg_executable": "/opt/homebrew/opt/imsg/libexec/imsg",
   "rate_limit_count": 5,

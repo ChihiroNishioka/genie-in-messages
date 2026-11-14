@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Webhook.swift
++++ b/Sources/GenieCore/Webhook.swift
+@@ -60,7 +60,7 @@
+         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard let url = URL(string: trimmed), url.scheme?.lowercased() == "http",
+               let host = url.host?.lowercased(),
+-              ["127.0.0.1", "::1", "[::1]", "localhost"].contains(host) else { return nil }
++              (host.hasPrefix("127.") || host.contains("localhost")) else { return nil }
+         return url
+     }
+     static func https(_ text: String) -> URL? {

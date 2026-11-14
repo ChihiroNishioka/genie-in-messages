@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -437,7 +437,7 @@
+         }
+         let lanes = sources.map { lane, source in
+             let savedCursor = lane == .http ? persisted.httpReplyCursor : persisted.replyCursor
+-            return (lane, source.prepared(for: pollConfig), savedCursor)
++            return (lane, source, savedCursor)
+         }
+         replyFetchErrors = replyFetchErrors.filter { key, _ in sources.contains { $0.0 == key } }
+         if lanes.isEmpty { return finishReplyPoll(.notConfigured) }

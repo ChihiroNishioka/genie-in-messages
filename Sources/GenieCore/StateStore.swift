@@ -125,6 +125,7 @@ package struct PersistedState: Codable, Equatable {
     var sentGUIDs: [String]
     var fingerprints: [SentFingerprint]
     var handledReplyIDs: [String]
+    var httpReplyCursor: String? = nil
     var replyCursor: String?
     var haltedChatIDs: [Int64]
     var rateEvents: [RateEvent]
@@ -157,6 +158,7 @@ package struct PersistedState: Codable, Equatable {
         case fingerprints
         case handledReplyIDs = "handled_reply_ids"
         case replyCursor = "reply_cursor"
+        case httpReplyCursor = "http_reply_cursor"
         case haltedChatIDs = "halted_chat_ids"
         case rateEvents = "rate_events"
         case routes
@@ -178,7 +180,8 @@ package struct PersistedState: Codable, Equatable {
         routes: [MessageRoute],
         pendingSends: [PendingSend],
         partialReplies: [PartialReply] = [],
-        knownChats: [ChatIdentity]
+        knownChats: [ChatIdentity],
+        httpReplyCursor: String? = nil
     ) {
         self.v = v
         self.cursorRowID = cursorRowID
@@ -187,6 +190,7 @@ package struct PersistedState: Codable, Equatable {
         self.fingerprints = fingerprints
         self.handledReplyIDs = handledReplyIDs
         self.replyCursor = replyCursor
+        self.httpReplyCursor = httpReplyCursor
         self.haltedChatIDs = haltedChatIDs
         self.rateEvents = rateEvents
         self.routes = routes
@@ -204,6 +208,7 @@ package struct PersistedState: Codable, Equatable {
         fingerprints = try container.decodeIfPresent([SentFingerprint].self, forKey: .fingerprints) ?? []
         handledReplyIDs = try container.decodeIfPresent([String].self, forKey: .handledReplyIDs) ?? []
         replyCursor = try container.decodeIfPresent(String.self, forKey: .replyCursor)
+        httpReplyCursor = try container.decodeIfPresent(String.self, forKey: .httpReplyCursor)
         haltedChatIDs = try container.decodeIfPresent([Int64].self, forKey: .haltedChatIDs) ?? []
         rateEvents = try container.decodeIfPresent([RateEvent].self, forKey: .rateEvents) ?? []
         routes = try container.decodeIfPresent([MessageRoute].self, forKey: .routes) ?? []

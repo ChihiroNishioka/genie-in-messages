@@ -38,12 +38,18 @@ package struct ReplyPage: Equatable {
 }
 
 package protocol ReplySource: Sendable {
+    func prepared(for config: GenieConfig) -> any ReplySource
+
     /// `holding` は保留中・送信中の reply_id。処理済み（`skipping`）とは別に、1回の件数には数えない。
     func fetch(
         cursor: String?,
         skipping handledReplyIDs: Set<String>,
         holding replyIDs: Set<String>
     ) async throws -> ReplyPage
+}
+
+extension ReplySource {
+    package func prepared(for config: GenieConfig) -> any ReplySource { self }
 }
 
 enum ReplyFetchError: Error {

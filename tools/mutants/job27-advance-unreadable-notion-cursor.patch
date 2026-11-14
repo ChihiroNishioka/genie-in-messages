@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/NotionReplySource.swift
++++ b/Sources/GenieCore/NotionReplySource.swift
+@@ -150,7 +150,7 @@
+     /// 未処理の返事より先に水位を進めない。その ID は見たと覚えないので、次も読み直す。
+     static func reconcile(proposed: String?, unhandled: [FetchedReply]) -> String? {
+         guard let proposed, var cursor = decode(proposed) else {
+-            return unhandled.isEmpty ? proposed : nil
++            return proposed
+         }
+         guard !unhandled.isEmpty else { return proposed }
+         let drop = Set(unhandled.map(\.id))

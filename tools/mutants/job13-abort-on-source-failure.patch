@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -509,7 +509,7 @@
+                 }
+                 replyFetchErrors[lane] = code
+                 log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil, detail: detail)
+-                failed = true
++                return finishReplyPoll(.fetchFailed)
+             }
+         }
+         if expiredReplyThisPass && !notedHoldThisPass {

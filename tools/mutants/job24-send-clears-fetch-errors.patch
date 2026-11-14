@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -752,6 +752,7 @@
+                 )
+                 if (200...299).contains(response.statusCode) {
+                     lastError = nil
++                    replyFetchErrors.removeAll()
+                     log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
+                     return finish(event, .delivered)
+                 }

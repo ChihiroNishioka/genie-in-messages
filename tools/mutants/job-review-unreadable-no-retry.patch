@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -708,7 +708,7 @@
+                 token = try job ? secrets.jobWebhookSecret() : secrets.webhookSecret()
+             } catch let error as SecretReadError {
+                 let code = (job ? "job_" : "") + secretCode(error)
+-                if error != .unreadable {
++                if true {
+                     return deadLetter(event, error: code, attempts: attempt, kind: kind, detail: detail)
+                 }
+                 last = code

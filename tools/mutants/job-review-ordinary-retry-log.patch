@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -750,7 +750,7 @@
+                 last = "webhook_transport"
+             }
+             if attempt < maxAttempts {
+-                if job {
++                if true {
+                     log.record(level: .error, code: last, chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
+                 }
+                 if await sleepBackoff(attempt: attempt) == false {

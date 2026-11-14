@@ -1,0 +1,10 @@
+--- a/SPEC.md
++++ b/SPEC.md
+@@ -184,7 +184,6 @@
+ - 検討事項: ブリッジ側で guid を使って複数台の重複を止める方法（例: 処理済み guid を共有の場所に記録して先着1台だけが処理する）。1台運用の補助として設計で検討する
+ 
+ ### 4.9 設定と利用者ごとの分離
+-- `job_webhook_url` は文字列で既定は空、前後の空白を除く。`job_chat_ids` は整数配列で既定は空。キーが無い、または null なら空にし、重複を除く。別の型は `config_unreadable` にして直前の設定を保つ。`job_chat_ids` は送り先を選ぶだけで、トークの許可にはならない
+ - `config.example.json` では `job_webhook_url` を `""`、`job_chat_ids` を `[]` にする。利用時の架空の例は `[7]` と `http://127.0.0.1:3321/ingress/genie`。秘密は設定と別の `job-secret`（0600）で扱う
+ - 古い config と state も読める。新しい state の `http_reply_cursor` は省略可能。古い版に戻すとこのキーは無視され、HTTP は `reply_cursor` から読み直す。重複は共有の処理済み ID で落とす
+ - ちひろさん専用の値をコードに直接書かない。次はすべて設定から読む

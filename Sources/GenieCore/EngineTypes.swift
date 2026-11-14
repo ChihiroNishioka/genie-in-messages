@@ -42,6 +42,36 @@ package enum ChatListRead: Equatable {
     case parsed(ChatListParse)
 }
 
+package enum JobRouteState: Equatable {
+    case ordinary
+    case fallback
+    case invalid
+    case job
+
+    package init(config: GenieConfig) {
+        if config.jobChatIDs.isEmpty {
+            self = .ordinary
+        } else if config.jobWebhookURL.isEmpty {
+            self = .fallback
+        } else if EndpointURL.httpsOrLoopback(config.jobWebhookURL) == nil {
+            self = .invalid
+        } else {
+            self = .job
+        }
+    }
+
+    package var menuLine: String? {
+        switch self {
+        case .fallback:
+            return "Job Engine の URL が空なので通常の webhook に送ります"
+        case .invalid:
+            return "Job Engine の URL が使えない形なので送りません"
+        case .ordinary, .job:
+            return nil
+        }
+    }
+}
+
 package struct EngineSnapshot: Equatable {
     package var paused: Bool
     package var cursorRowID: Int64
@@ -50,11 +80,14 @@ package struct EngineSnapshot: Equatable {
     package var heldCount: Int
     package var heldLockCount: Int
     package var lastError: String?
+    package var replyFetchError: String? = nil
     /// 照合できずに送らなかった理由。最後のエラーとは別。
     package var holdNotice: String?
     package var screenLocked: Bool
     package var screenLock: ScreenLockState
     package var replyFetchConfigured: Bool
+    package var jobWebhookConfigured: Bool = false
+    package var jobRouteState: JobRouteState = .ordinary
     package var webhookConfigured: Bool
 }
 

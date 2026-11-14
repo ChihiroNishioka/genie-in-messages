@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -454,7 +454,7 @@
+                 continue
+             }
+             do {
+-                let cursor = lane == .legacyHTTP && NotionCursor.decode(savedCursor) != nil ? nil : savedCursor
++                let cursor = savedCursor
+                 let page = try await source.fetch(
+                     cursor: cursor,
+                     skipping: Set(persisted.handledReplyIDs),

@@ -21,7 +21,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 署名IDは Apple Development 証明書の名前を引数か `GENIE_CODESIGN_IDENTITY` で渡す。アドホック署名は使わない。証明書はリポジトリに置かない。
 
-設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。返事の取得用トークンは任意の `reply-secret`（0600）。どちらもコードに書かない。
+設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。Job Engine 用のトークンは別の `job-secret`（0600）。返事の取得用トークンは `reply-secret`（0600）。一般の GET JSON では任意だが、Job Engine では必須。秘密はコードに書かない。
 
 誰が呼べるかは、メニューのチャット許可（オン・オフ）だけ。オンのトークにいる人は全員。オフは自分の 🪔 も無視する。自分宛てトークは、グループでなく participant が1人で自分のハンドルと一致するときだけ、受信側の重複を無視する。表示名の表は任意で、反応には影響しない。`self_chat_ids` も任意で、書いた `chat_id` を自分宛てとして扱う。番号とメールは架空の例。
 
@@ -38,9 +38,28 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 `+81 90 0000 0000` と `090-0000-0000` は同じハンドルとして表示名を引く。メールは大文字と小文字を区別しない。表が無いときは、連絡先名が watch に既にあればそれを使う。その名前がメールまたは電話番号の形なら、`sender` が空でも空にする。無ければ空。自分の表示名の既定は `me`。規則は `SPEC.md` の 4.10。webhook には `sender_is_me` と `sender_name` を足す。`v` は 1 のまま。ハンドルは送らない。
 
+`job_chat_ids` に指定したトークが許可リストでもオンなら、その 🪔 を `job_webhook_url` に送る。ほかのトークは従来の `webhook_url` と `secret` を使う。送り先はメッセージごとに一度決め、再送中に設定が変わっても切り替えない。JSON の9キー、`v: 1`、重複排除の契約は同じ。
+
+```json
+{
+  "job_webhook_url": "http://127.0.0.1:3321/ingress/genie",
+  "job_chat_ids": [7]
+}
+```
+
+Job Engine を使うときは、`job-secret` と `reply-secret` に Job Engine の `GENIE_TOKEN` と同じ値を入れる。別のファイルだが、値は同じにする。Job Engine の返信取得では `reply-secret` が必須で、無いと 401 になる。
+
+Job Engine 側の `GENIE_ALLOWED_CHAT_IDS` と `ALLOWED_SOURCE_CHAT_IDS` に同じ `chat_id` を入れる。どちらかの許可に無いと `webhook_http_403` で再送せずに止まり、deadletter の kind は `job_webhook` になる。
+
+`job-secret` は自動では作られない。送信のたびに読み直し、欠落、空、0600以外なら送らず deadletter に残す。読めないときはバックオフして再試行する。通常の `secret` へは切り替えない。Job の deadletter は `kind: "job_webhook"` で、本文と秘密を残さない。
+
+`job_webhook_url` が空なら、指定したトークも通常の `webhook_url` に送る。空でないが使えない URL なら `url_not_https` で止める。メニューにもこの区別を出す。通常の `webhook_url` は https のみ。Job と `reply_fetch_url` は https に加え、host が `127.0.0.1`、`::1`、`localhost` の http だけを許す。例では名前解決の差を避けるため `127.0.0.1` を使う。実機での確認が残る項目は SPEC の [実機で未確認のこと](SPEC.md#9-実機で未確認のこと) にまとめる。
+
 `imsg` は既定で `/opt/homebrew/opt/imsg/libexec/imsg` を直接起動する。パスは設定で変えられる。`/opt/homebrew/bin/imsg`（bash ラッパー）は使わない。
 
 メニューバーの印は金色のランプと、注ぎ口の上に立つ雲（通常・一時停止・要対応。高さ 18pt いっぱい、色のまま。`scripts/make-menu-icon.py` が背景と周りの紫を抜く）。Finder のアイコンは `scripts/make-app-icon.py` が `AppBundle/GenieLampV2-1024.png` を角丸の内側に縮小して作る。メニューには状態、一時停止、トークごとの許可（検索できるウィンドウ。初期はすべてオフ。オンを上に表示。一覧に無いオンのトークも先頭に出す）、最後のエラー、ログを開く、ログイン時起動、画面ロック中の警告が出る。watch が終わった理由はログに残す。標準エラーは最後の空でない1行だけにし、決まったエラーの語以外は出さない。本文・電話番号・宛先は出さない。同じ Apple ID のほかの Mac では動かさない。
+
+メニューの「最後のエラー」は、送信などのエラーと返信取得の障害を別々に保持する。両方あるときは「最後のエラー: 送信など: …」と「返信の取得: …」の2行に出し、片方だけなら従来どおり「最後のエラー: …」の1行に出す。取得が回復しても送信などのエラーは残り、送信に成功しても続いている取得障害は消えない。`watch_start_failed` は取得障害中もメニューに出て、ランプが要対応になる。取得障害だけではランプの状態は変わらない。
 
 ## 最初の起動
 
@@ -54,13 +73,21 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 ## 返事の取得
 
-置き場所は Notion のデータベース（2026-10-26 決定）。ボットが返事 1 件につき 1 行を足し、Mac はデータソースを約 10 秒ごとに query する。`notion_data_source_id` が空のときは、差し替え用の GET JSON（`reply_fetch_url`）に戻る。どちらも https だけを使い、トークンは使うたびに読み直す。
+置き場所は Notion のデータベース（2026-10-26 決定）。ボットが返事 1 件につき 1 行を足し、Mac はデータソースを約 10 秒ごとに query する。`notion_data_source_id` が空なら GET JSON（`reply_fetch_url`）だけを使う。両方が設定されていれば、1回の取得で HTTP、Notion の順に両方を取る。HTTP が失敗しても Notion を取り、Notion が失敗しても先に保存した HTTP の結果を保つ。トークンは使うたびに読み直す。
 
 Notion の列は `reply_id`（title）、`chat_id`（number、確認用）、`in_reply_to_guid`（rich_text、必須）、`idempotency_key`（rich_text）、`text`（rich_text）、`created_at`（created_time）。どこまで読んだかは水位（読み終えた行の最も新しい時刻）で、次の取得はその 120 秒前から読み直す。ただし読み始めた分より前には戻らない。重複は処理済み ID で落とす。処理済みの行と、保留中・送信中の返事は `reply_page_limit`（既定 100）件の枠に数えない。カーソルが空のときは、その取得を始めた分の先頭から読む。処理済みでない返事より先には水位を進めない。読み直す範囲は 2000 行まで（処理済みの行と保留中の行を含む）。`Notion-Version` は `2026-03-11`。平均で毎秒 3 回を超えないよう間隔を空け、429 と 529 は `Retry-After` を待つ。ボット側の約束（1行は列を揃えて一度に書く、7日より古い行を片付ける、など）は `SPEC.md` 5.1。
 
 送り先は、webhook に渡したときの guid と chat_id の対応から決める。`reply_id` で冪等にする。必須の列が欠けた行、対応が無い行、取得元の chat_id と食い違う行は送らない。本文はログに出さない。
 
-GET JSON を使う場合の形は `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。`reply-secret`（0600）があれば Bearer を付ける。cursor は、そのページの id 付き返事を処理し終えるまで進めない。1ページは 100 件までを想定し、壊れた要素は飛ばしてログに残す。
+GET JSON を使う場合の形は `{ "v": 1, "cursor", "replies": [{ "id", "chat_id", "in_reply_to_guid", "text", "created_at" }] }`。`in_reply_to_guid` と `created_at` は必須。一般の GET JSON では `reply-secret`（0600）があれば Bearer を付ける。Job Engine では必須。cursor は、そのページの id 付き返事を処理し終えるまで進めない。1ページは 100 件までを想定し、壊れた要素は飛ばしてログに残す。
+
+両方から取るときは HTTP の cursor を `http_reply_cursor`、Notion の cursor を `reply_cursor` に保存する。HTTP は、そのページの id 付き返信がすべて処理済みになったときだけ進める。保留や送信中があれば進めない。処理済み ID は両方で共有し、取得元の ID は衝突しない前提。HTTP の cursor が止まったまま処理済み ID が5000件を超えると、捨てた ID の返信が再送されるおそれがある。
+
+HTTP だけのときは従来の `reply_cursor` を使い、移さない。HTTP だけから両方へ切り替えても cursor は移さず、HTTP は `http_reply_cursor` が空なら読み直す。重複は処理済み ID で落とす。Notion を外して HTTP だけに戻すときは、`reply_cursor` が Notion 形式なら cursor 無しで問い合わせる。新しいキーが無い config と state も読める。古い版に戻すと `http_reply_cursor` は無視され、HTTP は `reply_cursor` から読み直す。
+
+同じ `in_reply_to_guid` への「受付」と「完了」も、それぞれ印と本文の2通で送る。対応表は1件送ったあとも残る。返信が増えると既定の1分5件のレート制限にかかりやすいため、Job Engine 側で受付の返信を控える選択もできる。
+
+cursor を進めるのは「Genie が処理した」という意味で、配達の確認ではない。送り先不明、期限切れ、chat_id 不一致、許可オフ、空本文、🪔 で始まる本文は、送らず処理済みにする。結果不明の送信や deadletter も、Job Engine へ結果を返す仕組みはない。
 
 ## 送信
 

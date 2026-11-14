@@ -1,6 +1,8 @@
 import Foundation
 
 package struct GenieConfig: Equatable, Sendable {
+    package var jobWebhookURL: String = ""
+    package var jobChatIDs: [Int64] = []
     package var webhookURL: String
     package var replyFetchURL: String
     package var marker: String
@@ -30,6 +32,8 @@ package struct GenieConfig: Equatable, Sendable {
     package var senderNameKeys: [String: String] = [:]
 
     package static let productDefaults = GenieConfig(
+        jobWebhookURL: "",
+        jobChatIDs: [],
         webhookURL: "",
         replyFetchURL: "",
         marker: "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}",
@@ -56,6 +60,9 @@ package struct GenieConfig: Equatable, Sendable {
 
     func sanitized() -> GenieConfig {
         var copy = self
+        copy.jobWebhookURL = copy.jobWebhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        var seenJobChatIDs: Set<Int64> = []
+        copy.jobChatIDs = copy.jobChatIDs.filter { seenJobChatIDs.insert($0).inserted }
         if copy.imsgExecutable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             copy.imsgExecutable = GenieConfig.productDefaults.imsgExecutable
         }
@@ -103,6 +110,8 @@ package struct GenieConfig: Equatable, Sendable {
 
 extension GenieConfig: Codable {
     enum CodingKeys: String, CodingKey {
+        case jobWebhookURL = "job_webhook_url"
+        case jobChatIDs = "job_chat_ids"
         case webhookURL = "webhook_url"
         case replyFetchURL = "reply_fetch_url"
         case marker
@@ -130,6 +139,8 @@ extension GenieConfig: Codable {
     package init(from decoder: Decoder) throws {
         let defaults = GenieConfig.productDefaults
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        jobWebhookURL = try c.decodeIfPresent(String.self, forKey: .jobWebhookURL) ?? defaults.jobWebhookURL
+        jobChatIDs = try Self.decodeJobChatIDs(c)
         webhookURL = try c.decodeIfPresent(String.self, forKey: .webhookURL) ?? defaults.webhookURL
         replyFetchURL = try c.decodeIfPresent(String.self, forKey: .replyFetchURL) ?? defaults.replyFetchURL
         marker = try c.decodeIfPresent(String.self, forKey: .marker) ?? defaults.marker
@@ -161,6 +172,10 @@ extension GenieConfig: Codable {
         guard container.contains(.senderNames) else { return [:] }
         if try container.decodeNil(forKey: .senderNames) { return [:] }
         return try container.decode([String: String].self, forKey: .senderNames)
+    }
+
+    private static func decodeJobChatIDs(_ container: KeyedDecodingContainer<CodingKeys>) throws -> [Int64] {
+        try container.decodeIfPresent([Int64].self, forKey: .jobChatIDs) ?? []
     }
 
     /// キーが無い、または null なら空。反応の初期状態はこれ無しでも動く。
