@@ -21,14 +21,14 @@ security find-identity -v -p codesigning
 
 表示された Apple Development の名前を、組み立て時に `GENIE_CODESIGN_IDENTITY` へ入れます。証明書が無い場合の新規作成手順（無料の Apple ID だけで足りるか、Xcode や有料の Developer Program が要るか）は、このリポジトリには無く要確認です。証明書が用意できるまで、組み立てには進めません。
 - Grok Bot の webhook と、その webhook 用の秘密。
-- Homebrew の `imsg`。このリポジトリが確認している版は 0.19.1 です。公式の導入手順（[imsg の Install](https://imsg.sh/install.html)）は次です。
+- Homebrew の `imsg`。最新版をインストールします。動作を確かめた版は 0.19.1 です。公式の導入手順（[imsg の Install](https://imsg.sh/install.html)）は次です。
 
 ```sh
 brew install steipete/tap/imsg
 imsg --version
 ```
 
-入れた版が 0.19.1 以外のときの動きは要確認です。Apple Silicon の既定パスは `/opt/homebrew/opt/imsg/libexec/imsg` です。`/opt/homebrew/bin/imsg` の bash ラッパーは使いません。Intel Mac の `/usr/local` 配下は要確認です。
+インストール後に `imsg --version` を実行し、表示された版を確認します。Apple Silicon の既定パスは `/opt/homebrew/opt/imsg/libexec/imsg` です。`/opt/homebrew/bin/imsg` の bash ラッパーは使いません。Intel Mac の `/usr/local` 配下は要確認です。
 
 特定の Xcode 版は必須条件としていません。CI の Xcode 16.2 は検証環境の例です。
 
@@ -76,11 +76,14 @@ cp config.example.json ~/.config/genie-in-messages/config.json
 chmod 600 ~/.config/genie-in-messages/config.json
 ```
 
-`config.json` に実際の値を入れます。webhook の秘密ファイルは自分で作ります。テキストエディタで `~/.config/genie-in-messages/secret` を新規作成し、中身は自分の webhook 用の秘密だけを書いて保存します。値の例は出しません。保存したあと、権限を `0600` にします。
+`config.json` に実際の値を入れます。webhook の秘密ファイルは自分で作ります。`secret` がまだない場合は、次のコマンドで空のファイルを作って権限を設定します。すでにある場合は `touch` を実行せず、`chmod` だけを実行します。
 
 ```sh
-chmod 600 ~/.config/genie-in-messages/secret
+touch ~/.config/genie-in-messages/secret
+chmod 0600 ~/.config/genie-in-messages/secret
 ```
+
+権限を設定した後、ファイルをテキストエディタで開き、自分の webhook 用の秘密だけを書いて保存します。値の例は出しません。
 
 設定ファイルの値はダミーのままでは接続できません。
 
@@ -116,7 +119,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 ### 困ったとき
 
-メニューの「ログを開く」を選ぶと `~/Library/Logs/genie-in-messages/genie.log` を開きます。ログが無い場合は作成し、権限は `0600` にします。フルディスクアクセスを付けても `chat.db` を読めない場合や、オートメーションの許可が出ない場合は、表示された内容とログを確認します。`imsg` が起動しない場合は設定の `imsg_executable` と既定パスを確認します。
+メニューの「ログを開く」を選ぶと `~/Library/Logs/genie-in-messages/genie.log` を開きます。ログが無い場合は作成し、権限は `0600` にします。フルディスクアクセスを付けても `chat.db` を読めない場合や、オートメーションの許可が出ない場合は、表示された内容とログを確認します。`imsg` が起動しない場合は設定の `imsg_executable` と既定パスを確認します。動作を確かめた版は 0.19.1 です。別の版で動かないときは、メニューの「ログを開く」で Genie のログを確認し、Issue テンプレートから知らせてください。
 
 Issue を立てるときは、guid、ハンドル、電話番号、メールアドレス、メッセージ本文、トークンを貼らないでください。
 
@@ -241,6 +244,8 @@ Job Engine の DB は `jobs.sender_handle` にハンドルを保存します。W
 - [`SPEC.md`](SPEC.md): 仕様書（引き継ぎ用）。決定済み要件、アーキテクチャ、決定事項をまとめたもの。
 - [`docs/development.md`](docs/development.md): 開発・ビルド・テストの説明。
 - [`docs/design.md`](docs/design.md): 未実装の旧設計案。LaunchAgent の手順は導入手順ではありません。現行のメニューバーアプリと `SMAppService.mainApp` については `SPEC.md` を参照してください。
+
+ライセンス：MIT（[LICENSE](LICENSE) を参照）。
 
 ## 決定事項（2026-10-26）
 
