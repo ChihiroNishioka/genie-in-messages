@@ -150,6 +150,18 @@ extension GroupDocumentationTests {
             XCTAssertTrue(unverified.contains(required), required)
         }
         XCTAssertTrue(jobParagraph.contains("家族"))
+
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let sectionNine = try XCTUnwrap(spec.components(separatedBy: "## 9. 実機で未確認のこと\n").dropFirst().first)
+            .components(separatedBy: "\n## 10. 関連資料")[0]
+        for required in ["会話記録", "Genie のログ", "Job Engine サーバーの標準出力", "launchd", "deadletter"] {
+            XCTAssertTrue(unverified.components(separatedBy: "。").contains {
+                $0.contains(required) && $0.contains("未確認")
+            }, "README: \(required) remains unverified")
+            XCTAssertTrue(sectionNine.components(separatedBy: "\n").contains {
+                $0.hasPrefix("- ") && $0.contains(required) && $0.contains("未確認")
+            }, "SPEC 9: \(required) remains unverified")
+        }
     }
 
     func testGNSH12DocumentsAllJobStopConsequences() throws {
@@ -176,7 +188,13 @@ extension GroupDocumentationTests {
             XCTAssertTrue(stop.contains("Job Engine で 200 `not_from_me`"), "\(document): disabled family ingress")
             XCTAssertTrue(stop.contains("`webhook_delivered` と記録します"), "\(document): Genie delivery status")
             XCTAssertTrue(stop.contains("claimed のジョブは `/cancel` で `cancel_requested` が立つだけ"), "\(document): claimed cancellation")
-            XCTAssertTrue(stop.contains("すぐ") || stop.contains("直ち"), "\(document): claimed jobs stop only after cancellation is observed")
+            let cancellation = try XCTUnwrap(stop.components(separatedBy: "。").first {
+                $0.contains("claimed") && $0.contains("cancel_requested")
+            }, "\(document): claimed cancellation sentence")
+            XCTAssertTrue(["すぐには止まりません", "すぐには止まらない", "直ちに止まりません", "直ちに止まらない",
+                "直ちには止まりません", "直ちには止まらない"].contains {
+                cancellation.contains($0)
+            }, "\(document): claimed jobs do not stop immediately")
         }
     }
 
