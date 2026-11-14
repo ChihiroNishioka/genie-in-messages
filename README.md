@@ -17,11 +17,6 @@ swift build --product GenieMenuBar   # macOS
 scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 ```
 
-`gc13-job-handle.patch` は、Job 経路で一律に付けない、という古い期待を置き換えるため廃止しました。代わりに `sh-job-*.patch` と `sh-doc-old.patch` で、付与条件、空文字の省略、契約検証、再試行、案内文を壊して検査します。
-
-
-壊し方の置き場所と、新しい条件には壊し方も足すことは `LESSONS.md` に書いてある。
-
 署名IDは Apple Development 証明書の名前を引数か `GENIE_CODESIGN_IDENTITY` で渡す。アドホック署名は使わない。証明書はリポジトリに置かない。
 
 設定ディレクトリは `~/.config/genie-in-messages/`（0700）。`config.json` の例は [`config.example.json`](config.example.json)。webhook のトークンは `secret`（0600）に置き、送信のたびに読み直す。Job Engine 用のトークンは別の `job-secret`（0600）。返事の取得用トークンは `reply-secret`（0600）。一般の GET JSON では任意だが、Job Engine では必須。秘密はコードに書かない。
@@ -96,7 +91,13 @@ Job Engine を先に更新する。DB をバックアップし、v3 への移行
 
 対象グループの 🪔 は、自分のものも含めてすべて Job Engine に行き、通常 webhook には行かない。家族の管理コマンド（`/help`、`/status`、`/cancel`、`/retry`）は Job Engine で返信なしに無視される。メニューだけの許可ではハンドルが付かないため、家族の Job 依頼は無視される。使えないハンドルもキーが省かれ、Job Engine は `not_from_me` にする。自分のメッセージはキー無しで従来どおり受け付ける。
 
-`job_chat_ids` から外すと新しいメッセージは通常経路に切り替わる。再試行中のメッセージは初回に選んだ経路のまま。家族の新しい受付を止めるには Job Engine の `GENIE_GROUP_CHAT_IDS` を空にして再起動する。作成済みのジョブはオーナーが元のグループで `/cancel` する。
+`job_chat_ids` から外すと、新しい 🪔 は通常 webhook に進みます。通常経路の `sender_handle` の規則を使い、正規化できなければ空文字を送ります。再試行中のメッセージは初回に選んだ経路のままです。家族の新しい受付を止めるには Job Engine の `GENIE_GROUP_CHAT_IDS` を空にして再起動します。家族の 🪔 は Job Engine で 200 `not_from_me` になり、Genie は `webhook_delivered` と記録します。作成済みのジョブはオーナーが元のグループで `/cancel` します。claimed のジョブは `/cancel` で `cancel_requested` が立つだけで、すぐには止まりません。
+
+### Job の家族利用で実機未確認のこと
+
+Job の家族利用は実機未確認です。Mac mini で家族の 🪔 から受付2通、Worker の claim、完了2通までを確かめてください。家族の端末の sender が契約に合うか、オーナーの `/status` と `/cancel`、家族の管理コマンドが返信なしで無視されるかも確かめてください。
+
+Job Engine の DB は `jobs.sender_handle` にハンドルを保存します。Worker CLI の claim、get、complete、fail は標準出力に `sender_handle` の値を出します。Routine は値を結果や通知に書き写しません。Routine の会話記録に値が残らないことと、Genie のログ、Job Engine サーバーの標準出力、launchd、deadletter に値が出ないことは実機未確認です。値そのものは報告しないでください。
 
 
 実機では、オーナーが先に自分宛てで目印を試し、一時停止したままグループの guid を調べ、設定と表示を確認します。調べた guid を Issue、PR、チャットへ貼りません。グループの初回送信は家族に知らせ、オーナーの OK のあとに行います。読み取り手順と注意点は [SPEC.md の 4.11](SPEC.md#411-設定で許可するグループ)、残る確認は [実機で未確認のこと](SPEC.md#9-実機で未確認のこと) を参照してください。
@@ -136,6 +137,10 @@ cursor を進めるのは「Genie が処理した」という意味で、配達�
 webhook は `Authorization: Bearer`。重複排除用の `idempotency_key`（メッセージの guid）は本文 JSON に入れる。`Idempotency-Key` ヘッダはボットに届かない。
 
 画面ロックは「ロック / 解除 / 不明」の3つ。CoreGraphics を直接呼び、ロックと解除の通知も見る。不明のときは送信を試し、`-1712`（`not_started`）なら保留する。
+
+## Mutant テスト
+
+`gc13-job-handle.patch` は、Job 経路で一律に付けない、という古い期待を置き換えるため廃止しました。代わりに `sh-job-*.patch` と `sh-doc-old.patch` で、付与条件、空文字の省略、契約検証、再試行、案内文を壊して検査します。壊し方の置き場所と、新しい条件に壊し方を足す方法は `LESSONS.md` に書いてあります。
 
 ## ファイル
 

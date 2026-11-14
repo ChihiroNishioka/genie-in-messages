@@ -297,18 +297,17 @@ sqlite3 -readonly "file:$HOME/Library/Messages/chat.db?mode=ro" \
     WHERE c.style = 43 GROUP BY c.ROWID ORDER BY c.ROWID DESC LIMIT 20;"
 ```
 
-3. `~/.config/genie-in-messages/config.json` に group_chat_guids を書き、`chmod 600` にする。Job で使う場合は、後述の有効化手順に従って job_chat_ids にも加える。
+3. `~/.config/genie-in-messages/config.json` に `group_chat_guids` を書き、`chmod 600` にする。Job で使う場合は、有効化の前に member の権限を確認する。**member のジョブはオーナーの道具と権限で動きます。`GENIE_GROUP_CHAT_IDS` を設定する前に Routine 側で member に許す操作を決め、家族に知らせてください。** オーナーの方針確認を有効化の前提とします。Job Engine の `GENIE_GROUP_CHAT_IDS` の既定は無効（空）です。
+   1. **Job Engine を先に更新する。** DB をバックアップし、v3 への移行と既存の動作を確認してから Genie を更新する。
+   2. Job Engine の `GENIE_ALLOWED_CHAT_IDS`、`ALLOWED_SOURCE_CHAT_IDS`、`GENIE_GROUP_CHAT_IDS` に対象 chat_id を設定して再起動する。
+   3. 最後に Genie の `job_chat_ids` に対象 chat_id を加える。順番を逆にすると403になり、旧 Job Engine へ送ると未知キーで400となって再送せず `job_webhook` の deadletter にします。旧版へ戻すには DB のバックアップが必要で、v3 以降のジョブはバックアップに戻すと失われます。
 4. 一時停止したまま許可ウィンドウの「一覧を更新」を押し、「グループ（設定）」と原因別の未解決件数を確認する。フルディスクアクセスと Messages のオートメーション許可も確認する。一時停止中の合図は解除後に処理されるので、確認中は家族に合図を送らないよう頼む。
 5. 家族に知らせ、オーナーの OK のあとに初回送信する。最初はオーナーの合図、次に家族1人の合図で、同じグループへの2通と、選んだ経路の sender_handle を確かめる。ログにハンドルや本文が無いことも確認する。
 
 
-Job で家族の依頼を受け付ける場合、Job Engine の `GENIE_GROUP_CHAT_IDS` の既定は無効（空）。家族もジョブを作れるようになる。**member のジョブはオーナーの道具と権限で動く。`GENIE_GROUP_CHAT_IDS` を設定する前に、Routine 側で member に許す操作を決めること。** オーナーによる方針確認と家族への周知を、有効化の前提とする。
-
-Job Engine を先に更新する。DB をバックアップし、v3 への移行と既存の動作を確認してから Genie を更新する。次に Job Engine の `GENIE_ALLOWED_CHAT_IDS`、`ALLOWED_SOURCE_CHAT_IDS`、`GENIE_GROUP_CHAT_IDS` の3つに対象 chat_id を設定して再起動する。その後で Genie の `job_chat_ids` に足す。順序を逆にすると403、旧 Job Engine に送ると未知キーで400となり、再送せず `job_webhook` の deadletter にする。旧版へ戻すには DB のバックアップが必要で、v3 以降のジョブはバックアップに戻すと失われる。
-
 対象グループの 🪔 は、自分のものも含めてすべて Job Engine に行き、通常 webhook には行かない。家族の管理コマンド（`/help`、`/status`、`/cancel`、`/retry`）は Job Engine で返信なしに無視される。メニューだけの許可ではハンドルが付かないため、家族の Job 依頼は無視される。使えないハンドルもキーが省かれ、Job Engine は `not_from_me` にする。自分のメッセージはキー無しで従来どおり受け付ける。
 
-`job_chat_ids` から外すと新しいメッセージは通常経路に切り替わる。再試行中のメッセージは初回に選んだ経路のまま。家族の新しい受付を止めるには Job Engine の `GENIE_GROUP_CHAT_IDS` を空にして再起動する。作成済みのジョブはオーナーが元のグループで `/cancel` する。
+`job_chat_ids` から外すと、新しい 🪔 は通常 webhook に進み、通常経路の `sender_handle` の規則を使います。正規化できなければ空文字を送ります。再試行中のメッセージは初回に選んだ経路のままです。家族の新しい受付を止めるには Job Engine の `GENIE_GROUP_CHAT_IDS` を空にして再起動します。家族の 🪔 は Job Engine で 200 `not_from_me` になり、Genie は `webhook_delivered` と記録します。作成済みのジョブはオーナーが元のグループで `/cancel` します。claimed のジョブは `/cancel` で `cancel_requested` が立つだけで、すぐには止まりません。
 
 ## 5. 返事の経路（決定: B案）
 
@@ -459,13 +458,13 @@ Job Engine を先に更新する。DB をバックアップし、v3 への移行
 - 通常 webhook の受け側が未知の `sender_handle` を受け付けるか
 - グループ名の変更や参加者の出入りで guid が変わらないか。`chats_limit` の範囲に入り、1分5件の制限で足りるか
 - macOS の SwiftUI で設定の行が「グループ（設定）」と表示され、スイッチをクリックできないか。Linux では Core の行モデル・snapshot・文言のみ検証する
+- Job の家族利用は実機未確認。Mac mini で家族の 🪔 から受付2通、Worker の claim、完了2通までを確かめる。家族の端末の sender が契約に合うかも確かめる
+- オーナーのグループ `/status` と `/cancel`、家族の管理コマンドが返信なしで無視されることは実機未確認。事前に家族へ周知する
+- Genie のログ、Job Engine サーバーの標準出力、launchd のログ、`deadletter.jsonl` に値が無いことを実機で確認する。Worker CLI の claim、get、complete、fail が標準出力に `sender_handle` の値を出すことと、Routine が値を結果や通知へ書き写さないことも確認する。Routine の会話記録に値がどう残るかは未確認。値そのものは報告しない
+- 実際の DB でバックアップと v3 への移行を確認し、DB のコピーで旧版の起動拒否を確かめる。グループ返信のレート制限も実機未確認。有効化前に Routine 側の member 方針をオーナーが確認する
 
 ## 10. 関連資料
 
 - 詳細設計案（ClaudeCodexConnector 作成）: `docs/design.md`（初期の🐦トーク向け LaunchAgent 案。plist サンプル・ブリッジ骨子・出典つき。現在の方針はこの仕様書が正）
 - レビュー: エンジニア（2026-10-26、結論「条件付きで作れる」）
 
-- Job の家族利用は実機未確認。imsg の sender が契約に合うか、家族の 🪔 から受付2通、Worker の claim、完了2通までを Mac mini で確かめる。
-- グループのオーナーの `/status` と `/cancel`、家族の管理コマンドが返信なしで無視されることは実機未確認。事前に家族へ周知する。
-- Genie と Job Engine のログ、launchd、deadletter にハンドルが無いことを実機で確認する。値そのものは報告しない。Routine が結果・通知へ転記しないことと、Worker CLI の会話記録の扱いも未確認。
-- Job Engine の DB バックアップ、v3 移行、コピー上での旧版起動拒否、グループ返信のレート制限は実機未確認。有効化前に Routine 側の member 方針をオーナーが確認する。

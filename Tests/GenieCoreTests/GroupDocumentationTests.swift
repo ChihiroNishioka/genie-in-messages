@@ -122,4 +122,99 @@ extension GroupDocumentationTests {
             XCTAssertTrue(entries.contains { $0["name"] == name }, name)
         }
     }
+
+    func testGNSH10PlacesFamilyJobHardwareChecksInSectionNine() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let sectionNine = try XCTUnwrap(spec.components(separatedBy: "## 9. 実機で未確認のこと\n").dropFirst().first)
+            .components(separatedBy: "\n## 10. 関連資料")[0]
+        let sectionTen = try XCTUnwrap(spec.components(separatedBy: "## 10. 関連資料\n").dropFirst().first)
+
+        for required in ["Job の家族利用", "Routine", "Worker CLI"] {
+            XCTAssertTrue(sectionNine.contains(required), "section 9: \(required)")
+            XCTAssertFalse(sectionTen.contains(required), "section 10: \(required)")
+        }
+    }
+
+    func testGNSH11DocumentsJobHandleVisibilityAndHardwareStatus() throws {
+        let readme = try readme()
+        let section = try XCTUnwrap(readme.components(separatedBy: "## 家族のグループで使う\n").dropFirst().first)
+            .components(separatedBy: "\n## 最初の起動")[0]
+        let unverified = try XCTUnwrap(section.components(separatedBy: "### Job の家族利用で実機未確認のこと\n").dropFirst().first)
+            .components(separatedBy: "\n### ")[0]
+        let jobParagraph = try XCTUnwrap(unverified.components(separatedBy: "\n\n").first {
+            $0.contains("Job") && $0.contains("実機未確認")
+        })
+
+        for required in ["`jobs.sender_handle` にハンドルを保存", "Worker CLI", "標準出力に `sender_handle` の値を出します",
+            "Routine は値を結果や通知に書き写しません"] {
+            XCTAssertTrue(unverified.contains(required), required)
+        }
+        XCTAssertTrue(jobParagraph.contains("家族"))
+    }
+
+    func testGNSH12DocumentsAllJobStopConsequences() throws {
+        let readme = try readme()
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let readmeSection = try XCTUnwrap(readme.components(separatedBy: "## 家族のグループで使う\n").dropFirst().first)
+            .components(separatedBy: "\n## 最初の起動")[0]
+        let specSection = try XCTUnwrap(spec.components(separatedBy: "### 4.11 設定で許可するグループ\n").dropFirst().first)
+            .components(separatedBy: "\n## 5.")[0]
+        let stopParagraphs = [readmeSection, specSection].map { section in
+            section.components(separatedBy: "\n\n").last {
+                $0.contains("job_chat_ids") && $0.contains("外す")
+            }
+        }
+
+        for (document, paragraph) in zip(["README", "SPEC 4.11"], stopParagraphs) {
+            let stop = try XCTUnwrap(paragraph, "\(document) stop paragraph")
+            for required in ["通常 webhook", "sender_handle", "正規化", "空文字",
+                "GENIE_GROUP_CHAT_IDS", "200", "not_from_me", "webhook_delivered",
+                "/cancel", "claimed", "cancel_requested"] {
+                XCTAssertTrue(stop.contains(required), "\(document): \(required)")
+            }
+            XCTAssertTrue(stop.contains("正規化できなければ空文字を送ります"), "\(document): ordinary route fallback")
+            XCTAssertTrue(stop.contains("Job Engine で 200 `not_from_me`"), "\(document): disabled family ingress")
+            XCTAssertTrue(stop.contains("`webhook_delivered` と記録します"), "\(document): Genie delivery status")
+            XCTAssertTrue(stop.contains("claimed のジョブは `/cancel` で `cancel_requested` が立つだけ"), "\(document): claimed cancellation")
+            XCTAssertTrue(stop.contains("すぐ") || stop.contains("直ち"), "\(document): claimed jobs stop only after cancellation is observed")
+        }
+    }
+
+    func testGNSH13ShowsEnablementOrderAndMemberWarningAtStepThree() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let section = try XCTUnwrap(spec.components(separatedBy: "### 4.11 設定で許可するグループ\n").dropFirst().first)
+            .components(separatedBy: "\n## 5.")[0]
+        let stepThree = try XCTUnwrap(section.components(separatedBy: "\n3. ").dropFirst().first)
+            .components(separatedBy: "\n4. ")[0]
+
+        for required in ["Job Engine", "GENIE_GROUP_CHAT_IDS", "job_chat_ids", "member", "Routine", "権限"] {
+            XCTAssertTrue(stepThree.contains(required), required)
+        }
+        let warning = try XCTUnwrap(stepThree.range(of: "member のジョブはオーナーの道具と権限で動きます"))
+        let memberPolicy = try XCTUnwrap(stepThree.range(of: "`GENIE_GROUP_CHAT_IDS` を設定する前に"))
+        let engine = try XCTUnwrap(stepThree.range(of: "Job Engine を先に更新"))
+        let env = try XCTUnwrap(stepThree.range(of: "`GENIE_GROUP_CHAT_IDS`", range: engine.upperBound..<stepThree.endIndex))
+        let genie = try XCTUnwrap(stepThree.range(of: "`job_chat_ids`", range: env.upperBound..<stepThree.endIndex))
+        XCTAssertLessThan(warning.lowerBound, memberPolicy.lowerBound)
+        XCTAssertLessThan(memberPolicy.lowerBound, engine.lowerBound)
+        XCTAssertLessThan(engine.lowerBound, env.lowerBound)
+        XCTAssertLessThan(env.lowerBound, genie.lowerBound)
+    }
+
+    func testGNSH14MovesGc13ExplanationIntoMutantSection() throws {
+        let readme = try readme()
+        let buildSection = try XCTUnwrap(readme.components(separatedBy: "## 動かし方\n").dropFirst().first)
+            .components(separatedBy: "\n## ")[0]
+        XCTAssertFalse(buildSection.contains("gc13-job-handle.patch"))
+        XCTAssertFalse(buildSection.contains("\n\n\n"))
+
+        let lines = readme.components(separatedBy: "\n")
+        let headingIndex = try XCTUnwrap(lines.firstIndex {
+            $0.hasPrefix("## ") && ($0.localizedCaseInsensitiveContains("mutant") || $0.contains("壊し方"))
+        })
+        let nextHeading = lines[(headingIndex + 1)...].firstIndex { $0.hasPrefix("## ") } ?? lines.endIndex
+        let mutantSection = lines[headingIndex..<nextHeading].joined(separator: "\n")
+        XCTAssertTrue(mutantSection.contains("gc13-job-handle.patch"))
+        XCTAssertTrue(mutantSection.contains("古い期待を置き換えるため廃止"))
+    }
 }
