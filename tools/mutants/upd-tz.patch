@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -316,7 +316,7 @@
+         let formatter = DateFormatter()
+         formatter.locale = Locale(identifier: "en_US_POSIX")
+         formatter.calendar = Calendar(identifier: .gregorian)
+-        formatter.timeZone = timeZone
++        formatter.timeZone = TimeZone.current
+         formatter.dateFormat = pattern
+         return formatter.string(from: date)
+     }

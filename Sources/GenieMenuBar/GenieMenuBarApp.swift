@@ -43,24 +43,43 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     @Published var symbol = "ジーニー"
     @Published var chatQuery = ""
     @Published var startupError: String?
+    @Published private var updateSnapshot = UpdateSnapshot(
+        build: AppVersion.updateBuild(info: Bundle.main.infoDictionary),
+        decision: nil,
+        lastAttemptAt: nil,
+        failure: nil,
+        rateLimitReset: nil,
+        phase: .idle
+    )
 
     private let controller: GenieController?
     private let paths = ConfigPaths.default()
+    private let updateChecker: UpdateChecker
     private var refreshTask: Task<Void, Never>?
     private var statusItem: NSStatusItem?
     @Published var notionTokenLabel = "未設定"
     private let menuVersionLine = AppVersion.menuLine(info: Bundle.main.infoDictionary)
 
     override init() {
+        let configPaths = ConfigPaths.default()
+        let createdController: GenieController?
         do {
-            controller = try GenieController(paths: paths)
+            createdController = try GenieController(paths: configPaths)
             startupError = nil
         } catch {
-            controller = nil
+            createdController = nil
             startupError = "設定を読めませんでした"
             phase = "停止"
         }
-        notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: paths.notionTokenFile))
+        controller = createdController
+        notionTokenLabel = NotionToken.statusLabel(NotionToken.status(at: configPaths.notionTokenFile))
+        updateChecker = UpdateChecker(
+            clock: SystemClock(),
+            fetcher: GitHubReleaseFetcher(transport: URLSessionReleaseTransport()),
+            skipStore: UserDefaultsSkipStore(defaults: .standard),
+            build: AppVersion.updateBuild(info: Bundle.main.infoDictionary),
+            log: GenieUpdateCheckLogger(log: FileGenieLog(url: createdController?.logURL ?? configPaths.logFile))
+        )
         super.init()
         if let controller {
             LampIcon.menuLampLogger = FileGenieLog(url: controller.logURL)
@@ -195,6 +214,8 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func refresh() async {
+        await updateChecker.tick()
+        updateSnapshot = await updateChecker.snapshot()
         guard let controller else { return }
         let snap = await controller.engine.snapshot()
         snapshot = snap
@@ -227,6 +248,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         }
         label("ジーニー")
         label(menuVersionLine)
+        addUpdateRows(to: menu)
         label(phase)
         label("同じApple IDのほかのMacでは動かさない")
         if let snap = snapshot, snap.screenLock == .locked || snap.heldLockCount > 0 {
@@ -294,6 +316,46 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
         let quitItem = NSMenuItem(title: "終了", action: #selector(quitAction), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+    }
+
+    private func addUpdateRows(to menu: NSMenu) {
+        let timeZone = TimeZone(identifier: "Asia/Tokyo") ?? TimeZone(secondsFromGMT: 0)!
+        for row in UpdateMenu.rows(state: updateSnapshot, timeZone: timeZone) {
+            switch row {
+            case .label(let title):
+                addDisabledLabel(title, to: menu)
+            case .action(let title, let action):
+                let item = NSMenuItem(title: title, action: #selector(updateMenuAction(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = action
+                menu.addItem(item)
+            }
+        }
+    }
+
+    private func addDisabledLabel(_ title: String, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        menu.addItem(item)
+    }
+
+    @objc private func updateMenuAction(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? UpdateAction else { return }
+        performUpdateAction(action)
+    }
+
+    private func performUpdateAction(_ action: UpdateAction) {
+        switch action {
+        case .openRelease(let version):
+            NSWorkspace.shared.open(UpdateMenu.releaseURL(for: version))
+        case .skip(let version):
+            Task {
+                await updateChecker.skip(version)
+                updateSnapshot = await updateChecker.snapshot()
+            }
+        case .checkNow:
+            Task { await updateChecker.requestCheck() }
+        }
     }
 
     @objc private func togglePauseAction() { togglePause() }

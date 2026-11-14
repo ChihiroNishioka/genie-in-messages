@@ -21,6 +21,26 @@ public enum AppVersion {
         return MenuVersion.release(version: version, commit: commit).line
     }
 
+    package static func updateBuild(info: [String: Any]?) -> UpdateBuild {
+        guard
+            let info,
+            let version = info["GenieReleaseVersion"] as? String,
+            let commit = info["GenieGitCommit"] as? String,
+            matches(commit, pattern: "^[0-9a-f]{7}$")
+        else {
+            return .unknown
+        }
+
+        if version.isEmpty {
+            return .development
+        }
+        guard matches(version, pattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"),
+              let parsed = ReleaseVersion(raw: version) else {
+            return .unknown
+        }
+        return .release(parsed)
+    }
+
     private static func matches(_ value: String, pattern: String) -> Bool {
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return false }
         let range = NSRange(value.startIndex..<value.endIndex, in: value)

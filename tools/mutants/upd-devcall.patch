@@ -1,0 +1,18 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -389,13 +389,7 @@
+     }
+ 
+     package func tick() async {
+-        guard case .release(let current) = build else {
+-            if !loggedUnsupportedBuild {
+-                loggedUnsupportedBuild = true
+-                await emit(result: "skipped_dev", current: nil, latest: nil, code: nil, status: nil, gateKey: "skipped_dev")
+-            }
+-            return
+-        }
++        let current = currentVersion ?? ReleaseVersion(raw: "0.0.0")!
+ 
+         if !loadedSkip {
+             skipped = UpdatePreferences.skipped(from: await skipStore.read())

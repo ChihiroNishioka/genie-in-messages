@@ -72,7 +72,8 @@ final class AppVersionTests: XCTestCase {
             .filter { !$0.isEmpty }
         let titleIndex = try XCTUnwrap(rows.firstIndex(of: "label(\"ジーニー\")"))
         XCTAssertEqual(rows[titleIndex + 1], "label(menuVersionLine)")
-        XCTAssertEqual(rows[titleIndex + 2], "label(phase)")
+        XCTAssertEqual(rows[titleIndex + 2], "addUpdateRows(to: menu)")
+        XCTAssertEqual(rows[titleIndex + 3], "label(phase)")
         XCTAssertTrue(source.contains("private let menuVersionLine = AppVersion.menuLine(info: Bundle.main.infoDictionary)"))
         XCTAssertEqual(source.components(separatedBy: "AppVersion.menuLine(info: Bundle.main.infoDictionary)").count - 1, 1)
         XCTAssertTrue(source.contains("NSMenuItem(title: title, action: nil, keyEquivalent: \"\")"))

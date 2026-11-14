@@ -1,0 +1,15 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -34,9 +34,9 @@
+         let parts = text.split(separator: ".", omittingEmptySubsequences: false)
+         guard parts.count == 3 else { return nil }
+         let values = parts.map { part -> Int? in
+-            guard !part.isEmpty, part.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return nil }
++            guard !part.isEmpty, let first = part.first, first >= "0", first <= "9" else { return nil }
+             if !allowLeadingZero, part.count > 1, part.first == "0" { return nil }
+-            return Int(part)
++            return Int(part.prefix(while: { $0 >= "0" && $0 <= "9" }))
+         }
+         guard values.allSatisfy({ $0 != nil }),
+               let major = values[0], let minor = values[1], let patch = values[2] else {

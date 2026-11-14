@@ -1,0 +1,12 @@
+diff --git a/Sources/GenieCore/UpdateCheck.swift b/Sources/GenieCore/UpdateCheck.swift
+--- a/Sources/GenieCore/UpdateCheck.swift
++++ b/Sources/GenieCore/UpdateCheck.swift
+@@ -309,7 +309,7 @@
+     }
+ 
+     package static func releaseURL(for version: ReleaseVersion) -> URL {
+-        URL(string: "https://github.com/ChihiroNishioka/genie-in-messages/releases/tag/\(version.tag)")!
++        URL(string: "https://api.github.com/repos/ChihiroNishioka/genie-in-messages/releases/\(version.tag)")!
+     }
+ 
+     private static func format(_ date: Date, pattern: String, timeZone: TimeZone) -> String {
