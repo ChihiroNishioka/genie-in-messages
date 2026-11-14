@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -609,7 +609,7 @@
+             return finish(event, .ignoredFingerprint)
+         }
+         let normalized = TextNormalizer.nfc(event.text)
+-        if ReplyComposer.isReplyMarker(normalized, marker: config.replyMarker) {
++        if ReplyComposer.isReplyMarker(normalized, marker: ReplyComposer.markerText) {
+             return finish(event, .ignoredReplyMarker)
+         }
+         if !Signal.matches(normalized) {

@@ -407,7 +407,7 @@ final class ChatMembershipEngineTests: XCTestCase {
             id: 1, guid: "g-marker", chat: 42, fromMe: false, text: marker + " hello",
             sender: phone, isGroup: true, participants: [phone]
         ))
-        XCTAssertEqual(result, .ignoredNoSignal)
+        XCTAssertEqual(result, .ignoredReplyMarker)
         XCTAssertTrue(harness.webhook.bodies.isEmpty)
     }
 

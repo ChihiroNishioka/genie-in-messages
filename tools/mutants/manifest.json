@@ -1,5 +1,10 @@
 [
   {
+    "name": "NAMEPREFIX1",
+    "patch": "name-prefix-omit.patch",
+    "filter": "GroupReplyNameTests.testConfiguredGroupNamePrefixesOnlyTheBodyAndStaysPrivate"
+  },
+  {
     "name": "M4",
     "patch": "m4-refresh-in-flight.patch",
     "filter": "PollerCoverageTests.testRequestsDuringTheFirstReadCollapse"
@@ -483,5 +488,300 @@
     "name": "JOB34",
     "patch": "job34-snapshot-mixes-fetch-error.patch",
     "filter": "ErrorStatusTests.testSendFailureRemainsVisibleDuringFetchFailureAndRecovery"
+  },
+  {
+    "name": "GC01-ACCEPT-INVALID-GUIDS",
+    "patch": "gc01-accept-invalid-guids.patch",
+    "filter": "GroupConfigTests.testGC01GroupGUIDsNormalizeAndKeepExactCase"
+  },
+  {
+    "name": "GC02-USE-LEGACY-MARKER",
+    "patch": "gc02-use-legacy-marker.patch",
+    "filter": "GroupConfigTests.testGC02OldMarkerIsSeparateAndNewMarkerDefaults"
+  },
+  {
+    "name": "GC16-IGNORE-CONFIGURED-MARKER",
+    "patch": "gc16-ignore-configured-marker.patch",
+    "filter": "GroupMarkerTests.testGC16ConfiguredMarkerIsNormalizedButLegacyMarkerDoesNotReplaceIt"
+  },
+  {
+    "name": "GC17-LAMP-ONLY-AT-START",
+    "patch": "gc17-lamp-only-at-start.patch",
+    "filter": "GroupConfigTests.testGC17MarkerValidationAndNFC"
+  },
+  {
+    "name": "GC18-IGNORE-ONLY-DEFAULT-MARKER",
+    "patch": "gc18-ignore-only-default-marker.patch",
+    "filter": "GroupMarkerTests.testGC18BothMarkersIgnoreVS16AndLeadingInvisibleWhitespace"
+  },
+  {
+    "name": "GC19-LEAVE-CONFIGURED-PREFIX",
+    "patch": "gc19-leave-configured-prefix.patch",
+    "filter": "GroupMarkerTests.testGC19RepeatedMixedMarkersAndOverlappingPrefixesAreRemovedLongestFirst"
+  },
+  {
+    "name": "GC03-EXAMPLE-OMITS-NEW-KEYS",
+    "patch": "gc03-example-omits-new-keys.patch",
+    "filter": "GroupDocumentationTests.testExampleUsesEmptyGroupsAndDefaultReplyMarker"
+  },
+  {
+    "name": "GC20-SHELL-COMMAND",
+    "patch": "gc20-shell-command.patch",
+    "filter": "GroupTransportTests.testBodyIsOneLiteralArgumentAndEchoDoesNotInterpretIt"
+  },
+  {
+    "name": "GC23-SKIP-PHONE-CHECK",
+    "patch": "gc23-skip-phone-check.patch",
+    "filter": "TrackedTextTests.testGroupDocumentationDummiesPassAndPersonalPhoneIsDetected"
+  },
+  {
+    "name": "GC24-DROP-FAMILY-SECTION",
+    "patch": "gc24-drop-family-section.patch",
+    "filter": "GroupDocumentationTests.testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph"
+  },
+  {
+    "name": "GC24-RESTORE-OLD-MARKER-PARAGRAPH",
+    "patch": "gc24-restore-old-marker-paragraph.patch",
+    "filter": "GroupDocumentationTests.testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph"
+  },
+  {
+    "name": "GC24-DROP-GROUP-DECISIONS",
+    "patch": "gc24-drop-group-decisions.patch",
+    "filter": "GroupDocumentationTests.testSpecRecordsGroupContractAndDecisions"
+  },
+  {
+    "name": "GC07-ROW-LOCK",
+    "patch": "gc07-row-lock.patch",
+    "filter": "GroupMenuTests.testConfigGroupRowsAreEnabledAndLockedWithoutMenuPermission"
+  },
+  {
+    "name": "GC25-COUNT-NOTICE",
+    "patch": "gc25-count-notice.patch",
+    "filter": "GroupMenuTests.testUnresolvedGroupNoticeContainsOnlyCountAndAdvice"
+  },
+  {
+    "name": "GC15-NO-HANDLE-LOG",
+    "patch": "gc15-handle-log.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC15NoHandleBodyMarkerOrConfigTableLeaksAcrossDeliveryFailureAndReply"
+  },
+  {
+    "name": "GC17-WARNING-REARM",
+    "patch": "gc17-warning-rearm.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC17InvalidWarningIsGatedResolvedAndRearmedWithoutValue"
+  },
+  {
+    "name": "GC18-CUSTOM-INGEST",
+    "patch": "gc18-custom-ingest.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC18CustomAndDefaultMarkersAreIgnoredForEverySenderAndSelfChat"
+  },
+  {
+    "name": "GC22-SELF-NAME",
+    "patch": "gc22-self-name.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC22SelfChatWithUnrelatedGroupKeepsDefaultPayloadAndTwoPartReply"
+  },
+  {
+    "name": "GC16-FINGERPRINT",
+    "patch": "gc16-marker-fingerprint.patch",
+    "filter": "GroupPrivacyRegressionTests.testConfiguredMarkerAlsoAppliesToSelfChatAndFingerprint"
+  },
+  {
+    "name": "GC04-MENU-ONLY",
+    "patch": "gc04-menu-only.patch",
+    "filter": "GroupChatTests.testGC04ConfigOnlyGroupDeliversAndRepliesToSameChat"
+  },
+  {
+    "name": "GC05-ACCEPT-DIRECT",
+    "patch": "gc05-accept-direct.patch",
+    "filter": "GroupChatTests.testGC05RejectsUnresolvedNonGroupCaseAndInitialFailureWithPositiveControl"
+  },
+  {
+    "name": "GC06-IGNORE-INBOUND-GUID",
+    "patch": "gc06-ignore-inbound-guid.patch",
+    "filter": "GroupChatTests.testGC06ReceiveBindingChecksSuppliedGUID"
+  },
+  {
+    "name": "GC07-REVOKE-CONFIG-ON-MENU-OFF",
+    "patch": "gc07-revoke-config-on-menu-off.patch",
+    "filter": "GroupChatTests.testGC07MenuOffDoesNotRevokeConfig"
+  },
+  {
+    "name": "GC08-RETAIN-REMOVED-INTENT",
+    "patch": "gc08-retain-removed-intent.patch",
+    "filter": "GroupChatTests.testGC08ConfigRemovalRevokesUnlessMenuStillAllows"
+  },
+  {
+    "name": "GC09-KEEP-CONFIG-ON-DB-SWAP",
+    "patch": "gc09-keep-config-on-db-swap.patch",
+    "filter": "GroupChatTests.testGC09DatabaseSwapRequiresNewListThenBindsNewRowID"
+  },
+  {
+    "name": "GC10-MENU-ONLY-SEND",
+    "patch": "gc10-menu-only-send.patch",
+    "filter": "GroupChatTests.testGC04ConfigOnlyGroupDeliversAndRepliesToSameChat"
+  },
+  {
+    "name": "GC10-IGNORE-OTHER-PERMISSION-SOURCE",
+    "patch": "gc10-ignore-other-permission-source.patch",
+    "filter": "GroupChatTests.testGC10EveryPermissionSourceMustMatchBeforeSending"
+  },
+  {
+    "name": "GC10-DROP-MISSING-INSTEAD-OF-HOLD",
+    "patch": "gc10-drop-missing-instead-of-hold.patch",
+    "filter": "GroupChatTests.testGC10EmptyMissingFailedListHoldsThenRecovers"
+  },
+  {
+    "name": "GC11-BYPASS-SEND-GUID",
+    "patch": "gc11-bypass-send-guid.patch",
+    "filter": "StartupSendTests.testDifferentGuidDoesNotSendWhenTheDatabaseIsNotReset"
+  },
+  {
+    "name": "GC12-RAW-HANDLE",
+    "patch": "gc12-raw-handle.patch",
+    "filter": "GroupChatTests.testGC12NormalizedHandleAndUnknownHandleUseTenKeys"
+  },
+  {
+    "name": "GC14-ALWAYS-HANDLE",
+    "patch": "gc14-always-handle.patch",
+    "filter": "ChatMembershipEngineTests.testOnGroupReactsToAnotherMember"
+  },
+  {
+    "name": "GC21-IGNORE-SENT-GUID",
+    "patch": "gc21-ignore-sent-guid.patch",
+    "filter": "EngineWatchTests.testGuidIdempotencyAndSentGuidAndFingerprint"
+  },
+  {
+    "name": "GC25-REPEAT-GROUP-NOTICE",
+    "patch": "gc25-repeat-group-notice.patch",
+    "filter": "GroupChatTests.testGC25GroupNoticesAreCountOnlyGatedAndRearmed"
+  },
+  {
+    "name": "GC-RETRY-NO-CONFIG-REFRESH",
+    "patch": "gc-retry-no-config-refresh.patch",
+    "filter": "GroupChatTests.testRetryRefreshRevokesPermissionOrHandleSharing"
+  },
+  {
+    "name": "GF1-SNAPSHOT-RESOLVED-ONLY",
+    "patch": "fix1-snapshot-resolved-only.patch",
+    "filter": "GroupChatTests.testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges"
+  },
+  {
+    "name": "GF1-RESET-FORGETS-INTENT",
+    "patch": "fix1-reset-forgets-intent.patch",
+    "filter": "GroupChatTests.testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges"
+  },
+  {
+    "name": "GF1-ENGINE-UNLOCKS-CONFIG",
+    "patch": "fix1-engine-unlocks-config.patch",
+    "filter": "GroupChatTests.testConfigLockedEngineMutationsLeaveMenuPermissionUntouched"
+  },
+  {
+    "name": "GF1-ALLOWLIST-FILE",
+    "patch": "fix1-engine-unlocks-config.patch",
+    "filter": "GroupChatTests.testConfigOnlyGroupIsNeverWrittenToAllowlistFile"
+  },
+  {
+    "name": "GF1-FORGET-MENU-OFF",
+    "patch": "fix1-forget-menu-off.patch",
+    "filter": "GroupChatTests.testRemovingConfigThenTurningMenuOffStopsReceiving"
+  },
+  {
+    "name": "GF1-PAYLOAD-AFTER-ROUTE",
+    "patch": "fix1-payload-after-route.patch",
+    "filter": "GroupTransportTests.testPayloadEncodingFailurePrecedesRouteRecording"
+  },
+  {
+    "name": "GF1-MERGE-UNRESOLVED-COUNTS",
+    "patch": "fix1-merge-unresolved-counts.patch",
+    "filter": "GroupNoticeTests.testMixedUnresolvedNoticeKeepsEachCountAndAdviceWithoutGUIDs"
+  },
+  {
+    "name": "GF1-DOC-MARKER",
+    "patch": "fix1-doc-marker.patch",
+    "filter": "GroupDocumentationTests.testMarkerDocumentsFirstGraphemeEmojiConstraint"
+  },
+  {
+    "name": "GF1-DOC-STOP",
+    "patch": "fix1-doc-stop.patch",
+    "filter": "GroupDocumentationTests.testReadmeStopsBothPermissionSourcesInOrder"
+  },
+  {
+    "name": "GF1-DOC-DISPLAY",
+    "patch": "fix1-doc-display.patch",
+    "filter": "GroupDocumentationTests.testReadmePlacesUnverifiedCaveatsNearGroupBehavior"
+  },
+  {
+    "name": "GF1-DOC-SENDER",
+    "patch": "fix1-doc-sender.patch",
+    "filter": "GroupDocumentationTests.testReadmePlacesUnverifiedCaveatsNearGroupBehavior"
+  },
+  {
+    "name": "GF1-DOC-PHONE",
+    "patch": "fix1-doc-phone.patch",
+    "filter": "GroupDocumentationTests.testReadmeContrastsPhoneNumberSeparators"
+  },
+  {
+    "name": "G-GC-FIX1-EMOJI",
+    "patch": "gc-fix1-allow-nonemoji-marker.patch",
+    "filter": "GroupMarkerTests.testReplyMarkerRequiresEmojiFirstGraphemeAndReportsInvalidWithoutTruncatingText"
+  },
+  {
+    "name": "G-GC-FIX1-NONGROUP-ADVICE",
+    "patch": "gc-fix1-nongroup-list-advice.patch",
+    "filter": "GroupNoticeTests.testNotGroupNoticeRecommendsReviewingConfigInsteadOfIncreasingListLimit"
+  },
+  {
+    "name": "GF2-PAUSED-CONFIG-STALE",
+    "patch": "fix2-paused-config-stale.patch",
+    "filter": "GroupChatTests.testPausedConfigRefreshUpdatesRowsWithoutRestartingTraffic"
+  },
+  {
+    "name": "GF3-PAUSED-CONFIG-REPEATED-LOG",
+    "patch": "fix3-paused-config-repeated-log.patch",
+    "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
+  },
+  {
+    "name": "GF3-PAUSED-CONFIG-ERROR-OVERWRITE",
+    "patch": "fix3-paused-config-error-overwrite.patch",
+    "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
+  },
+  {
+    "name": "GF3-PAUSED-CONFIG-NO-RECOVERY",
+    "patch": "fix3-paused-config-no-recovery.patch",
+    "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
+  },
+  {
+    "name": "SH-JOB-OMIT",
+    "patch": "sh-job-omit.patch",
+    "filter": "GroupChatTests.testGNSH1JobIncludesNormalizedHandleAndEmptyURLFallbackIncludesIt"
+  },
+  {
+    "name": "SH-JOB-EMPTY",
+    "patch": "sh-job-empty.patch",
+    "filter": "GroupChatTests.testGNSH2UnusableJobHandleLogsOncePerActualAttempt"
+  },
+  {
+    "name": "SH-JOB-UNCHECKED",
+    "patch": "sh-job-unchecked.patch",
+    "filter": "GroupChatTests.testGNSH2UnusableJobHandleLogsOncePerActualAttempt"
+  },
+  {
+    "name": "SH-JOB-MENU",
+    "patch": "sh-job-menu.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC13OnlyConfigGroupOtherMemberGetsHandle"
+  },
+  {
+    "name": "SH-JOB-SELF",
+    "patch": "sh-job-self.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC13OnlyConfigGroupOtherMemberGetsHandle"
+  },
+  {
+    "name": "SH-JOB-STALE",
+    "patch": "sh-job-stale.patch",
+    "filter": "GroupChatTests.testGNSH5JobRetryRechecksSharingButKeepsRouteAndIdentity"
+  },
+  {
+    "name": "SH-DOC-OLD",
+    "patch": "sh-doc-old.patch",
+    "filter": "GroupDocumentationTests.testGNSH8JobFamilyContractAndOperationalLimits"
   }
 ]

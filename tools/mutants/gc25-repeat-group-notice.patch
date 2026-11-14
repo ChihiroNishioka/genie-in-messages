@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1628,7 +1628,7 @@
+     private func noteConfigGroups() {
+         for (code, count) in [("group_chat_not_found", configGroups.notFound), ("group_chat_not_group", configGroups.notGroup)] {
+             if count == 0 { noticeLog.resolve([code]) }
+-            else if noticeLog.shouldLog(code) {
++            else {
+                 log.record(level: .error, code: code, chatID: nil, guid: nil, rowid: nil, detail: String(count))
+             }
+         }

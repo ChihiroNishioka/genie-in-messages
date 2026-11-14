@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1618,7 +1618,7 @@
+     }
+ 
+     private func allowsReceive(_ id: Int64, guid: String?) -> Bool {
+-        allowlist.contains(id) || configGroups.permitsReceive(id, guid: guid)
++        allowlist.contains(id)
+     }
+ 
+     private func allowsSend(_ id: Int64) -> Bool {

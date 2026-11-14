@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -709,7 +709,7 @@
+             if job {
+                 return normalized.flatMap { JobSenderHandle.isContractValue($0) ? $0 : nil }
+             }
+-            return normalized ?? ""
++            return event.sender
+         }
+         func encodePayload() throws -> Data {
+             let payload = WebhookPayload(

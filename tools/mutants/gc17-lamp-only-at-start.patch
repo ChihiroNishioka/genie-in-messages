@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/GenieConfig.swift
++++ b/Sources/GenieCore/GenieConfig.swift
+@@ -119,7 +119,7 @@
+               let first = firstGrapheme.unicodeScalars.first, !TextNormalizer.isInvisible(first),
+               first.properties.isEmojiPresentation || (first.properties.isEmoji
+                   && firstGrapheme.unicodeScalars.dropFirst().first?.value == 0xFE0F),
+-              !marker.unicodeScalars.contains(where: { $0.value == 0x1FA94 }),
++              marker.unicodeScalars.first?.value != 0x1FA94,
+               !marker.unicodeScalars.contains(where: {
+                   $0.properties.generalCategory == .control || CharacterSet.newlines.contains($0)
+               }),

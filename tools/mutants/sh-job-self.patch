@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -703,7 +703,7 @@
+             return deadLetter(event, error: "url_not_https", attempts: 0, kind: kind, detail: detail)
+         }
+         func sharedSenderHandle() -> String? {
+-            guard !senderIsMe && !config.selfChatIDs.contains(chatID)
++            guard !config.selfChatIDs.contains(chatID)
+                 && configGroups.permitsReceive(chatID, guid: event.chatGUID) else { return nil }
+             let normalized = SenderHandle.normalize(event.sender)
+             if job {

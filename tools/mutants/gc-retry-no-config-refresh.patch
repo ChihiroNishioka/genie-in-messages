@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -699,7 +699,6 @@
+         var last = "webhook_transport"
+         var attempt = 0
+         while attempt < maxAttempts {
+-            refreshConfig()
+             attempt += 1
+             if paused {
+                 return .deferredPaused

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ReplyComposer.swift
++++ b/Sources/GenieCore/ReplyComposer.swift
+@@ -13,7 +13,7 @@
+         let scalars = Array(TextNormalizer.nfc(text).unicodeScalars.drop(while: {
+             CharacterSet.whitespacesAndNewlines.contains($0) || TextNormalizer.isInvisible($0)
+         }))
+-        return markerPrefixes(marker).contains { prefixLength($0, in: scalars) != nil }
++        return markerPrefixes(markerText).contains { prefixLength($0, in: scalars) != nil }
+     }
+ 
+     private static func markerPrefixes(_ marker: String) -> [[Unicode.Scalar]] {

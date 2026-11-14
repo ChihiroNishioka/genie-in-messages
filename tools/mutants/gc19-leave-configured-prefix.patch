@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ReplyComposer.swift
++++ b/Sources/GenieCore/ReplyComposer.swift
+@@ -53,7 +53,7 @@
+             scalars = Array(scalars.dropFirst(index))
+         }
+ 
+-        let prefixes = markerPrefixes(marker)
++        let prefixes = markerPrefixes(markerText)
+         var changed = true
+         while changed, !scalars.isEmpty {
+             changed = false

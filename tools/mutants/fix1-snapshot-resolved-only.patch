@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -372,7 +372,7 @@
+                 && EndpointURL.httpsOrLoopback(config.jobWebhookURL) != nil,
+             jobRouteState: JobRouteState(config: config),
+             webhookConfigured: EndpointURL.https(config.webhookURL) != nil,
+-            configChatIDs: configGroups.intentChatIDs.sorted(),
++            configChatIDs: configGroups.resolved.keys.sorted(),
+             configGroupUnresolved: configGroups.notFound + configGroups.notGroup,
+             configGroupNotFound: configGroups.notFound,
+             configGroupNotGroup: configGroups.notGroup

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ChatAllowlist.swift
++++ b/Sources/GenieCore/ChatAllowlist.swift
+@@ -65,7 +65,7 @@
+         notices.append("設定のグループ \(notFound) 件が一覧に見つかりません（chats_limit を増やすと入ることがあります）")
+     }
+     if notGroup > 0 {
+-        notices.append("設定の \(notGroup) 件はグループではありません（1対1や自分宛てを指しているため、設定を見直してください）")
++        notices.append("設定のグループ \(notGroup) 件が一覧に見つかりません（chats_limit を増やすと入ることがあります）")
+     }
+     return notices.isEmpty ? nil : notices.joined(separator: "\n")
+ }

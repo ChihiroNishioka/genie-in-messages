@@ -1,6 +1,6 @@
 --- a/SPEC.md
 +++ b/SPEC.md
-@@ -377,7 +377,6 @@
+@@ -421,7 +421,6 @@
  - macOS の ATS が Job と HTTP 返信取得の loopback の http を許すか。Linux の検証では確認できない
  - Job Engine との疎通。Job の登録、HTTP 返信取得と cursor の通知を含む
  - Job Engine から取得した返信の iMessage 送信。印と本文の2通が実機で届くか

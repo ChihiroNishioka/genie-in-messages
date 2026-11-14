@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ChatAllowlist.swift
++++ b/Sources/GenieCore/ChatAllowlist.swift
+@@ -61,7 +61,7 @@
+ 
+ package func configGroupNotice(notFound: Int, notGroup: Int) -> String? {
+     var notices: [String] = []
+-    if notFound > 0 {
++    if notFound > 2 {
+         notices.append("設定のグループ \(notFound) 件が一覧に見つかりません（chats_limit を増やすと入ることがあります）")
+     }
+     if notGroup > 0 {

@@ -4,7 +4,7 @@
                   attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
              return
          }
--        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+-        guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
 +        if false { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
          if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
              restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
@@ -13,7 +13,7 @@
                   attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
              return
          }
--        guard allowlist.contains(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+-        guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
 +        if false { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
          if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
              restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,

@@ -1,8 +1,8 @@
 --- a/Sources/GenieMenuBar/GenieMenuBarApp.swift
 +++ b/Sources/GenieMenuBar/GenieMenuBarApp.swift
-@@ -234,8 +234,9 @@
-         if let snap = snapshot, !snap.webhookConfigured {
-             label("webhook の URL が未設定です")
+@@ -237,8 +237,9 @@
+         if let line = configGroupNotice(notFound: snapshot?.configGroupNotFound ?? 0, notGroup: snapshot?.configGroupNotGroup ?? 0) {
+             label(line)
          }
 -        if let line = snapshot?.jobRouteState.menuLine {
 -            label(line)

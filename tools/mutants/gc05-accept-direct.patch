@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ConfigGroupAuthorization.swift
++++ b/Sources/GenieCore/ConfigGroupAuthorization.swift
+@@ -25,7 +25,7 @@
+                 notFound += 1
+                 continue
+             }
+-            guard SelfChat.resolveGroup(flag: chat.isGroup, chatGUID: chat.guid, chatIdentifier: chat.identifier) else {
++            guard true else {
+                 notGroup += 1
+                 continue
+             }

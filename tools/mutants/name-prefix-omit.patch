@@ -1,0 +1,14 @@
+diff --git a/Sources/GenieCore/ReplyComposer.swift b/Sources/GenieCore/ReplyComposer.swift
+index 0000000..1111111 100644
+--- a/Sources/GenieCore/ReplyComposer.swift
++++ b/Sources/GenieCore/ReplyComposer.swift
+@@ -22,7 +22,6 @@ enum ReplyComposer {
+     static func withAddressee(_ addressee: String?, to body: String) -> String {
+         guard let addressee else { return body }
+         let prefix = "\(addressee)へ："
+-        guard !body.hasPrefix(prefix) else { return body }
+-        return prefix + body
++        return body
+     }
+ 
+     static func isReplyMarker(_ text: String, marker: String) -> Bool {

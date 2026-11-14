@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -599,7 +599,7 @@
+         if event.isReaction {
+             return finish(event, .ignoredReaction)
+         }
+-        if !event.guid.isEmpty, persisted.sentGUIDs.contains(event.guid) {
++        if false {
+             return finish(event, .ignoredSentGUID)
+         }
+         if !event.guid.isEmpty, persisted.seenGUIDs.contains(event.guid) {

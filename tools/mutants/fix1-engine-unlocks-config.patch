@@ -1,0 +1,20 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -155,7 +155,7 @@
+     /// 一覧外の行は guid を持たないので、オンに戻すときは知っている guid を使う。
+     package func toggleChat(id: Int64, guid: String) {
+         refreshConfig()
+-        if configGroups.intentChatIDs.contains(id) {
++        if false {
+             log.record(level: .info, code: "allowlist_off_config_locked", chatID: id, guid: nil, rowid: nil)
+             return
+         }
+@@ -174,7 +174,7 @@
+ 
+     package func setChatEnabled(_ id: Int64, guid: String = "", enabled: Bool) {
+         refreshConfig()
+-        if configGroups.intentChatIDs.contains(id) {
++        if false {
+             log.record(level: .info, code: "allowlist_off_config_locked", chatID: id, guid: nil, rowid: nil)
+             return
+         }

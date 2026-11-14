@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1668,7 +1668,7 @@
+             }
+         } catch {
+             if forPausedDisplay {
+-                if noticeLog.shouldLog("config_unreadable") {
++                if true {
+                     log.record(level: .error, code: "config_unreadable", chatID: nil, guid: nil, rowid: nil)
+                 }
+             } else {

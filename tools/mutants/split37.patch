@@ -4,7 +4,7 @@
              return
          }
          let result: Result<SendReceipt, SendFailure>
--        do { result = .success(try await sender.send(chatID: chatID, text: ReplyComposer.markerText)) }
+-        do { result = .success(try await sender.send(chatID: chatID, text: config.replyMarker)) }
 +        do { result = .success(try await sender.send(chatID: chatID, text: config.marker)) }
          catch let failure as SendFailure { result = .failure(failure) }
          catch { result = .failure(.failed) }

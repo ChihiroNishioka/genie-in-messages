@@ -1,0 +1,9 @@
+--- a/Sources/GenieCore/ConfigGroupAuthorization.swift
++++ b/Sources/GenieCore/ConfigGroupAuthorization.swift
+@@ -43,5 +43,5 @@
+         lastIDs.compactMap { $0.value == id ? $0.key : nil }
+     }
+ 
+-    func permitsSend(_ id: Int64) -> Bool { lastIDs.values.contains(id) }
++    func permitsSend(_ id: Int64) -> Bool { resolved[id] != nil }
+ }

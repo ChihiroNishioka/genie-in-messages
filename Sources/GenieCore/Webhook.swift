@@ -39,6 +39,7 @@ struct WebhookPayload: Encodable {
     var createdAt: String?
     var senderIsMe: Bool
     var senderName: String
+    var senderHandle: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case v, event, guid, text
@@ -47,6 +48,7 @@ struct WebhookPayload: Encodable {
         case createdAt = "created_at"
         case senderIsMe = "sender_is_me"
         case senderName = "sender_name"
+        case senderHandle = "sender_handle"
     }
 
     func encodeData() throws -> Data {

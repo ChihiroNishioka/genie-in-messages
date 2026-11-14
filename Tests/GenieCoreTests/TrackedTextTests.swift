@@ -16,6 +16,14 @@ final class TrackedTextTests: XCTestCase {
         XCTAssertTrue(ntnKinds.contains("token"), ntnKinds.joined(separator: " "))
     }
 
+    func testGroupDocumentationDummiesPassAndPersonalPhoneIsDetected() throws {
+        for sample in ["+1 555 010 0000", "family@example.com", "iMessage;+;chat000000000000000001"] {
+            XCTAssertEqual(try checkedKinds(of: sample), [])
+        }
+        let personal = "+1 " + "555 " + "123 " + "4567"
+        XCTAssertTrue(try checkedKinds(of: personal).contains("phone"))
+    }
+
     private func checkedKinds(of sample: String) throws -> [String] {
         let script = repoRoot().appendingPathComponent("scripts/check-tracked-text.py")
         let process = Process()

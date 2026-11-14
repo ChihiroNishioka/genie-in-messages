@@ -1,0 +1,614 @@
+import Foundation
+import XCTest
+@testable import GenieCore
+
+final class GroupChatTests: XCTestCase {
+    let group = "iMessage;+;chat000000000000000001"
+    let other = "iMessage;+;chat000000000000000002"
+
+    func setup(menu: Bool = false, groups: [String]? = nil) throws -> (Harness, MutableConfig, GenieEngine) {
+        let h = Harness()
+        h.secrets = StaticSecret(webhook: "hook-secret", reply: nil, job: "job-secret")
+        let data = try JSONSerialization.data(withJSONObject: [
+            "group_chat_guids": groups ?? [group],
+            "webhook_url": "https://127.0.0.1/webhook",
+            "reply_fetch_url": "https://127.0.0.1/replies"
+        ])
+        let cfg = try JSONDecoder().decode(GenieConfig.self, from: data)
+        let provider = MutableConfig(cfg)
+        if menu { h.allow.ids = [42]; h.allow.guids[42] = group }
+        let e = try GenieEngine(configProvider: provider, initialConfig: cfg, stateStore: h.state,
+            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
+        return (h, provider, e)
+    }
+
+    func chats(_ id: Int64 = 42, guid: String? = nil, isGroup: Bool = true) -> [ChatSummary] {
+        [ChatSummary(id: id, title: "room", isGroup: isGroup, guid: guid ?? group)]
+    }
+
+    func input(_ id: Int = 1, chat: Int = 42, guid: String? = nil, fromMe: Bool = false,
+               sender: String = "family@example.com", text: String = "🪔 request") -> String {
+        watchLine(id: id, guid: "incoming-\(id)", chat: chat, fromMe: fromMe, text: text,
+                  chatGUID: guid ?? group, sender: sender, isGroup: true)
+    }
+
+    func receive(_ e: GenieEngine, _ line: String) async -> IngestResult {
+        await e.ingestWatchLine(line)
+    }
+
+    func payload(_ h: Harness, at index: Int = 0) throws -> [String: Any] {
+        guard h.webhook.bodies.indices.contains(index) else { XCTFail("webhook missing"); return [:] }
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: h.webhook.bodies[index]) as? [String: Any])
+    }
+
+    func reply(_ h: Harness, id: String = "reply", origin: String = "incoming-1", chat: Int64 = 42) {
+        h.replies.pages = [ReplyPage(replies: [routedReply(id, chat: chat, text: "answer", guid: origin)], nextCursor: nil)]
+    }
+
+    func testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery() async throws {
+        for refreshList in [false, true] {
+            for priorError: String? in [nil, "send_failed"] {
+                let (h, initial, _) = try setup()
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let file = directory.appendingPathComponent("config.json")
+                try ConfigLoader.write(initial.config, to: file)
+                let provider = FileConfigProvider(url: file)
+                let e = try GenieEngine(configProvider: provider, initialConfig: initial.config,
+                    stateStore: h.state, allowlistStore: h.allow, replySource: h.replies,
+                    sender: h.sender, webhook: h.webhook, secrets: h.secrets,
+                    lock: h.lock, clock: h.clock, log: h.log, stop: h.stop)
+                await e.showChats(chats())
+                let delivered = await receive(e, input())
+                XCTAssertEqual(delivered, .delivered)
+                h.lock.locked = true
+                reply(h)
+                _ = await e.pollReplies()
+                await e.setLastError(priorError)
+                await e.setPaused(true)
+                h.lock.locked = false
+                let before = await e.snapshot()
+                XCTAssertEqual(before.heldCount, 1)
+                let deliveries = h.webhook.bodies.count
+                let fetches = h.replies.cursors.count
+                let sends = h.sender.sent.count
+                let reader = ScriptedChatLists(script: Array(repeating:
+                    .parsed(ChatListParse(chats: chats(), failedLineCount: 0)), count: 10))
+                let poller = GeniePoller(engine: e, reader: reader, configProvider: provider,
+                    clock: h.clock, stop: h.stop)
+                for episode in 1...2 {
+                    if episode == 1 { try Data("{".utf8).write(to: file) }
+                    else { try FileManager.default.removeItem(at: file) }
+                    for _ in 0..<3 {
+                        if refreshList {
+                            await poller.requestChatsRefresh()
+                            _ = await poller.tick()
+                            XCTAssertEqual(h.log.records.filter { $0.code == "config_unreadable" }.count, episode)
+                        }
+                        let snapshot = await e.snapshot()
+                        XCTAssertEqual(h.log.records.filter { $0.code == "config_unreadable" }.count, episode)
+                        XCTAssertEqual(snapshot.lastError, priorError)
+                        XCTAssertTrue(snapshot.paused)
+                        XCTAssertEqual(snapshot.enabledChatIDs, before.enabledChatIDs)
+                        XCTAssertEqual(snapshot.configChatIDs, before.configChatIDs)
+                        XCTAssertEqual(snapshot.configGroupUnresolved, episode - 1)
+                        XCTAssertEqual(snapshot.cursorRowID, before.cursorRowID)
+                        XCTAssertEqual(snapshot.heldCount, 1)
+                    }
+                    let polled = await e.pollReplies()
+                    XCTAssertEqual(polled, .skippedPaused)
+                    await e.retryHolds()
+                    _ = await poller.tick()
+                    XCTAssertEqual(h.webhook.bodies.count, deliveries)
+                    XCTAssertEqual(h.replies.cursors.count, fetches)
+                    XCTAssertEqual(h.sender.sent.count, sends)
+                    var repaired = initial.config
+                    repaired.groupChatGUIDs = [group, other]
+                    try ConfigLoader.write(repaired, to: file)
+                    if refreshList {
+                        await poller.requestChatsRefresh()
+                        _ = await poller.tick()
+                    }
+                    let recovered = await e.snapshot()
+                    XCTAssertTrue(recovered.paused)
+                    XCTAssertEqual(recovered.lastError, priorError)
+                    XCTAssertEqual(recovered.configGroupNotFound, 1)
+                    XCTAssertEqual(recovered.configChatIDs, [42])
+                    XCTAssertEqual(recovered.heldCount, 1)
+                    let received = await receive(e, input(2))
+                    XCTAssertEqual(received, .deferredPaused)
+                    let afterTraffic = await e.snapshot()
+                    XCTAssertEqual(afterTraffic.cursorRowID, before.cursorRowID)
+                    XCTAssertEqual(afterTraffic.lastError, priorError)
+                    XCTAssertEqual(h.webhook.bodies.count, deliveries)
+                    XCTAssertEqual(h.replies.cursors.count, fetches)
+                    XCTAssertEqual(h.sender.sent.count, sends)
+                }
+                await e.setPaused(false)
+                try Data("{".utf8).write(to: file)
+                let errors = h.log.records.filter { $0.code == "config_unreadable" }.count
+                _ = await e.ingestWatchLine("")
+                _ = await e.ingestWatchLine("")
+                let active = await e.snapshot()
+                XCTAssertEqual(active.lastError, "config_unreadable")
+                XCTAssertEqual(h.log.records.filter { $0.code == "config_unreadable" }.count, errors + 2)
+            }
+        }
+    }
+
+    func testPausedConfigRefreshUpdatesRowsWithoutRestartingTraffic() async throws {
+        for refreshList in [false, true] {
+            let (h, p, e) = try setup()
+            await e.showChats(chats())
+            let initial = await receive(e, input())
+            XCTAssertEqual(initial, .delivered)
+            h.lock.locked = true
+            reply(h)
+            _ = await e.pollReplies()
+            let held = await e.snapshot()
+            XCTAssertEqual(held.heldCount, 1)
+            await e.setPaused(true)
+            h.lock.locked = false
+            p.config.groupChatGUIDs = []
+            _ = await e.ingestWatchLine("")
+            p.config.groupChatGUIDs = [group, other]
+            let fetches = h.replies.cursors.count
+            let deliveries = h.webhook.bodies.count
+            let reader = ScriptedChatLists(script: [
+                .parsed(ChatListParse(chats: chats(), failedLineCount: 0))
+            ])
+            let poller = GeniePoller(engine: e, reader: reader, configProvider: p,
+                clock: h.clock, stop: h.stop)
+            if refreshList {
+                await poller.requestChatsRefresh()
+                _ = await poller.tick()
+                XCTAssertTrue(h.log.records.contains { $0.code == "group_chat_not_found" })
+            }
+            let snapshot = await e.snapshot()
+            XCTAssertTrue(snapshot.paused)
+            XCTAssertEqual(snapshot.configChatIDs, [42])
+            XCTAssertEqual(snapshot.configGroupNotFound, 1)
+            XCTAssertEqual(snapshot.configGroupUnresolved, 1)
+            let rows = AllowlistOrdering.rows(chats: chats(), enabledIDs: Set(snapshot.enabledChatIDs),
+                query: "", configIDs: Set(snapshot.configChatIDs))
+            XCTAssertEqual(rows.first?.kindLabel, "グループ（設定）")
+            XCTAssertEqual(rows.first?.configLocked, true)
+            if !refreshList { _ = await poller.tick() }
+            let pausedPoll = await e.pollReplies()
+            XCTAssertEqual(pausedPoll, .skippedPaused)
+            await e.retryHolds()
+            let received = await receive(e, input(2))
+            XCTAssertEqual(received, .deferredPaused)
+            XCTAssertEqual(h.webhook.bodies.count, deliveries)
+            XCTAssertEqual(h.replies.cursors.count, fetches)
+            XCTAssertTrue(h.sender.sent.isEmpty)
+            let stillPaused = await e.snapshot()
+            XCTAssertEqual(stillPaused.heldCount, 1)
+            await e.setPaused(false)
+            let resumed = await receive(e, input(2))
+            XCTAssertEqual(resumed, .delivered)
+            await e.retryHolds()
+            XCTAssertEqual(h.sender.sent.map(\.chatID), [42, 42])
+        }
+    }
+
+    func testConfigIntentLocksSnapshotRowsUntilRemovedAcrossDirectoryChanges() async throws {
+        for changedGUID in [false, true] {
+            let (_, p, e) = try setup(menu: true)
+            await e.showChats(chats())
+            let changed = changedGUID ? chats(guid: other) : []
+            await e.showChats(changed)
+            let snapshot = await e.snapshot()
+            let rows = AllowlistOrdering.rows(chats: changed, enabledIDs: Set(snapshot.enabledChatIDs),
+                query: "", configIDs: Set(snapshot.configChatIDs))
+            XCTAssertEqual(snapshot.configChatIDs, [42])
+            XCTAssertEqual(rows.first { $0.id == 42 }?.kindLabel, "グループ（設定）")
+            XCTAssertEqual(rows.first { $0.id == 42 }?.configLocked, true)
+            p.config.groupChatGUIDs = []
+            _ = await e.ingestWatchLine("")
+            let removed = await e.snapshot()
+            let unlocked = AllowlistOrdering.rows(chats: changed, enabledIDs: Set(removed.enabledChatIDs),
+                query: "", configIDs: Set(removed.configChatIDs))
+            XCTAssertTrue(removed.configChatIDs.isEmpty)
+            XCTAssertFalse(unlocked.first { $0.id == 42 }?.configLocked ?? false)
+        }
+    }
+
+    func testConfigLockedEngineMutationsLeaveMenuPermissionUntouched() async throws {
+        for menu in [false, true] {
+            let (h, _, e) = try setup(menu: menu)
+            await e.showChats(chats())
+            for operation in 0..<3 {
+                if operation == 0 { await e.toggleChat(id: 42, guid: group) }
+                else { await e.setChatEnabled(42, guid: other, enabled: operation == 1) }
+                XCTAssertEqual(h.allow.ids, menu ? [42] : [])
+                XCTAssertEqual(h.allow.guids[42], menu ? group : nil)
+            }
+            let result = await receive(e, input())
+            XCTAssertEqual(result, .delivered)
+            XCTAssertTrue(h.log.records.contains { $0.code == "allowlist_off_config_locked" })
+        }
+    }
+
+    func testConfigOnlyGroupIsNeverWrittenToAllowlistFile() async throws {
+        let (h, p, _) = try setup()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("allowlist.json")
+        let store = FileAllowlistStore(file: file)
+        try store.save(.empty)
+        let before = try Data(contentsOf: file)
+        let e = try GenieEngine(configProvider: p, initialConfig: p.config, stateStore: h.state,
+            allowlistStore: store, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
+        await e.showChats(chats())
+        await e.toggleChat(id: 42, guid: group)
+        XCTAssertEqual(try Data(contentsOf: file), before)
+        await e.setChatEnabled(42, guid: group, enabled: true)
+        XCTAssertEqual(try Data(contentsOf: file), before)
+        XCTAssertTrue(try store.load().isEmpty)
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+    }
+
+    func testRemovingConfigThenTurningMenuOffStopsReceiving() async throws {
+        let (h, p, e) = try setup(menu: true)
+        await e.showChats(chats())
+        let first = await receive(e, input())
+        XCTAssertEqual(first, .delivered)
+        p.config.groupChatGUIDs = []
+        await e.setChatEnabled(42, enabled: false)
+        let stopped = await receive(e, input(2))
+        XCTAssertEqual(stopped, .ignoredNotAllowed)
+        XCTAssertEqual(h.webhook.bodies.count, 1)
+        XCTAssertTrue(h.allow.ids.isEmpty)
+    }
+
+    func testGC04ConfigOnlyGroupDeliversAndRepliesToSameChat() async throws {
+        let (h, _, e) = try setup()
+        await e.showChats(chats())
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+        XCTAssertEqual(h.webhook.bodies.count, 1)
+        reply(h)
+        _ = await e.pollReplies()
+        XCTAssertEqual(h.sender.sent.map(\.chatID), [42, 42])
+        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertTrue(h.allow.ids.isEmpty)
+    }
+
+    func testGC05RejectsUnresolvedNonGroupCaseAndInitialFailureWithPositiveControl() async throws {
+        for mode in 0..<4 {
+            let (h, _, e) = try setup(groups: mode == 1 ? ["direct"] : (mode == 2 ? [group.uppercased()] : nil))
+            switch mode {
+            case 0: await e.showChats([])
+            case 1: await e.showChats(chats(guid: "direct", isGroup: false))
+            case 2: await e.showChats(chats())
+            default: _ = await e.applyChatList(.failed)
+            }
+            let result = await receive(e, input(guid: mode == 1 ? "direct" : nil))
+            XCTAssertEqual(result, .ignoredNotAllowed)
+            XCTAssertTrue(h.webhook.bodies.isEmpty)
+        }
+        let (h, _, e) = try setup()
+        await e.showChats(chats())
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+        XCTAssertEqual(h.webhook.bodies.count, 1)
+    }
+
+    func testGC06WatchGuidMismatchRejectsAndMatchingGuidDelivers() async throws {
+        let (h, _, e) = try setup()
+        await e.showChats(chats())
+        let mismatch = await receive(e, input(guid: other))
+        XCTAssertNotEqual(mismatch, .delivered)
+        XCTAssertTrue(h.webhook.bodies.isEmpty)
+        await e.showChats(chats())
+        await e.showChats(chats())
+        let match = await receive(e, input(2))
+        XCTAssertEqual(match, .delivered)
+        XCTAssertEqual(h.webhook.bodies.count, 1)
+    }
+
+    func testGC06ReceiveBindingChecksSuppliedGUID() {
+        var auth = ConfigGroupAuthorization()
+        auth.observe(chats(), guids: [group])
+        XCTAssertTrue(auth.permitsReceive(42, guid: group))
+        XCTAssertTrue(auth.permitsReceive(42, guid: nil))
+        XCTAssertFalse(auth.permitsReceive(42, guid: other))
+    }
+
+    func testGC10EveryPermissionSourceMustMatchBeforeSending() async throws {
+        let (h, p, e) = try setup()
+        await e.showChats(chats())
+        let delivered = await receive(e, input())
+        XCTAssertEqual(delivered, .delivered)
+        p.config.groupChatGUIDs = []
+        await e.setChatEnabled(42, guid: other, enabled: true)
+        p.config.groupChatGUIDs = [group]
+        reply(h)
+        _ = await e.pollReplies()
+        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.state.state.handledReplyIDs.contains("reply"))
+        XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_guid_mismatch" })
+    }
+
+    func testGC07MenuOffDoesNotRevokeConfig() async throws {
+        let (h, _, e) = try setup(menu: true)
+        await e.showChats(chats())
+        await e.setChatEnabled(42, enabled: false)
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+        XCTAssertEqual(h.allow.ids, [42])
+        XCTAssertTrue(h.log.records.contains { $0.code == "allowlist_off_config_locked" })
+    }
+
+    func testGC08ConfigRemovalRevokesUnlessMenuStillAllows() async throws {
+        for menu in [false, true] {
+            let (h, p, e) = try setup(menu: menu)
+            await e.showChats(chats())
+            let first = await receive(e, input())
+            XCTAssertEqual(first, .delivered)
+            p.config = try JSONDecoder().decode(GenieConfig.self, from: Data("{\"webhook_url\":\"https://127.0.0.1/webhook\",\"reply_fetch_url\":\"https://127.0.0.1/replies\"}".utf8))
+            let second = await receive(e, input(2))
+            XCTAssertEqual(second, menu ? .delivered : .ignoredNotAllowed)
+            if menu { XCTAssertNil(try payload(h, at: 1)["sender_handle"]) }
+            reply(h)
+            _ = await e.pollReplies()
+            XCTAssertEqual(h.sender.sent.count, menu ? 2 : 0)
+            if !menu { XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" }) }
+        }
+    }
+
+    func testGC09DatabaseSwapRequiresNewListThenBindsNewRowID() async throws {
+        let (h, _, e) = try setup()
+        await e.showChats(chats())
+        let first = await receive(e, input())
+        XCTAssertEqual(first, .delivered)
+        _ = await receive(e, input(2, guid: other))
+        let oldBinding = await e.ingestWatchLine(watchLine(id: 3, guid: "old-binding", chat: 42, fromMe: false, text: "🪔 old", isGroup: true))
+        XCTAssertEqual(oldBinding, .ignoredNotAllowed)
+        let beforeList = await receive(e, input(3, chat: 84))
+        XCTAssertEqual(beforeList, .ignoredNotAllowed)
+        await e.showChats(chats(84))
+        let afterList = await receive(e, input(4, chat: 84))
+        XCTAssertEqual(afterList, .delivered)
+        XCTAssertEqual(try payload(h, at: 1)["chat_id"] as? Int, 84)
+    }
+
+    func testGC10ConfigRemovalBetweenPartsStopsBody() async throws {
+        let (h, p, e) = try setup()
+        await e.showChats(chats())
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+        reply(h)
+        h.sender.onSend = { p.config = GenieConfig.productDefaults }
+        _ = await e.pollReplies()
+        XCTAssertEqual(h.sender.sent.count, 1)
+        XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" })
+    }
+
+    func testGC10EmptyMissingFailedListHoldsThenRecovers() async throws {
+        for mode in 0..<3 {
+            let (h, _, e) = try setup()
+            await e.showChats(chats())
+            let result = await receive(e, input())
+            XCTAssertEqual(result, .delivered)
+            reply(h)
+            if mode == 0 { await e.showChats([]) }
+            if mode == 1 { await e.showChats(chats(99, guid: other)) }
+            if mode == 2 { _ = await e.applyChatList(.failed) }
+            _ = await e.pollReplies()
+            XCTAssertTrue(h.sender.sent.isEmpty)
+            await e.showChats(chats())
+            reply(h)
+            _ = await e.pollReplies()
+            XCTAssertEqual(h.sender.sent.count, 2)
+        }
+    }
+
+    func testGC10RemovalWhileCheckingLockStopsFirstPart() async throws {
+        let (h, p, e) = try setup()
+        await e.showChats(chats())
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+        reply(h)
+        h.lock.onState = { p.config.groupChatGUIDs = [] }
+        _ = await e.pollReplies()
+        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" })
+    }
+
+    func testGC10DirectoryDisappearsBetweenPartsAndBodyResumesAfterRecovery() async throws {
+        let (h, _, e) = try setup()
+        await e.showChats(chats())
+        let result = await receive(e, input())
+        XCTAssertEqual(result, .delivered)
+        reply(h)
+        h.sender.onSend = { await e.showChats([]) }
+        _ = await e.pollReplies()
+        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText])
+        XCTAssertFalse(h.state.state.handledReplyIDs.contains("reply"))
+        h.sender.onSend = nil
+        await e.showChats(chats())
+        reply(h)
+        _ = await e.pollReplies()
+        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+    }
+
+    func testGC12MissingCreatedAtOmitsOnlyThatOptionalKey() async throws {
+        let (h, _, e) = try setup()
+        await e.showChats(chats())
+        var event = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input().utf8)) as? [String: Any])
+        event.removeValue(forKey: "created_at")
+        let data = try JSONSerialization.data(withJSONObject: event)
+        let result = await e.ingestWatchLine(String(decoding: data, as: UTF8.self))
+        XCTAssertEqual(result, .delivered)
+        let body = try payload(h)
+        XCTAssertEqual(Set(body.keys), ["v", "event", "idempotency_key", "guid", "chat_id", "text", "sender_is_me", "sender_name", "sender_handle"])
+    }
+
+    func testGC12NormalizedHandleAndUnknownHandleUseTenKeys() async throws {
+        for (raw, expected) in [(" +1 555 010 0000 ", "tel:+15550100000"), ("FAMILY@EXAMPLE.COM", "email:family@example.com"), ("", "")] {
+            let (h, _, e) = try setup()
+            await e.showChats(chats())
+            let result = await receive(e, input(sender: raw))
+            XCTAssertEqual(result, .delivered)
+            let body = try payload(h)
+            XCTAssertEqual(body.count, 10)
+            XCTAssertEqual(body["sender_handle"] as? String, expected)
+            XCTAssertEqual(body["v"] as? Int, 1)
+        }
+    }
+
+    func testGNSH1JobIncludesNormalizedHandleAndEmptyURLFallbackIncludesIt() async throws {
+        for jobURL in ["http://127.0.0.1/job", ""] {
+            for (raw, expected) in [(" +1 555 010 0000 ", "tel:+15550100000"), ("FAMILY@EXAMPLE.COM", "email:family@example.com")] {
+                let (h, p, e) = try setup()
+                p.config.jobChatIDs = [42]
+                p.config.jobWebhookURL = jobURL
+                await e.showChats(chats())
+                let result = await receive(e, input(sender: raw))
+                XCTAssertEqual(result, .delivered)
+                let body = try payload(h)
+                XCTAssertEqual(body.count, 10)
+                XCTAssertEqual(body["sender_handle"] as? String, expected)
+                XCTAssertEqual(body["v"] as? Int, 1)
+                XCTAssertEqual(h.webhook.urls.map(\.absoluteString), [jobURL.isEmpty ? "https://127.0.0.1/webhook" : jobURL])
+                XCTAssertEqual(h.webhook.secrets, [jobURL.isEmpty ? "hook-secret" : "job-secret"])
+            }
+        }
+    }
+
+    func testGNSH2UnusableJobHandleLogsOncePerActualAttempt() async throws {
+        for raw in ["", "family", "+" + String(repeating: "0", count: 21), "family@exämple.com", "a@b"] {
+            for retry in [false, true] {
+                let (h, p, e) = try setup()
+                p.config.jobChatIDs = [42]
+                p.config.jobWebhookURL = "http://127.0.0.1/job"
+                if retry { h.webhook.results = [.success(WebhookHTTPResult(statusCode: 503))] }
+                await e.showChats(chats())
+                let result = await receive(e, input(sender: raw))
+                XCTAssertEqual(result, .delivered)
+                XCTAssertEqual(h.webhook.bodies.count, retry ? 2 : 1)
+                for index in h.webhook.bodies.indices {
+                    let body = try payload(h, at: index)
+                    XCTAssertEqual(body.count, 9)
+                    XCTAssertNil(body["sender_handle"])
+                }
+                let records = h.log.records.filter { $0.code == "job_sender_handle_unusable" }
+                XCTAssertEqual(records.count, retry ? 2 : 1)
+                for record in records {
+                    XCTAssertEqual(record.level, "info")
+                    XCTAssertEqual(record.chatID, 42)
+                    XCTAssertEqual(record.guid, "incoming-1")
+                    XCTAssertEqual(record.rowid, 1)
+                    XCTAssertNil(record.detail)
+                }
+                let logs = String(decoding: try JSONEncoder().encode(h.log.records), as: UTF8.self)
+                if !raw.isEmpty { XCTAssertFalse(logs.contains(raw)) }
+            }
+        }
+    }
+
+    func testGNSH5JobRetryRechecksSharingButKeepsRouteAndIdentity() async throws {
+        for menu in [false, true] {
+            let (h, p, e) = try setup(menu: menu)
+            p.config.jobChatIDs = [42]
+            p.config.jobWebhookURL = "http://127.0.0.1/job"
+            await e.showChats(chats())
+            h.webhook.results = [.success(WebhookHTTPResult(statusCode: 503))]
+            h.clock.onSleep = {
+                p.config.groupChatGUIDs = []
+                p.config.jobChatIDs = []
+                p.config.jobWebhookURL = "http://127.0.0.1/changed"
+            }
+            let result = await receive(e, input())
+            XCTAssertEqual(result, menu ? .delivered : .ignoredNotAllowed)
+            XCTAssertEqual(h.webhook.bodies.count, menu ? 2 : 1)
+            XCTAssertEqual(try payload(h)["sender_handle"] as? String, "email:family@example.com")
+            for index in h.webhook.bodies.indices {
+                let body = try payload(h, at: index)
+                XCTAssertEqual(body["guid"] as? String, "incoming-1")
+                XCTAssertEqual(body["idempotency_key"] as? String, "incoming-1")
+                XCTAssertEqual(h.webhook.urls[index].absoluteString, "http://127.0.0.1/job")
+                XCTAssertEqual(h.webhook.secrets[index], "job-secret")
+            }
+            if menu {
+                XCTAssertEqual(try payload(h, at: 1).count, 9)
+                XCTAssertNil(try payload(h, at: 1)["sender_handle"])
+            }
+        }
+    }
+
+    func testGC25GroupNoticesAreCountOnlyGatedAndRearmed() async throws {
+        let (h, p, e) = try setup()
+        await e.showChats([])
+        await e.showChats([])
+        var snapshot = await e.snapshot()
+        XCTAssertEqual(snapshot.configGroupUnresolved, 1)
+        XCTAssertEqual(h.log.records.filter { $0.code == "group_chat_not_found" }.count, 1)
+        XCTAssertEqual(h.log.records.first { $0.code == "group_chat_not_found" }?.detail, "1")
+        await e.showChats(chats())
+        snapshot = await e.snapshot()
+        XCTAssertEqual(snapshot.configGroupUnresolved, 0)
+        XCTAssertEqual(snapshot.configChatIDs, [42])
+        await e.showChats([])
+        XCTAssertEqual(h.log.records.filter { $0.code == "group_chat_not_found" }.count, 2)
+        p.config.groupChatGUIDs = ["direct"]
+        _ = await e.ingestWatchLine("")
+        await e.showChats(chats(99, guid: "direct", isGroup: false))
+        snapshot = await e.snapshot()
+        XCTAssertEqual(snapshot.configGroupUnresolved, 1)
+        XCTAssertTrue(h.log.records.contains { $0.code == "group_chat_not_group" && $0.detail == "1" })
+        let logs = String(describing: h.log.records)
+        XCTAssertFalse(logs.contains(group))
+        XCTAssertNil(snapshot.lastError)
+        XCTAssertNil(snapshot.holdNotice)
+    }
+
+    func testGC01UnreadableReloadKeepsPreviousGroupPermission() async throws {
+        let h = Harness()
+        let data = try JSONSerialization.data(withJSONObject: ["group_chat_guids": [group], "webhook_url": "https://127.0.0.1/webhook"])
+        let provider = GroupJSONConfig(data)
+        let cfg = try provider.load()
+        let e = try GenieEngine(configProvider: provider, initialConfig: cfg, stateStore: h.state,
+            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
+        await e.showChats(chats())
+        let first = await receive(e, input())
+        XCTAssertEqual(first, .delivered)
+        for json in ["{\"group_chat_guids\":[1]}", "{\"reply_marker\":1}"] {
+            provider.data = Data(json.utf8)
+            _ = await e.ingestWatchLine("")
+            let snapshot = await e.snapshot()
+            XCTAssertEqual(snapshot.lastError, "config_unreadable")
+            let result = await receive(e, input(h.webhook.bodies.count + 1))
+            XCTAssertEqual(result, .delivered)
+        }
+        XCTAssertEqual(h.webhook.bodies.count, 3)
+    }
+
+    func testRetryRefreshRevokesPermissionOrHandleSharing() async throws {
+        for menu in [false, true] {
+            let (h, p, e) = try setup(menu: menu)
+            await e.showChats(chats())
+            h.webhook.results = [.success(WebhookHTTPResult(statusCode: 503)), .success(WebhookHTTPResult(statusCode: 200))]
+            h.clock.onSleep = { p.config = try! JSONDecoder().decode(GenieConfig.self, from: Data("{\"webhook_url\":\"https://127.0.0.1/webhook\"}".utf8)) }
+            let result = await receive(e, input())
+            XCTAssertEqual(result, menu ? .delivered : .ignoredNotAllowed)
+            XCTAssertEqual(h.webhook.bodies.count, menu ? 2 : 1)
+            XCTAssertNotNil(try payload(h)["sender_handle"])
+            if menu { XCTAssertNil(try payload(h, at: 1)["sender_handle"]) }
+        }
+    }
+}
+
+private final class GroupJSONConfig: ConfigProviding, @unchecked Sendable {
+    var data: Data
+    init(_ data: Data) { self.data = data }
+    func load() throws -> GenieConfig { try JSONDecoder().decode(GenieConfig.self, from: data) }
+}

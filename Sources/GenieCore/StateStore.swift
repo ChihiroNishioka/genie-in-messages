@@ -19,11 +19,13 @@ struct MessageRoute: Codable, Equatable {
     var guid: String
     var chatID: Int64
     var at: Date
+    var addressee: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case guid
         case chatID = "chat_id"
         case at
+        case addressee
     }
 }
 

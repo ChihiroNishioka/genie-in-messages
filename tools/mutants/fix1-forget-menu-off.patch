@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -178,6 +178,7 @@
+             log.record(level: .info, code: "allowlist_off_config_locked", chatID: id, guid: nil, rowid: nil)
+             return
+         }
++        if !enabled { return }
+         let previous = allowlist
+         allowlist.entries.removeAll { $0.id == id }
+         if enabled {

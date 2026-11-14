@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -716,7 +716,7 @@
+                 v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
+                 chatID: chatID, text: text, createdAt: event.createdAt,
+                 senderIsMe: senderIsMe, senderName: senderName,
+-                senderHandle: sharedSenderHandle()
++                senderHandle: sharedSenderHandle() ?? ""
+             )
+             return try payload.encodeData()
+         }

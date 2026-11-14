@@ -147,7 +147,7 @@ final class EngineWatchTests: XCTestCase {
         let result = await engine.ingestWatchLine(watchLine(
             id: 1, guid: "echo", chat: 1, fromMe: true, text: reply
         ))
-        XCTAssertEqual(result, .ignoredNoSignal)
+        XCTAssertEqual(result, .ignoredReplyMarker)
         XCTAssertTrue(harness.webhook.bodies.isEmpty)
         XCTAssertFalse(Signal.matches(reply))
     }

@@ -36,9 +36,10 @@ struct AllowlistView: View {
 
     var body: some View {
         let enabled = Set(model.snapshot?.enabledChatIDs ?? [])
-        let rows = AllowlistOrdering.rows(chats: model.chats, enabledIDs: enabled, query: model.chatQuery)
+        let configIDs = Set(model.snapshot?.configChatIDs ?? [])
+        let rows = AllowlistOrdering.rows(chats: model.chats, enabledIDs: enabled, query: model.chatQuery, configIDs: configIDs)
         VStack(alignment: .leading, spacing: 10) {
-            Text("初期状態はすべてオフです。オンにしたトークだけ転送します。")
+            Text("オンにしたトークと設定で許可したグループだけ転送します。")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             Text("オンを上に、1対1をグループより上に並べています。名前か id で探せます。")
@@ -52,6 +53,12 @@ struct AllowlistView: View {
                 Button("一覧を更新") {
                     Task { await model.refreshChats() }
                 }
+            }
+            if let notice = configGroupNotice(notFound: model.snapshot?.configGroupNotFound ?? 0, notGroup: model.snapshot?.configGroupNotGroup ?? 0) {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if rows.isEmpty {
                 Text(model.chats.isEmpty ? "トークはまだありません" : "一致するトークはありません")
@@ -88,6 +95,7 @@ struct AllowlistView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .disabled(row.configLocked)
                             Divider()
                         }
                     }

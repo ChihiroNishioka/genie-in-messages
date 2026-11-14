@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -755,7 +755,7 @@
+                 )
+                 if (200...299).contains(response.statusCode) {
+                     lastError = nil
+-                    log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
++                    log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: event.sender)
+                     return finish(event, .delivered)
+                 }
+                 last = "webhook_http_\(response.statusCode)"

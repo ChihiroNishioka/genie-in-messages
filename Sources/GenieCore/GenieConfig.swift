@@ -1,6 +1,9 @@
 import Foundation
 
 package struct GenieConfig: Equatable, Sendable {
+    package var groupChatGUIDs: [String] = []
+    package var replyMarker: String = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
+    package var replyMarkerInvalid: Bool = false
     package var jobWebhookURL: String = ""
     package var jobChatIDs: [Int64] = []
     package var webhookURL: String
@@ -60,6 +63,18 @@ package struct GenieConfig: Equatable, Sendable {
 
     func sanitized() -> GenieConfig {
         var copy = self
+        var seenGroupGUIDs: Set<String> = []
+        copy.groupChatGUIDs = copy.groupChatGUIDs.compactMap { raw in
+            let guid = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !guid.isEmpty && seenGroupGUIDs.insert(guid).inserted ? guid : nil
+        }
+        let candidate = Self.trimMarkerWhitespace(TextNormalizer.nfc(copy.replyMarker))
+        if Self.isValidReplyMarker(candidate) {
+            copy.replyMarker = candidate
+        } else {
+            copy.replyMarker = ReplyComposer.markerText
+            copy.replyMarkerInvalid = true
+        }
         copy.jobWebhookURL = copy.jobWebhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
         var seenJobChatIDs: Set<Int64> = []
         copy.jobChatIDs = copy.jobChatIDs.filter { seenJobChatIDs.insert($0).inserted }
@@ -88,11 +103,35 @@ package struct GenieConfig: Equatable, Sendable {
         return copy
     }
 
+    private static func trimMarkerWhitespace(_ marker: String) -> String {
+        let scalars = marker.unicodeScalars
+        let isSpace: (Unicode.Scalar) -> Bool = {
+            CharacterSet.whitespacesAndNewlines.contains($0) && !$0.properties.isDefaultIgnorableCodePoint
+        }
+        let leading = scalars.drop(while: isSpace)
+        let trimmed = leading.reversed().drop(while: isSpace).reversed()
+        return String(String.UnicodeScalarView(trimmed))
+    }
+
+    private static func isValidReplyMarker(_ marker: String) -> Bool {
+        guard !TextNormalizer.isBlank(marker),
+              let firstGrapheme = marker.first,
+              let first = firstGrapheme.unicodeScalars.first, !TextNormalizer.isInvisible(first),
+              first.properties.isEmojiPresentation || (first.properties.isEmoji
+                  && firstGrapheme.unicodeScalars.dropFirst().first?.value == 0xFE0F),
+              !marker.unicodeScalars.contains(where: { $0.value == 0x1FA94 }),
+              !marker.unicodeScalars.contains(where: {
+                  $0.properties.generalCategory == .control || CharacterSet.newlines.contains($0)
+              }),
+              marker.count <= 8, marker.unicodeScalars.count <= 32 else { return false }
+        return true
+    }
+
     /// 空の表示名と比較できないハンドルは落とす。同じキーは、ハンドル文字列の順で先の名前を残す。
     private static func indexNames(_ names: [String: String]) -> [String: String] {
         var indexed: [String: String] = [:]
         for handle in names.keys.sorted() {
-            let name = names[handle]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let name = names[handle] ?? ""
             guard !TextNormalizer.isBlank(name) else { continue }
             guard let key = SenderHandle.normalize(handle) else { continue }
             if indexed[key] == nil {
@@ -104,12 +143,19 @@ package struct GenieConfig: Equatable, Sendable {
 
     func displayName(matching handle: String) -> String? {
         guard let key = SenderHandle.normalize(handle) else { return nil }
-        return senderNameKeys[key]
+        return senderNameKeys[key]?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func replyAddressee(matching handle: String) -> String? {
+        guard let key = SenderHandle.normalize(handle) else { return nil }
+        return ReplyComposer.validatedAddressee(senderNameKeys[key], sender: handle, marker: replyMarker)
     }
 }
 
 extension GenieConfig: Codable {
     enum CodingKeys: String, CodingKey {
+        case groupChatGUIDs = "group_chat_guids"
+        case replyMarker = "reply_marker"
         case jobWebhookURL = "job_webhook_url"
         case jobChatIDs = "job_chat_ids"
         case webhookURL = "webhook_url"
@@ -139,6 +185,9 @@ extension GenieConfig: Codable {
     package init(from decoder: Decoder) throws {
         let defaults = GenieConfig.productDefaults
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        groupChatGUIDs = try c.decodeIfPresent([String].self, forKey: .groupChatGUIDs) ?? []
+        replyMarker = try c.decodeIfPresent(String.self, forKey: .replyMarker) ?? ReplyComposer.markerText
+        replyMarkerInvalid = false
         jobWebhookURL = try c.decodeIfPresent(String.self, forKey: .jobWebhookURL) ?? defaults.jobWebhookURL
         jobChatIDs = try Self.decodeJobChatIDs(c)
         webhookURL = try c.decodeIfPresent(String.self, forKey: .webhookURL) ?? defaults.webhookURL

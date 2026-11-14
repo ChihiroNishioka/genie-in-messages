@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -374,8 +374,8 @@
+             webhookConfigured: EndpointURL.https(config.webhookURL) != nil,
+             configChatIDs: configGroups.intentChatIDs.sorted(),
+             configGroupUnresolved: configGroups.notFound + configGroups.notGroup,
+-            configGroupNotFound: configGroups.notFound,
+-            configGroupNotGroup: configGroups.notGroup
++            configGroupNotFound: configGroups.notFound + configGroups.notGroup,
++            configGroupNotGroup: 0
+         )
+     }
+ 

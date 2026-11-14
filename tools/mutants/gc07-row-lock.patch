@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/ChatAllowlist.swift
++++ b/Sources/GenieCore/ChatAllowlist.swift
+@@ -29,7 +29,7 @@
+                 guid: chat.guid,
+                 isGroup: chat.isGroup,
+                 enabled: effectiveIDs.contains(chat.id),
+-                configLocked: configIDs.contains(chat.id)
++                configLocked: false
+             )
+         }
+         for id in effectiveIDs.sorted() where !known.contains(id) {
