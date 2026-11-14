@@ -15,7 +15,7 @@ jobs:
         run: python3 scripts/check-tracked-text.py
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Select Xcode 16.2
         run: |
@@ -54,7 +54,7 @@ jobs:
         run: bash tools/run-mutants.sh linux
 
   mutation-macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Select Xcode 16.2
         run: |
