@@ -702,14 +702,21 @@ package actor GenieEngine {
         guard let url = job ? EndpointURL.httpsOrLoopback(rawURL) : EndpointURL.https(rawURL) else {
             return deadLetter(event, error: "url_not_https", attempts: 0, kind: kind, detail: detail)
         }
+        func sharedSenderHandle() -> String? {
+            guard !senderIsMe && !config.selfChatIDs.contains(chatID)
+                && configGroups.permitsReceive(chatID, guid: event.chatGUID) else { return nil }
+            let normalized = SenderHandle.normalize(event.sender)
+            if job {
+                return normalized.flatMap { JobSenderHandle.isContractValue($0) ? $0 : nil }
+            }
+            return normalized ?? ""
+        }
         func encodePayload() throws -> Data {
             let payload = WebhookPayload(
                 v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
                 chatID: chatID, text: text, createdAt: event.createdAt,
                 senderIsMe: senderIsMe, senderName: senderName,
-                senderHandle: !job && !senderIsMe && !config.selfChatIDs.contains(chatID)
-                    && configGroups.permitsReceive(chatID, guid: event.chatGUID)
-                    ? (SenderHandle.normalize(event.sender) ?? "") : nil
+                senderHandle: sharedSenderHandle()
             )
             return try payload.encodeData()
         }
@@ -766,6 +773,10 @@ package actor GenieEngine {
             do { body = try encodePayload() }
             catch { return deadLetter(event, error: "webhook_encode_failed", attempts: attempt, kind: kind, detail: detail) }
             do {
+                if job && !senderIsMe && !config.selfChatIDs.contains(chatID)
+                    && configGroups.permitsReceive(chatID, guid: event.chatGUID) && sharedSenderHandle() == nil {
+                    log.record(level: .info, code: "job_sender_handle_unusable", chatID: chatID, guid: event.guid, rowid: event.id)
+                }
                 let response = try await webhook.post(
                     url: url,
                     secret: token,

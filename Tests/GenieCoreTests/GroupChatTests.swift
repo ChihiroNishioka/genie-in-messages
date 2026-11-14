@@ -464,21 +464,82 @@ final class GroupChatTests: XCTestCase {
         }
     }
 
-    func testGC13JobExcludesHandleAndEmptyURLFallbackIncludesIt() async throws {
+    func testGNSH1JobIncludesNormalizedHandleAndEmptyURLFallbackIncludesIt() async throws {
         for jobURL in ["http://127.0.0.1/job", ""] {
-            let (h, p, e) = try setup()
+            for (raw, expected) in [(" +1 555 010 0000 ", "tel:+15550100000"), ("FAMILY@EXAMPLE.COM", "email:family@example.com")] {
+                let (h, p, e) = try setup()
+                p.config.jobChatIDs = [42]
+                p.config.jobWebhookURL = jobURL
+                await e.showChats(chats())
+                let result = await receive(e, input(sender: raw))
+                XCTAssertEqual(result, .delivered)
+                let body = try payload(h)
+                XCTAssertEqual(body.count, 10)
+                XCTAssertEqual(body["sender_handle"] as? String, expected)
+                XCTAssertEqual(body["v"] as? Int, 1)
+                XCTAssertEqual(h.webhook.urls.map(\.absoluteString), [jobURL.isEmpty ? "https://127.0.0.1/webhook" : jobURL])
+                XCTAssertEqual(h.webhook.secrets, [jobURL.isEmpty ? "hook-secret" : "job-secret"])
+            }
+        }
+    }
+
+    func testGNSH2UnusableJobHandleLogsOncePerActualAttempt() async throws {
+        for raw in ["", "family", "+" + String(repeating: "0", count: 21), "family@exämple.com", "a@b"] {
+            for retry in [false, true] {
+                let (h, p, e) = try setup()
+                p.config.jobChatIDs = [42]
+                p.config.jobWebhookURL = "http://127.0.0.1/job"
+                if retry { h.webhook.results = [.success(WebhookHTTPResult(statusCode: 503))] }
+                await e.showChats(chats())
+                let result = await receive(e, input(sender: raw))
+                XCTAssertEqual(result, .delivered)
+                XCTAssertEqual(h.webhook.bodies.count, retry ? 2 : 1)
+                for index in h.webhook.bodies.indices {
+                    let body = try payload(h, at: index)
+                    XCTAssertEqual(body.count, 9)
+                    XCTAssertNil(body["sender_handle"])
+                }
+                let records = h.log.records.filter { $0.code == "job_sender_handle_unusable" }
+                XCTAssertEqual(records.count, retry ? 2 : 1)
+                for record in records {
+                    XCTAssertEqual(record.level, "info")
+                    XCTAssertEqual(record.chatID, 42)
+                    XCTAssertEqual(record.guid, "incoming-1")
+                    XCTAssertEqual(record.rowid, 1)
+                    XCTAssertNil(record.detail)
+                }
+                let logs = String(decoding: try JSONEncoder().encode(h.log.records), as: UTF8.self)
+                if !raw.isEmpty { XCTAssertFalse(logs.contains(raw)) }
+            }
+        }
+    }
+
+    func testGNSH5JobRetryRechecksSharingButKeepsRouteAndIdentity() async throws {
+        for menu in [false, true] {
+            let (h, p, e) = try setup(menu: menu)
             p.config.jobChatIDs = [42]
-            p.config.jobWebhookURL = jobURL
-            h.secrets = StaticSecret(webhook: "hook-secret", reply: nil, job: "job-secret")
+            p.config.jobWebhookURL = "http://127.0.0.1/job"
             await e.showChats(chats())
+            h.webhook.results = [.success(WebhookHTTPResult(statusCode: 503))]
+            h.clock.onSleep = {
+                p.config.groupChatGUIDs = []
+                p.config.jobChatIDs = []
+                p.config.jobWebhookURL = "http://127.0.0.1/changed"
+            }
             let result = await receive(e, input())
-            if !jobURL.isEmpty {
-                XCTAssertEqual(result, .delivered)
-                XCTAssertEqual(try payload(h).count, 9)
-                XCTAssertNil(try payload(h)["sender_handle"])
-            } else {
-                XCTAssertEqual(result, .delivered)
-                XCTAssertEqual(try payload(h).count, 10)
+            XCTAssertEqual(result, menu ? .delivered : .ignoredNotAllowed)
+            XCTAssertEqual(h.webhook.bodies.count, menu ? 2 : 1)
+            XCTAssertEqual(try payload(h)["sender_handle"] as? String, "email:family@example.com")
+            for index in h.webhook.bodies.indices {
+                let body = try payload(h, at: index)
+                XCTAssertEqual(body["guid"] as? String, "incoming-1")
+                XCTAssertEqual(body["idempotency_key"] as? String, "incoming-1")
+                XCTAssertEqual(h.webhook.urls[index].absoluteString, "http://127.0.0.1/job")
+                XCTAssertEqual(h.webhook.secrets[index], "job-secret")
+            }
+            if menu {
+                XCTAssertEqual(try payload(h, at: 1).count, 9)
+                XCTAssertNil(try payload(h, at: 1)["sender_handle"])
             }
         }
     }

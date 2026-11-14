@@ -1,0 +1,19 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -729,6 +729,7 @@
+             }
+         }
+ 
++        let initialBody = try! encodePayload()
+         let maxAttempts = config.webhookMaxAttempts
+         var last = "webhook_transport"
+         var attempt = 0
+@@ -770,7 +771,7 @@
+                 return finish(event, .ignoredNotAllowed)
+             }
+             let body: Data
+-            do { body = try encodePayload() }
++            do { body = initialBody }
+             catch { return deadLetter(event, error: "webhook_encode_failed", attempts: attempt, kind: kind, detail: detail) }
+             do {
+                 if job && !senderIsMe && !config.selfChatIDs.contains(chatID)

@@ -95,3 +95,31 @@ final class GroupDocumentationTests: XCTestCase {
         XCTAssertTrue(readme.contains("返信の印: 1通目は `reply_marker`"))
     }
 }
+
+extension GroupDocumentationTests {
+    func testGNSH8JobFamilyContractAndOperationalLimits() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let readme = try String(contentsOf: repoRoot().appendingPathComponent("README.md"), encoding: .utf8)
+        XCTAssertTrue(spec.contains("23. Job 経路の送信者ハンドル"))
+        for text in [spec, readme] {
+            for required in ["GENIE_GROUP_CHAT_IDS", "GENIE_ALLOWED_CHAT_IDS", "ALLOWED_SOURCE_CHAT_IDS",
+                "Job Engine を先に", "オーナーの道具と権限", "member に許す操作", "既定は無効",
+                "job_sender_handle_unusable", "256", "家族の管理コマンド", "無視",
+                "すべて Job Engine", "メニューだけ", "再試行中", "`/cancel`"] {
+                XCTAssertTrue(text.contains(required), required)
+            }
+            XCTAssertFalse(text.contains("家族のグループは `job_chat_ids` に入れません"))
+            XCTAssertFalse(text.contains("家族のグループは `job_chat_ids` に入れない"))
+            XCTAssertFalse(text.contains("Job 経路には `sender_handle` を付けない"))
+        }
+    }
+
+    func testGNSH9MutantsReplaceOldJobExclusion() throws {
+        let path = repoRoot().appendingPathComponent("tools/mutants/manifest.json")
+        let entries = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [[String: String]])
+        XCTAssertFalse(entries.contains { $0["patch"] == "gc13-job-handle.patch" })
+        for name in ["SH-JOB-OMIT", "SH-JOB-EMPTY", "SH-JOB-UNCHECKED", "SH-JOB-MENU", "SH-JOB-SELF", "SH-JOB-STALE", "SH-DOC-OLD"] {
+            XCTAssertTrue(entries.contains { $0["name"] == name }, name)
+        }
+    }
+}

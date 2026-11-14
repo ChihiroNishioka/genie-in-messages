@@ -635,11 +635,6 @@
     "filter": "GroupChatTests.testGC12NormalizedHandleAndUnknownHandleUseTenKeys"
   },
   {
-    "name": "GC13-JOB-HANDLE",
-    "patch": "gc13-job-handle.patch",
-    "filter": "GroupChatTests.testGC13JobExcludesHandleAndEmptyURLFallbackIncludesIt"
-  },
-  {
     "name": "GC14-ALWAYS-HANDLE",
     "patch": "gc14-always-handle.patch",
     "filter": "ChatMembershipEngineTests.testOnGroupReactsToAnotherMember"
@@ -748,5 +743,40 @@
     "name": "GF3-PAUSED-CONFIG-NO-RECOVERY",
     "patch": "fix3-paused-config-no-recovery.patch",
     "filter": "GroupChatTests.testPausedUnreadableConfigPreservesErrorAndTrafficUntilRecovery"
+  },
+  {
+    "name": "SH-JOB-OMIT",
+    "patch": "sh-job-omit.patch",
+    "filter": "GroupChatTests.testGNSH1JobIncludesNormalizedHandleAndEmptyURLFallbackIncludesIt"
+  },
+  {
+    "name": "SH-JOB-EMPTY",
+    "patch": "sh-job-empty.patch",
+    "filter": "GroupChatTests.testGNSH2UnusableJobHandleLogsOncePerActualAttempt"
+  },
+  {
+    "name": "SH-JOB-UNCHECKED",
+    "patch": "sh-job-unchecked.patch",
+    "filter": "GroupChatTests.testGNSH2UnusableJobHandleLogsOncePerActualAttempt"
+  },
+  {
+    "name": "SH-JOB-MENU",
+    "patch": "sh-job-menu.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC13OnlyConfigGroupOtherMemberGetsHandle"
+  },
+  {
+    "name": "SH-JOB-SELF",
+    "patch": "sh-job-self.patch",
+    "filter": "GroupPrivacyRegressionTests.testGC13OnlyConfigGroupOtherMemberGetsHandle"
+  },
+  {
+    "name": "SH-JOB-STALE",
+    "patch": "sh-job-stale.patch",
+    "filter": "GroupChatTests.testGNSH5JobRetryRechecksSharingButKeepsRouteAndIdentity"
+  },
+  {
+    "name": "SH-DOC-OLD",
+    "patch": "sh-doc-old.patch",
+    "filter": "GroupDocumentationTests.testGNSH8JobFamilyContractAndOperationalLimits"
   }
 ]

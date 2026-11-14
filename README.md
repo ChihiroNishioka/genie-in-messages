@@ -17,6 +17,9 @@ swift build --product GenieMenuBar   # macOS
 scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 ```
 
+`gc13-job-handle.patch` は、Job 経路で一律に付けない、という古い期待を置き換えるため廃止しました。代わりに `sh-job-*.patch` と `sh-doc-old.patch` で、付与条件、空文字の省略、契約検証、再試行、案内文を壊して検査します。
+
+
 壊し方の置き場所と、新しい条件には壊し方も足すことは `LESSONS.md` に書いてある。
 
 署名IDは Apple Development 証明書の名前を引数か `GENIE_CODESIGN_IDENTITY` で渡す。アドホック署名は使わない。証明書はリポジトリに置かない。
@@ -40,7 +43,7 @@ scripts/assemble-app.sh --identity "$GENIE_CODESIGN_IDENTITY"
 
 `+1 555 010 0000` と `+15550100000` は区切りを除くと同じキーになり、同じ表示名を引く。メールは大文字と小文字を区別しない。表が無いときは、連絡先名が watch に既にあればそれを使う。その名前がメールまたは電話番号の形なら、`sender` が空でも空にする。無ければ空。自分の表示名の既定は `me`。規則は `SPEC.md` の 4.10。webhook には `sender_is_me` と `sender_name` を足す。`v` は 1 のまま。ハンドルは通常は送らない。設定で許可したグループの例外は次の節を参照。
 
-`job_chat_ids` に指定したトークが許可リストでもオンなら、その 🪔 を `job_webhook_url` に送る。ほかのトークは従来の `webhook_url` と `secret` を使う。送り先はメッセージごとに一度決め、再送中に設定が変わっても切り替えない。JSON の9キー、`v: 1`、重複排除の契約は同じ。
+`job_chat_ids` に指定したトークが許可リストでもオンなら、その 🪔 を `job_webhook_url` に送る。ほかのトークは従来の `webhook_url` と `secret` を使う。送り先はメッセージごとに一度決め、再送中に設定が変わっても切り替えない。基本は JSON の9キーで、設定のグループの家族に使えるハンドルがあれば10キーです。`v: 1` と重複排除の契約は同じです。
 
 ```json
 {
@@ -85,7 +88,16 @@ Job Engine 側の `GENIE_ALLOWED_CHAT_IDS` と `ALLOWED_SOURCE_CHAT_IDS` に同�
 
 `reply_marker` は、先頭の書記素が絵文字のときだけ有効です。先頭が Emoji_Presentation の絵文字、または U+FE0F（VS16）付きの絵文字である必要があります。`A`、`あ`、`#`、VS16 のない `🕊` は無効で、`🕊️` は有効です。無効な値は既定の 🧞‍♂️ に戻し、値を出さず `reply_marker_invalid` をログに記録します。ほかの長さや不可視文字の制約は SPEC の 4.9 を参照してください。
 
-Job 経路には `sender_handle` を付けない規則です。Job Engine は他メンバーの合図を200 `ignored` にして返事しないため、家族のグループは `job_chat_ids` に入れません。`job_webhook_url` が空で通常経路に戻る場合は、通常 webhook の規則になります。
+Job 経路でも、設定で照合済みのグループの家族に、契約に合う `sender_handle` を付けます。正規化後に ASCII の1〜256字で、電話は `tel:` と任意の `+` と1〜20桁、メールは小文字のローカル部1〜64字とドット付きドメインの契約に合うかを検証します。正確な正規表現は SPEC 4.5 を参照してください。合わなければキーを省き、実際の送信試行ごとに値を含まない info `job_sender_handle_unusable` を記録します。自分、自分宛て、1対1、メニューだけのグループには付けない規則です。`job_webhook_url` が空なら通常経路に戻り、正規化できなければ従来どおり空文字を付けます。
+
+Job で家族の依頼を受け付ける場合、Job Engine の `GENIE_GROUP_CHAT_IDS` の既定は無効（空）。家族もジョブを作れるようになる。**member のジョブはオーナーの道具と権限で動く。`GENIE_GROUP_CHAT_IDS` を設定する前に、Routine 側で member に許す操作を決めること。** オーナーによる方針確認と家族への周知を、有効化の前提とする。
+
+Job Engine を先に更新する。DB をバックアップし、v3 への移行と既存の動作を確認してから Genie を更新する。次に Job Engine の `GENIE_ALLOWED_CHAT_IDS`、`ALLOWED_SOURCE_CHAT_IDS`、`GENIE_GROUP_CHAT_IDS` の3つに対象 chat_id を設定して再起動する。その後で Genie の `job_chat_ids` に足す。順序を逆にすると403、旧 Job Engine に送ると未知キーで400となり、再送せず `job_webhook` の deadletter にする。旧版へ戻すには DB のバックアップが必要で、v3 以降のジョブはバックアップに戻すと失われる。
+
+対象グループの 🪔 は、自分のものも含めてすべて Job Engine に行き、通常 webhook には行かない。家族の管理コマンド（`/help`、`/status`、`/cancel`、`/retry`）は Job Engine で返信なしに無視される。メニューだけの許可ではハンドルが付かないため、家族の Job 依頼は無視される。使えないハンドルもキーが省かれ、Job Engine は `not_from_me` にする。自分のメッセージはキー無しで従来どおり受け付ける。
+
+`job_chat_ids` から外すと新しいメッセージは通常経路に切り替わる。再試行中のメッセージは初回に選んだ経路のまま。家族の新しい受付を止めるには Job Engine の `GENIE_GROUP_CHAT_IDS` を空にして再起動する。作成済みのジョブはオーナーが元のグループで `/cancel` する。
+
 
 実機では、オーナーが先に自分宛てで目印を試し、一時停止したままグループの guid を調べ、設定と表示を確認します。調べた guid を Issue、PR、チャットへ貼りません。グループの初回送信は家族に知らせ、オーナーの OK のあとに行います。読み取り手順と注意点は [SPEC.md の 4.11](SPEC.md#411-設定で許可するグループ)、残る確認は [実機で未確認のこと](SPEC.md#9-実機で未確認のこと) を参照してください。
 

@@ -22,9 +22,9 @@ final class GroupPrivacyRegressionTests: XCTestCase {
         [ChatSummary(id: 42, title: "room", isGroup: group, guid: group ? self.group : "direct")]
     }
 
-    func line(_ id: Int = 1, fromMe: Bool = false, text: String = "🪔 private request", guid: String? = nil) -> String {
+    func line(_ id: Int = 1, fromMe: Bool = false, text: String = "🪔 private request", guid: String? = nil, sender: String = " FAMILY@EXAMPLE.COM ") -> String {
         watchLine(id: id, guid: "privacy-incoming-\(id)", chat: 42, fromMe: fromMe, text: text,
-            chatGUID: guid ?? group, sender: " FAMILY@EXAMPLE.COM ", isGroup: true)
+            chatGUID: guid ?? group, sender: sender, isGroup: true)
     }
 
     func json(_ data: Data) throws -> [String: Any] {
@@ -32,20 +32,32 @@ final class GroupPrivacyRegressionTests: XCTestCase {
     }
 
     func testGC15NoHandleBodyMarkerOrConfigTableLeaksAcrossDeliveryFailureAndReply() async throws {
-        for mode in 0..<3 {
+        for mode in 0..<12 {
+            let phone = mode >= 6
+            let mode = mode % 6
             let h = Harness()
-            let p = MutableConfig(try configured(["reply_marker": marker, "webhook_url": mode == 2 ? "" : "https://127.0.0.1/webhook"]))
-            if mode == 1 { h.webhook.results = [.success(WebhookHTTPResult(statusCode: 400))] }
+            let failureMode = mode % 3
+            let job = mode >= 3
+            h.secrets = StaticSecret(webhook: "hook-secret", reply: nil, job: "job-secret")
+            let p = MutableConfig(try configured(["reply_marker": marker, "webhook_url": failureMode == 2 ? "" : "https://127.0.0.1/webhook",
+                "job_chat_ids": job ? [42] : [], "job_webhook_url": job ? "http://127.0.0.1/job" : ""]))
+            if failureMode == 1 { h.webhook.results = [.success(WebhookHTTPResult(statusCode: 400))] }
             let e = try engine(h, p)
             await e.showChats(list())
-            let result = await e.ingestWatchLine(line())
-            XCTAssertEqual(result, mode == 0 ? .delivered : .deadLettered(mode == 1 ? "webhook_http_400" : "webhook_not_configured"))
-            if mode == 0 {
+            let result = await e.ingestWatchLine(line(sender: phone ? " +1 555 010 0000 " : " FAMILY@EXAMPLE.COM "))
+            XCTAssertEqual(result, (job && failureMode == 2) || failureMode == 0 ? .delivered : .deadLettered(failureMode == 1 ? "webhook_http_400" : "webhook_not_configured"))
+            if failureMode == 0 || (job && failureMode == 2) {
                 h.replies.pages = [ReplyPage(replies: [routedReply("privacy-reply", chat: 42, text: "private answer", guid: "privacy-incoming-1")], nextCursor: nil)]
                 _ = await e.pollReplies()
                 XCTAssertEqual(h.sender.sent.map(\.text), [marker, "private answer"])
             } else {
                 XCTAssertEqual(h.state.deadLetters.count, 1)
+                if job {
+                    XCTAssertEqual(h.webhook.bodies.count, 1)
+                    XCTAssertEqual(h.state.deadLetters.first?.kind, "job_webhook")
+                    XCTAssertEqual(h.state.deadLetters.first?.error, "webhook_http_400")
+                    XCTAssertEqual(h.state.deadLetters.first?.attempts, 1)
+                }
             }
             let log = String(decoding: try JSONEncoder().encode(h.log.records), as: UTF8.self)
             let state = String(decoding: try StateCoding.encoder().encode(h.state.state), as: UTF8.self)
@@ -59,10 +71,14 @@ final class GroupPrivacyRegressionTests: XCTestCase {
             let allowURL = folder.appendingPathComponent("allowlist.json")
             try FileAllowlistStore(file: allowURL).save(h.allow.load())
             let allow = try String(contentsOf: allowURL, encoding: .utf8)
-            for value in [" FAMILY@EXAMPLE.COM ", "email:family@example.com", "family@example.com", "🪔 private request", "private answer", marker] {
+            for value in [" +1 555 010 0000 ", "+15550100000", "tel:", " FAMILY@EXAMPLE.COM ", "email:family@example.com", "family@example.com", "🪔 private request", "private answer", marker] {
                 for output in [log, state, letters, snapshot, menu, allow] {
                     XCTAssertFalse(output.contains(value), "private value appeared outside payload or send")
                 }
+            }
+            for output in [log, state, letters, snapshot, menu, allow] { XCTAssertFalse(output.contains("sender_handle")) }
+            if job && failureMode != 2 {
+                XCTAssertEqual(try json(XCTUnwrap(h.webhook.bodies.first))["sender_handle"] as? String, phone ? "tel:+15550100000" : "email:family@example.com")
             }
             for output in [log, snapshot, menu, allow] { XCTAssertFalse(output.contains(group)) }
             for output in [state, letters, allow] {
@@ -140,22 +156,45 @@ final class GroupPrivacyRegressionTests: XCTestCase {
     }
 
     func testGC13OnlyConfigGroupOtherMemberGetsHandle() async throws {
-        for mode in 0..<4 {
+        for mode in 0..<8 {
+            let job = mode >= 4
+            let mode = mode % 4
             let h = Harness()
+            h.secrets = StaticSecret(webhook: "hook-secret", reply: nil, job: "job-secret")
             let p = MutableConfig(try configured(mode == 1 ? ["self_chat_ids": [42]] : [:]))
             if mode >= 2 {
                 p.config.groupChatGUIDs = []
                 h.allow.ids = [42]
                 h.allow.guids[42] = mode == 3 ? "direct" : group
             }
+            if job {
+                p.config.jobChatIDs = [42]
+                p.config.jobWebhookURL = "http://127.0.0.1/job"
+            }
             let e = try engine(h, p)
-            await e.showChats(list(mode != 3))
-            let result = await e.ingestWatchLine(line(fromMe: mode <= 1, guid: mode == 3 ? "direct" : nil))
+            await e.showChats(mode == 3 ? [ChatSummary(id: 42, title: "direct", isGroup: false, guid: "direct",
+                participants: ["family@example.com"], participantsKnown: true, lastAddressedHandle: "+1 555 010 0000")] : list())
+            let event = mode == 3 ? watchLine(id: 1, guid: "privacy-incoming-1", chat: 42, fromMe: false,
+                text: "🪔 private request", chatGUID: "direct", sender: "family@example.com", isGroup: false,
+                participants: ["family@example.com"], destinationCallerID: "+1 555 010 0000") : line(fromMe: mode <= 1)
+            let result = await e.ingestWatchLine(event)
             XCTAssertEqual(result, .delivered)
             let body = try json(XCTUnwrap(h.webhook.bodies.first))
             XCTAssertEqual(body.count, 9)
             XCTAssertNil(body["sender_handle"])
+            if mode <= 1 { XCTAssertEqual(body["sender_name"] as? String, "me") }
         }
+    }
+
+    func testGNSH3JobSelfChatInboundEchoDoesNotSend() async throws {
+        let h = Harness()
+        h.secrets = StaticSecret(webhook: "hook-secret", reply: nil, job: "job-secret")
+        let p = MutableConfig(try configured(["self_chat_ids": [42], "job_chat_ids": [42], "job_webhook_url": "http://127.0.0.1/job"]))
+        let e = try engine(h, p)
+        await e.showChats(list())
+        let result = await e.ingestWatchLine(line())
+        XCTAssertEqual(result, .ignoredNotFromMe)
+        XCTAssertTrue(h.webhook.bodies.isEmpty)
     }
 
     func testConfiguredMarkerAlsoAppliesToSelfChatAndFingerprint() async throws {
