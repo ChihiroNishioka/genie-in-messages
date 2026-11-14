@@ -1,8 +1,9 @@
+diff --git a/scripts/assemble-app.sh b/scripts/assemble-app.sh
 --- a/scripts/assemble-app.sh
 +++ b/scripts/assemble-app.sh
-@@ -41,10 +41,6 @@
-   cp "${bin_dir}/GenieMenuBar" "${app}/Contents/MacOS/GenieMenuBar"
-   cp "${ROOT}/AppBundle/Info.plist" "${app}/Contents/Info.plist"
+@@ -44,10 +44,6 @@
+   commit="${commit_line#commit=}"
+   python3 "${ROOT}/scripts/stamp-version.py" "${app}/Contents/Info.plist" "${release}" "${commit}"
    cp "${ROOT}/AppBundle/AppIcon.icns" "${app}/Contents/Resources/AppIcon.icns"
 -  cp "${ROOT}/AppBundle/MenuLamp"/lamp@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp@3x.png \
 -    "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \

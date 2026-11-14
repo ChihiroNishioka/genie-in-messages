@@ -36,6 +36,13 @@ stage_app() {
   mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources/MenuLamp"
   cp "${bin_dir}/GenieMenuBar" "${app}/Contents/MacOS/GenieMenuBar"
   cp "${ROOT}/AppBundle/Info.plist" "${app}/Contents/Info.plist"
+  local version_info release_line commit_line release commit
+  version_info="$("${ROOT}/scripts/build-version.sh" "${ROOT}")"
+  release_line="${version_info%%$'\n'*}"
+  commit_line="${version_info#*$'\n'}"
+  release="${release_line#release=}"
+  commit="${commit_line#commit=}"
+  python3 "${ROOT}/scripts/stamp-version.py" "${app}/Contents/Info.plist" "${release}" "${commit}"
   cp "${ROOT}/AppBundle/AppIcon.icns" "${app}/Contents/Resources/AppIcon.icns"
   cp "${ROOT}/AppBundle/MenuLamp"/lamp@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp@3x.png \
     "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \

@@ -1,0 +1,13 @@
+diff --git a/Sources/GenieMenuBar/GenieMenuBarApp.swift b/Sources/GenieMenuBar/GenieMenuBarApp.swift
+--- a/Sources/GenieMenuBar/GenieMenuBarApp.swift
++++ b/Sources/GenieMenuBar/GenieMenuBarApp.swift
+@@ -226,8 +226,8 @@
+             menu.addItem(item)
+         }
+         label("ジーニー")
++        label(phase)
+         label(menuVersionLine)
+-        label(phase)
+         label("同じApple IDのほかのMacでは動かさない")
+         if let snap = snapshot, snap.screenLock == .locked || snap.heldLockCount > 0 {
+             label("画面ロック中は送信を保留しています（\(snap.heldLockCount)件）")

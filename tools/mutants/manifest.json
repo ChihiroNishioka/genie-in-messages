@@ -783,5 +783,70 @@
     "name": "SH-DOC-OLD",
     "patch": "sh-doc-old.patch",
     "filter": "GroupDocumentationTests.testGNSH8JobFamilyContractAndOperationalLimits"
+  },
+  {
+    "name": "MV-PAREN",
+    "patch": "mv-paren.patch",
+    "filter": "AppVersionTests.testReleaseLineUsesFullWidthParentheses"
+  },
+  {
+    "name": "MV-NOCOMMIT",
+    "patch": "mv-nocommit.patch",
+    "filter": "AppVersionTests.testReleaseRequiresAValidCommit"
+  },
+  {
+    "name": "MV-VPREFIX",
+    "patch": "mv-vprefix.patch",
+    "filter": "AppVersionTests.testReleaseRejectsInvalidVersionText"
+  },
+  {
+    "name": "MV-ANYTAG",
+    "patch": "mv-anytag.patch",
+    "filter": "BuildVersionTests.testDeploymentTagDoesNotBecomeARelease"
+  },
+  {
+    "name": "MV-DIRTY",
+    "patch": "mv-dirty.patch",
+    "filter": "BuildVersionTests.testTrackedChangesClearReleaseButUntrackedFilesDoNot"
+  },
+  {
+    "name": "MV-ORDER",
+    "patch": "mv-order.patch",
+    "filter": "AppVersionTests.testMenuShowsOneDisabledVersionRowBetweenTitleAndPhase"
+  },
+  {
+    "name": "MV-DEV",
+    "patch": "mv-dev.patch",
+    "filter": "AppVersionTests.testDevelopmentLineUsesCommit"
+  },
+  {
+    "name": "MV-UNKNOWN",
+    "patch": "mv-unknown.patch",
+    "filter": "AppVersionTests.testReleaseRejectsInvalidVersionText"
+  },
+  {
+    "name": "MV-STAMP-DEV",
+    "patch": "mv-stamp-dev.patch",
+    "filter": "VersionStampTests.testDevelopmentStampKeepsTemplateBundleVersion"
+  },
+  {
+    "name": "WN-SETTINGS",
+    "patch": "wn-settings.patch",
+    "filter": "LaunchWindowTests.testMenuBarSourcesDoNotDeclareSwiftUIScenes"
+  },
+  {
+    "name": "WN-POLICY",
+    "patch": "wn-policy.patch",
+    "filter": "LaunchWindowTests.testAppKitEntrySetsPolicyAndRestorationBeforeRun"
+  },
+  {
+    "name": "WN-RESTORE",
+    "patch": "wn-restore.patch",
+    "filter": "LaunchWindowTests.testWindowRestorationPolicyOverwritesStoredTrueAndSetsMissingValue"
+  },
+  {
+    "name": "WN-LAUNCHPRESENT",
+    "patch": "wn-launchpresent.patch",
+    "filter": "LaunchWindowTests.testAllowlistPresentIsCalledOnlyByShowAllowlist"
   }
 ]

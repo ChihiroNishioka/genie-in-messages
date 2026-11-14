@@ -1,0 +1,12 @@
+diff --git a/scripts/build-version.sh b/scripts/build-version.sh
+--- a/scripts/build-version.sh
++++ b/scripts/build-version.sh
+@@ -17,7 +17,7 @@
+     status_result=$?
+     if [ "$status_result" -ne 0 ]; then
+       warning=1
+-    elif [ -z "$status" ]; then
++    else
+       tags=$(git -C "$repo" tag --points-at HEAD 2>/dev/null)
+       tags_result=$?
+       if [ "$tags_result" -ne 0 ]; then

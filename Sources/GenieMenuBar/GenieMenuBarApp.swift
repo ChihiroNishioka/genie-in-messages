@@ -1,16 +1,18 @@
 import AppKit
+import Combine
 import Foundation
 import GenieCore
-import SwiftUI
 
 @main
-struct GenieMenuBarApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-
-    var body: some Scene {
-        Settings {
-            Text("ジーニー")
-        }
+enum GenieMenuBarApp {
+    @MainActor
+    static func main() {
+        WindowRestorationPolicy.disable(in: .standard)
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
     }
 }
 
@@ -19,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        for window in NSApp.windows { window.close() }
         model.installStatusItem()
     }
 
@@ -47,6 +49,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
     private var refreshTask: Task<Void, Never>?
     private var statusItem: NSStatusItem?
     @Published var notionTokenLabel = "未設定"
+    private let menuVersionLine = AppVersion.menuLine(info: Bundle.main.infoDictionary)
 
     override init() {
         do {
@@ -223,6 +226,7 @@ final class AppModel: NSObject, ObservableObject, NSMenuDelegate {
             menu.addItem(item)
         }
         label("ジーニー")
+        label(menuVersionLine)
         label(phase)
         label("同じApple IDのほかのMacでは動かさない")
         if let snap = snapshot, snap.screenLock == .locked || snap.heldLockCount > 0 {
