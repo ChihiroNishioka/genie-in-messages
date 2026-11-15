@@ -47,7 +47,7 @@
   {
     "name": "SPLIT1",
     "patch": "split1.patch",
-    "filter": "SplitReplyTests.testFirstMessageIsExactlyTheFourScalars"
+    "filter": "SplitReplyTests.testTextFallbackSendsExactlyTheFourScalars"
   },
   {
     "name": "SPLIT2",
@@ -232,22 +232,22 @@
   {
     "name": "SPLIT35T",
     "patch": "split35t.patch",
-    "filter": "SplitReplyTests.testEchoesAreIgnoredInsideTheWindowOnly"
+    "filter": "SplitReplyTests.testTextFallbackEchoesAreIgnoredInsideTheWindowOnly"
   },
   {
     "name": "SPLIT35W",
     "patch": "split35w.patch",
-    "filter": "SplitReplyTests.testEchoesAreIgnoredInsideTheWindowOnly"
+    "filter": "SplitReplyTests.testTextFallbackEchoesAreIgnoredInsideTheWindowOnly"
   },
   {
     "name": "SPLIT36",
     "patch": "split36.patch",
-    "filter": "SplitReplyTests.testRollbackRemovesOneFingerprint"
+    "filter": "SplitReplyTests.testTextFallbackRollbackRemovesOneFingerprint"
   },
   {
     "name": "SPLIT37",
     "patch": "split37.patch",
-    "filter": "SplitReplyTests.testMarkerSettingDoesNotChangeTheFirstMessage"
+    "filter": "SplitReplyTests.testTextFallbackIgnoresLegacyMarkerSetting"
   },
   {
     "name": "SPLIT38",
@@ -302,7 +302,7 @@
   {
     "name": "SPLIT48",
     "patch": "split48.patch",
-    "filter": "SplitReplyTests.testSelfChatInboundEchoesAreIgnored"
+    "filter": "SplitReplyTests.testTextFallbackSelfChatInboundEchoesAreIgnored"
   },
   {
     "name": "JOB1",
@@ -582,7 +582,7 @@
   {
     "name": "GC16-FINGERPRINT",
     "patch": "gc16-marker-fingerprint.patch",
-    "filter": "GroupPrivacyRegressionTests.testConfiguredMarkerAlsoAppliesToSelfChatAndFingerprint"
+    "filter": "GroupPrivacyRegressionTests.testTextFallbackConfiguredMarkerAlsoAppliesToSelfChatAndFingerprint"
   },
   {
     "name": "GC04-MENU-ONLY",
@@ -913,5 +913,65 @@
     "name": "UPD-TZ",
     "patch": "upd-tz.patch",
     "filter": "UpdateMenuTests.testReleaseURLIsConstructedFromValidatedTagAndTokyoDateRollsOver"
+  },
+  {
+    "name": "GIF-UNCERTAIN-FALLBACK",
+    "patch": "gif-uncertain-fallback.patch",
+    "filter": "GifMarkerTests.testImageUncertainSendsNothingMore"
+  },
+  {
+    "name": "GIF-NOTSTARTED-FALLBACK",
+    "patch": "gif-notstarted-fallback.patch",
+    "filter": "GifMarkerTests.testImageNotStartedHoldsAndRetriesImageFirst"
+  },
+  {
+    "name": "GIF-RETRY-TEXT",
+    "patch": "gif-retry-text.patch",
+    "filter": "GifMarkerTests.testImageNotStartedHoldsAndRetriesImageFirst"
+  },
+  {
+    "name": "GIF-SUCCESS-ALSO-TEXT",
+    "patch": "gif-success-also-text.patch",
+    "filter": "GifMarkerTests.testImageSuccessSendsNoTextMarker"
+  },
+  {
+    "name": "GIF-NO-FALLBACK",
+    "patch": "gif-no-fallback.patch",
+    "filter": "GifMarkerTests.testImageFailedFallsBackToMarkerAndContinues"
+  },
+  {
+    "name": "GIF-DEFAULT-MARKER",
+    "patch": "gif-default-marker.patch",
+    "filter": "GifMarkerTests.testImageFailedFallsBackToConfiguredMarker"
+  },
+  {
+    "name": "GIF-NO-SENTGUID",
+    "patch": "gif-no-sentguid.patch",
+    "filter": "GifMarkerTests.testImageGuidIsIgnoredWhenWatchEchoesIt"
+  },
+  {
+    "name": "GIF-FINGERPRINT",
+    "patch": "gif-fingerprint.patch",
+    "filter": "GifMarkerTests.testImageMarkerAddsNoEmojiFingerprint"
+  },
+  {
+    "name": "GIF-ACCEPT-DIRECTORY",
+    "patch": "gif-accept-directory.patch",
+    "filter": "GifMarkerTests.testUnavailableImageFallsBackWithoutLaunching"
+  },
+  {
+    "name": "GIF-FILE-TEXT-FLAG",
+    "patch": "gif-file-text-flag.patch",
+    "filter": "GifMarkerTests.testFileArgumentsAreLiteralAndHaveNoText"
+  },
+  {
+    "name": "GIF-FILE-SHELL",
+    "patch": "gif-file-shell.patch",
+    "filter": "GifMarkerTests.testFileArgumentsAreLiteralAndHaveNoText"
+  },
+  {
+    "name": "GIF-DOC-OLD",
+    "patch": "gif-doc-old.patch",
+    "filter": "GroupDocumentationTests.testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph"
   }
 ]

@@ -1,0 +1,12 @@
+diff --git a/scripts/assemble-app.sh b/scripts/assemble-app.sh
+index 0000000..0000000 100755
+--- a/scripts/assemble-app.sh
++++ b/scripts/assemble-app.sh
+@@ -48,6 +48,5 @@ stage_app() {
+   cp "${ROOT}/AppBundle/MenuLamp"/lamp@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp@3x.png \
+     "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \
+     "${ROOT}/AppBundle/MenuLamp"/lamp-warning@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@3x.png \
+     "${app}/Contents/Resources/MenuLamp/"
+-  cp "${ROOT}/AppBundle/ReplyMarker/reply-marker.gif" "${app}/Contents/Resources/ReplyMarker/reply-marker.gif"
+   chmod 755 "${app}/Contents/MacOS/GenieMenuBar"
+ }

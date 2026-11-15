@@ -27,7 +27,7 @@ final class PollerCoverageTests: XCTestCase {
         XCTAssertNil(seen1)
         XCTAssertEqual(first.steps.first, .lock)
         XCTAssertEqual(codeCount(harness, "chats_failed"), 1)
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         harness.clock.current = harness.clock.current.addingTimeInterval(2)
         _ = await poller.tick()
         XCTAssertEqual(reader.calls, 1)
@@ -129,7 +129,7 @@ final class PollerCoverageTests: XCTestCase {
         XCTAssertEqual(paused.steps, [.lock, .chats(.ok), .holds, .replies(.skippedPaused)])
         let seen3 = await poller.currentSchedule().lastRepliesAt
         XCTAssertEqual(seen3, startedAt)
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         await engine.setPaused(false)
         harness.clock.current = start.addingTimeInterval(62)
         let resumed = await poller.tick()
@@ -255,12 +255,12 @@ final class PollerCoverageTests: XCTestCase {
         XCTAssertNil(seen10)
         harness.clock.current = start.addingTimeInterval(40)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         let seen11 = await engine.snapshot().holdNotice
         XCTAssertNil(seen11)
         harness.clock.current = start.addingTimeInterval(60)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
         let seen12 = await engine.snapshot().holdNotice
         XCTAssertNil(seen12)
         let seen13 = await engine.snapshot().holdNotice
@@ -301,7 +301,7 @@ final class PollerCoverageTests: XCTestCase {
         harness.replies.onFetch = { _ = await engine.applyChatList(.failed) }
         let poller = makePoller(harness, engine, reader)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertEqual(codeCount(harness, "chats_failed"), 1)
         let seen16 = await engine.snapshot().holdNotice
         XCTAssertNil(seen16)
@@ -322,7 +322,7 @@ final class PollerCoverageTests: XCTestCase {
         )]
         let poller = makePoller(harness, limited, reader)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
         let seen17 = await limited.snapshot().heldCount
         XCTAssertEqual(seen17, 1)
         let armed = LockedFlag(true)
@@ -362,14 +362,14 @@ final class PollerCoverageTests: XCTestCase {
         ]
         let poller = makePoller(harness, engine, reader)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         let seen20 = await engine.snapshot().heldCount
         XCTAssertEqual(seen20, 1)
         harness.clock.current = start.addingTimeInterval(30)
         _ = await poller.tick()
         harness.clock.current = start.addingTimeInterval(100)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         let seen21 = await engine.snapshot().heldCount
         XCTAssertEqual(seen21, 1)
         let seen22 = await engine.inFlightReplyCount()
@@ -382,7 +382,7 @@ final class PollerCoverageTests: XCTestCase {
         harness.lock.locked = false
         harness.clock.current = start.addingTimeInterval(102)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertEqual(codeCount(harness, "reply_too_old"), 2)
         let seen24 = await engine.snapshot().holdNotice
         XCTAssertNil(seen24)
@@ -418,7 +418,7 @@ final class PollerCoverageTests: XCTestCase {
         _ = await poller.tick()
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "chats_parse_partial_ok")
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
         XCTAssertEqual(codeCount(harness, "chats_parse_failed"), 1)
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: "chats_parse_partial_ok"),
@@ -530,7 +530,7 @@ final class PollerCoverageTests: XCTestCase {
         harness.clock.current = start.addingTimeInterval(90)
         harness.replies.pages = [page("r-b")]
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
         harness.clock.current = start.addingTimeInterval(120)
         harness.replies.pages = [page("r-b3")]
         _ = await poller.tick()
@@ -620,7 +620,7 @@ final class PollerCoverageTests: XCTestCase {
         _ = await poller.tick()
         let seen37 = await engine.snapshot().holdNotice
         XCTAssertEqual(seen37, "chats_parse_failed")
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         harness.clock.current = start.addingTimeInterval(30)
         _ = await poller.tick()
         harness.clock.current = start.addingTimeInterval(60)
@@ -630,7 +630,7 @@ final class PollerCoverageTests: XCTestCase {
         harness.clock.current = start.addingTimeInterval(62)
         _ = await poller.tick()
         XCTAssertEqual(codeCount(harness, "chats_parse_failed"), 1)
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         harness.clock.current = start.addingTimeInterval(92)
         _ = await poller.tick()
         let seen39 = await engine.snapshot().holdNotice
@@ -726,7 +726,7 @@ final class PollerCoverageTests: XCTestCase {
         ]
         let poller = makePoller(harness, engine, reader, schedule: .production)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         let seen45 = await engine.snapshot().heldCount
         XCTAssertEqual(seen45, 1)
         let release = Gate()
@@ -757,7 +757,7 @@ final class PollerCoverageTests: XCTestCase {
         harness.clock.current = start.addingTimeInterval(312)
         _ = await poller.tick()
         XCTAssertEqual(reader.calls, 2)
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
     }
 
     func testCancelDuringSleepStopsTheRun() async throws {
@@ -917,7 +917,7 @@ final class PollerCoverageTests: XCTestCase {
         let poller = makePoller(harness, engine, reader)
         let report = await poller.tick()
         XCTAssertEqual(report.steps.last, .replies(.skippedStopped))
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertFalse(harness.state.state.handledReplyIDs.contains("r-1"))
         let seen50 = await engine.savedReplyCursor()
         XCTAssertEqual(seen50, before)
@@ -927,7 +927,7 @@ final class PollerCoverageTests: XCTestCase {
             ReplyPage(replies: [routedReply("r-1", chat: 7, text: "hello", guid: "origin")], nextCursor: "c1"),
         ]
         _ = await again.tick()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
     }
 
     func testStopDuringTheFirstOfTwoSendsLeavesTheRest() async throws {
@@ -944,7 +944,7 @@ final class PollerCoverageTests: XCTestCase {
         let poller = makePoller(harness, engine, reader)
         let report = await poller.tick()
         XCTAssertEqual(report.steps.last, .replies(.skippedStopped))
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         XCTAssertFalse(harness.state.state.handledReplyIDs.contains("r-1"))
         XCTAssertFalse(harness.state.state.handledReplyIDs.contains("r-2"))
         let seen51 = await engine.savedReplyCursor()
@@ -956,7 +956,7 @@ final class PollerCoverageTests: XCTestCase {
             routedReply("r-2", chat: 7, text: "two", guid: "origin"),
         ], nextCursor: "c2")]
         _ = await again.tick()
-        XCTAssertEqual(harness.sender.sent.count, 4)
+        XCTAssertEqual(harness.sender.outgoing.count, 4)
     }
 
     func testStopDuringRetryDoesNotExpireTheRest() async throws {
@@ -975,7 +975,7 @@ final class PollerCoverageTests: XCTestCase {
         ])
         let poller = makePoller(harness, engine, reader)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         let seen52 = await engine.snapshot().heldCount
         XCTAssertEqual(seen52, 2)
         harness.lock.locked = false
@@ -986,7 +986,7 @@ final class PollerCoverageTests: XCTestCase {
         }
         harness.clock.current = start.addingTimeInterval(1)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         let seen53 = await engine.snapshot().heldCount
         XCTAssertEqual(seen53, 2)
         let seen54 = await engine.inFlightReplyCount()
@@ -1011,7 +1011,7 @@ final class PollerCoverageTests: XCTestCase {
         let reader = ScriptedChatLists(script: [okList([room(7, "chat-kept")])])
         let poller = makePoller(harness, engine, reader)
         let report = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         XCTAssertEqual(report.steps.last, .replies(.skippedStopped))
         let seen56 = await engine.savedReplyCursor()
         XCTAssertEqual(seen56, before)
@@ -1023,7 +1023,7 @@ final class PollerCoverageTests: XCTestCase {
         )]
         let again = try restarted(harness)
         _ = await again.tick()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
     }
 
     func testStopWhileTheFirstReadIsWaiting() async throws {
@@ -1082,11 +1082,11 @@ final class PollerCoverageTests: XCTestCase {
         XCTAssertEqual(paused.steps.first, .lock)
         XCTAssertTrue(paused.steps.contains(.chats(.ok)))
         XCTAssertEqual(paused.steps.last, .replies(.skippedPaused))
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         await engine.setPaused(false)
         harness.clock.current = start.addingTimeInterval(62)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
     }
 
     func testShortPauseAndOutageFetchImmediately() async throws {
@@ -1114,7 +1114,7 @@ final class PollerCoverageTests: XCTestCase {
         harness.clock.current = start.addingTimeInterval(20)
         let resumed = await poller.tick()
         XCTAssertEqual(resumed.steps.last, .replies(.fetched))
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
         let after = await poller.currentSchedule().lastRepliesAt
         harness.clock.current = start.addingTimeInterval(70)
         let notYet = await poller.tick()
@@ -1145,7 +1145,7 @@ final class PollerCoverageTests: XCTestCase {
         let recovered = await second.tick()
         XCTAssertTrue(recovered.steps.contains(.chats(.ok)))
         XCTAssertEqual(recovered.steps.last, .replies(.fetched))
-        XCTAssertEqual(outage.0.sender.sent.count, 2)
+        XCTAssertEqual(outage.0.sender.outgoing.count, 2)
     }
 
     func testEmptyFetchDoesNotClearAWaitingNotice() async throws {
@@ -1185,7 +1185,7 @@ final class PollerCoverageTests: XCTestCase {
         _ = await poller.tick()
         let seen63 = await engine.snapshot().holdNotice
         XCTAssertEqual(seen63, "reply_chat_guid_mismatch")
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         await engine.setChatEnabled(7, guid: "chat-kept", enabled: true)
         harness.clock.current = start.addingTimeInterval(30)
         _ = await poller.tick()
@@ -1229,7 +1229,7 @@ final class PollerCoverageTests: XCTestCase {
         _ = await running.value
         let seen69 = await engine.snapshot().holdNotice
         XCTAssertNil(seen69)
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
     }
 
     func testHeldReplyReturnsWhenTheListBecomesUnchecked() async throws {
@@ -1273,7 +1273,7 @@ final class PollerCoverageTests: XCTestCase {
         let inFlight = await engine.inFlightReplyCount()
         XCTAssertEqual(snap.heldCount, 2)
         XCTAssertEqual(inFlight, 0)
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertEqual(codeCount(harness, "reply_too_old"), 0)
     }
 
@@ -1329,11 +1329,11 @@ final class PollerCoverageTests: XCTestCase {
         harness.config.replyPollIntervalSeconds = 1
         let poller = makePoller(harness, engine, reader)
         _ = await poller.tick()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         harness.clock.current = harness.clock.current.addingTimeInterval(2)
         _ = await poller.tick()
         let afterRows = await engine.snapshot()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertEqual(afterRows.holdNotice, "chats_parse_failed")
     }
 

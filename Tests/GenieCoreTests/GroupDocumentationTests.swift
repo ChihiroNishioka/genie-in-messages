@@ -92,11 +92,54 @@ final class GroupDocumentationTests: XCTestCase {
         }
         XCTAssertFalse(readme.contains("返信の印: 既定は先頭の「🧞‍♂️」で、設定で変えられる。"))
         XCTAssertFalse(readme.contains("印は設定で変えられる（`marker`）"))
-        XCTAssertTrue(readme.contains("返信の印: 1通目は `reply_marker`"))
+        XCTAssertTrue(readme.contains("返信の印: 1通目は同梱の GIF 画像だけ"))
+        XCTAssertFalse(readme.contains("返信の印: 1通目は `reply_marker`（既定 🧞‍♂️）だけ"))
+        XCTAssertTrue(readme.contains("`imsg send --chat-id <id> --file <path> --json`"))
+        XCTAssertTrue(readme.contains("`--text` は付けず"))
     }
 }
 
 extension GroupDocumentationTests {
+    func testSpecRecordsGifMarkerDecisionAndHardwareChecks() throws {
+        let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let decisions = spec.components(separatedBy: "\n").filter { $0.hasPrefix("20. ") || $0.hasPrefix("22. ") }
+        XCTAssertEqual(decisions.map { SHA256.hex(Data($0.utf8)) }, [
+            "41ab5f96553bee5f0e3b5a52edd5970e89409d0b5d089e362913a944f722221e",
+            "f76c03cff3dbd863566d0db281ba92a88be544a222aeb11ef48552dcc818fd9b",
+        ])
+        XCTAssertTrue(spec.contains("24. 1通目の GIF"))
+        let sectionNine = try XCTUnwrap(spec.components(separatedBy: "## 9. 実機で未確認のこと\n").dropFirst().first)
+            .components(separatedBy: "\n## 10.")[0]
+        for check in [
+            "`imsg send --file` が画像だけの1通として届くか",
+            "画像送信で guid が返るか",
+            "watch に戻ったときの本文と添付の形",
+            "家族の端末で GIF がアニメーション表示されるか",
+            "グループで GIF と本文が順に届くか",
+        ] {
+            XCTAssertTrue(sectionNine.components(separatedBy: "\n").contains { $0.contains(check) && $0.contains("未確認") }, check)
+        }
+    }
+}
+
+extension GroupDocumentationTests {
+    func testGIFMutantsAreRegisteredForLinuxAndKeptOutOfTheMacOSManifest() throws {
+        let manifestURL = repoRoot().appendingPathComponent("tools/mutants/manifest.json")
+        let entries = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [[String: String]])
+        let names = Set(entries.compactMap { $0["name"] })
+        let required = [
+            "GIF-UNCERTAIN-FALLBACK", "GIF-NOTSTARTED-FALLBACK", "GIF-RETRY-TEXT",
+            "GIF-SUCCESS-ALSO-TEXT", "GIF-NO-FALLBACK", "GIF-DEFAULT-MARKER",
+            "GIF-NO-SENTGUID", "GIF-FINGERPRINT", "GIF-ACCEPT-DIRECTORY",
+            "GIF-FILE-TEXT-FLAG", "GIF-FILE-SHELL", "GIF-DOC-OLD",
+        ]
+        for name in required { XCTAssertTrue(names.contains(name), name) }
+        XCTAssertFalse(names.contains("macos-assemble-omit-gif"))
+
+        let runner = try String(contentsOf: repoRoot().appendingPathComponent("tools/run-mutants.sh"), encoding: .utf8)
+        XCTAssertTrue(runner.contains("macos-assemble-omit-gif.patch"))
+    }
+
     func testGNSH8JobFamilyContractAndOperationalLimits() throws {
         let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
         let readme = try String(contentsOf: repoRoot().appendingPathComponent("README.md"), encoding: .utf8)

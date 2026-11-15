@@ -30,21 +30,18 @@ final class TrackedTextTests: XCTestCase {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = ["-c", """
 import importlib.util, sys
+sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("check", sys.argv[1])
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
-print(" ".join(sorted(mod.findings_in(sys.stdin.read()))))
-""", script.path]
-        let input = Pipe()
+print(" ".join(sorted(mod.findings_in(sys.argv[2]))))
+""", script.path, sample]
         let output = Pipe()
-        process.standardInput = input
         process.standardOutput = output
         process.standardError = output
         try process.run()
-        input.fileHandleForWriting.write(Data(sample.utf8))
-        try input.fileHandleForWriting.close()
-        process.waitUntilExit()
         let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0, text)
         return text.split(whereSeparator: \.isWhitespace).map(String.init)
     }

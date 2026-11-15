@@ -1,9 +1,9 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1043,6 +1043,10 @@
+@@ -1177,6 +1177,10 @@
                  persist()
              }
-             log.record(level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: "marker")
+             log.record(level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
 +            addPartialReply(PartialReply(replyID: replyID, chatID: chatID, markerGUID: "mutant", at: clock.now()))
 +            persist()
 +            await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: attempts,

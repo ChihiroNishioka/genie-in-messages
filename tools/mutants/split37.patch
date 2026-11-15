@@ -1,11 +1,11 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -977,7 +977,7 @@
-             return
+@@ -1048,7 +1048,7 @@
+                 log.record(level: .warning, code: "marker_image_unavailable", chatID: chatID,
+                            guid: nil, rowid: nil, detail: reason.rawValue)
+             }
+-            attempt = .text(config.replyMarker)
++            attempt = .text(config.marker)
          }
-         let result: Result<SendReceipt, SendFailure>
--        do { result = .success(try await sender.send(chatID: chatID, text: config.replyMarker)) }
-+        do { result = .success(try await sender.send(chatID: chatID, text: config.marker)) }
-         catch let failure as SendFailure { result = .failure(failure) }
-         catch { result = .failure(.failed) }
-         if generation != databaseGeneration {
+ 
+         while true {

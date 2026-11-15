@@ -6,12 +6,13 @@ let M = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
 let B = "こんにちは"
 
 final class SplitReplyTests: XCTestCase {
-    func testFirstMessageIsExactlyTheFourScalars() async {
+    func testTextFallbackSendsExactlyTheFourScalars() async {
         let h = splitHarness(M + " " + B)
+        h.markerImage = StaticMarkerImage(url: nil)
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 2)
-        guard h.sender.sent.count >= 1 else { XCTFail("first send missing"); return }
+        XCTAssertEqual(h.sender.outgoing.count, 2)
+        guard h.sender.outgoing.count >= 1 else { XCTFail("first send missing"); return }
         XCTAssertEqual(Array(h.sender.sent[0].text.utf8), [0xF0, 0x9F, 0xA7, 0x9E, 0xE2, 0x80, 0x8D, 0xE2, 0x99, 0x82, 0xEF, 0xB8, 0x8F])
         XCTAssertEqual(h.sender.sent[0].text.unicodeScalars.map(\.value), [0x1F9DE, 0x200D, 0x2642, 0xFE0F])
     }
@@ -22,10 +23,13 @@ final class SplitReplyTests: XCTestCase {
             let h = splitHarness(input)
             guard let e = await splitOpened(h) else { return }
             await e.pollReplies()
-            XCTAssertEqual(h.sender.sent.map(\.text), [M, B], "input: \(input)")
-            guard h.sender.sent.count >= 2 else { XCTFail("two sends missing"); return }
-            XCTAssertTrue(h.sender.sent.allSatisfy { $0.chatID == 7 })
-            let first = h.sender.sent[1].text.unicodeScalars.first
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B]), "input: \(input)")
+            guard h.sender.outgoing.count >= 2 else { XCTFail("two sends missing"); return }
+            XCTAssertTrue(h.sender.outgoing.allSatisfy { $0.chatID == 7 })
+            guard case .text(let body) = h.sender.outgoing[1].item else {
+                XCTFail("body text missing"); return
+            }
+            let first = body.unicodeScalars.first
             XCTAssertFalse(first.map { CharacterSet.whitespacesAndNewlines.contains($0) } ?? true)
             XCTAssertNotEqual(first?.value, 0x1F9DE)
         }
@@ -38,7 +42,7 @@ final class SplitReplyTests: XCTestCase {
         guard let e = await splitOpened(h) else { return }
         var secondSendSawS3 = false
         h.sender.onSend = {
-            if h.sender.sent.count == 2, let saved = recorder.saves.last,
+            if h.sender.outgoing.count == 2, let saved = recorder.saves.last,
                let json = self.splitJSON(saved),
                let partial = (json["partial_replies"] as? [[String: Any]])?.first,
                let pending = json["pending_sends"] as? [[String: Any]] {
@@ -52,7 +56,9 @@ final class SplitReplyTests: XCTestCase {
         let states = recorder.saves.compactMap { splitJSON($0) }
         let s1 = states.firstIndex { state in
             (state["partial_replies"] as? [[String: Any]] ?? []).isEmpty
-                && (state["pending_sends"] as? [[String: Any]] ?? []).contains { $0["part"] as? String == "marker" }
+                && (state["pending_sends"] as? [[String: Any]] ?? []).contains {
+                    $0["part"] as? String == "marker" && $0["marker_kind"] as? String == "image"
+                }
         }
         let s2 = states.firstIndex { state in
             (state["pending_sends"] as? [[String: Any]] ?? []).isEmpty
@@ -80,7 +86,7 @@ final class SplitReplyTests: XCTestCase {
         h.sender.script = [.failure(.notStarted), .success(SendReceipt(id: 2, guid: "marker-again", status: "sent")), .success(SendReceipt(id: 3, guid: "body", status: "sent"))]
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
         let first = await e.snapshot()
         XCTAssertEqual(first.heldLockCount, 1)
         XCTAssertEqual(first.lastError, "apple_event_1712")
@@ -88,7 +94,7 @@ final class SplitReplyTests: XCTestCase {
         XCTAssertTrue((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).isEmpty)
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, M, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .file(expectedGIFPath()), .text(B)])
     }
 
     func testMarkerUncertainSendsNoBody() async {
@@ -99,19 +105,19 @@ final class SplitReplyTests: XCTestCase {
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
         XCTAssertEqual(h.state.deadLetters.first?.error, "send_uncertain")
         XCTAssertEqual(h.state.state.rateEvents.filter { $0.chatID == 7 }.count, 1)
-        XCTAssertTrue(h.log.records.contains { $0.code == "send_uncertain" && $0.detail == "marker" })
+        XCTAssertTrue(h.log.records.contains { $0.code == "send_uncertain" && $0.detail == "marker_image" })
         XCTAssertTrue((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).isEmpty)
     }
 
     func testMarkerFailedSendsNoBody() async {
         let h = splitHarness()
-        h.sender.script = [.failure(.failed)]
+        h.sender.script = [.failure(.failed), .failure(.failed)]
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text(M)])
         XCTAssertEqual(h.state.deadLetters.first?.error, "send_failed")
         XCTAssertTrue(h.state.state.handledReplyIDs.contains("r1"))
         XCTAssertTrue(h.state.state.rateEvents.isEmpty)
@@ -123,7 +129,7 @@ final class SplitReplyTests: XCTestCase {
         h.sender.script = [.success(SendReceipt(id: 1, guid: "marker", status: "sent")), .failure(.notStarted), .failure(.failed), .success(SendReceipt(id: 4, guid: "body-again", status: "sent"))]
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B]))
         let waiting = await e.snapshot()
         XCTAssertEqual(waiting.heldCount, 1)
         XCTAssertEqual((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).first?["body_resends"] as? Int, 0)
@@ -131,7 +137,7 @@ final class SplitReplyTests: XCTestCase {
         await e.retryHolds()
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B, B, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B, B, B]))
         XCTAssertTrue(h.state.deadLetters.isEmpty)
         XCTAssertEqual(h.state.state.rateEvents.filter { $0.chatID == 7 }.count, 1)
         XCTAssertEqual(h.log.records.filter { $0.code == "apple_event_1712" && $0.detail == "body" }.count, 1)
@@ -146,7 +152,7 @@ final class SplitReplyTests: XCTestCase {
         await e.retryHolds()
         await e.retryHolds()
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B, B]))
         XCTAssertTrue(h.state.deadLetters.contains { $0.error == "body_send_failed" })
         XCTAssertTrue(h.state.state.handledReplyIDs.contains("r1"))
         XCTAssertTrue((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).isEmpty)
@@ -155,9 +161,9 @@ final class SplitReplyTests: XCTestCase {
     func testLockBeforeTheBodyHoldsOnlyTheBody() async {
         let h = splitHarness()
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 1 { h.lock.locked = true } }
+        h.sender.onSend = { if h.sender.outgoing.count == 1 { h.lock.locked = true } }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
         let locked = await e.snapshot()
         XCTAssertEqual(locked.heldLockCount, 1)
         XCTAssertEqual(locked.lastError, "screen_locked")
@@ -166,7 +172,7 @@ final class SplitReplyTests: XCTestCase {
         h.lock.locked = false
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B]))
     }
 
     func testRateCountsOnePerReply() async {
@@ -179,15 +185,16 @@ final class SplitReplyTests: XCTestCase {
         h.replies.pages = [ReplyPage(replies: (1...6).map { n in routedReply("r\(n)", chat: 7, text: "body-\(n)", guid: "origin-\(n)") }, nextCursor: nil)]
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 10)
+        XCTAssertEqual(h.sender.outgoing.count, 10)
+        XCTAssertEqual(h.sender.outgoing.map(\.item), (1...5).flatMap { n in [.file(expectedGIFPath()), .text("body-\(n)")] })
         XCTAssertEqual(h.state.state.haltedChatIDs, [7])
         XCTAssertEqual(h.state.state.rateEvents.filter { $0.chatID == 7 }.count, 5)
         h.clock.current = h.clock.current.addingTimeInterval(61)
         h.replies.pages = [ReplyPage(replies: [routedReply("r7", chat: 7, text: "body-7", guid: "origin-7")], nextCursor: nil)]
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 10)
+        XCTAssertEqual(h.sender.outgoing.count, 10)
         await e.resumeRateLimit(chatID: 7)
-        XCTAssertEqual(h.sender.sent.count, 14)
+        XCTAssertEqual(h.sender.outgoing.count, 14)
         XCTAssertEqual(h.state.state.rateEvents.filter { $0.chatID == 7 }.count, 2)
         XCTAssertFalse(h.state.state.haltedChatIDs.contains(7))
     }
@@ -198,30 +205,30 @@ final class SplitReplyTests: XCTestCase {
         h.state.state.rateEvents = (0..<5).map { _ in RateEvent(chatID: 7, at: h.clock.current) }
         guard splitInstallPartials(h, [splitPartial("r1")]), let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([B]))
     }
 
     func testPauseBetweenPartsHoldsTheBody() async {
         let h = splitHarness()
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 1 { await e.setPaused(true) } }
+        h.sender.onSend = { if h.sender.outgoing.count == 1 { await e.setPaused(true) } }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
         let paused = await e.snapshot()
         XCTAssertEqual(paused.heldCount, 1)
         await e.setPaused(false)
         h.sender.onSend = nil
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B]))
     }
 
     func testStopBetweenPartsResumesAfterRestartFromJSON() async {
         let h = splitHarness()
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 1 { h.stop.stop() } }
+        h.sender.onSend = { if h.sender.outgoing.count == 1 { h.stop.stop() } }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
         do {
             let (state, json) = try reloaded(h.state.state)
             XCTAssertTrue(json.contains("\"partial_replies\""))
@@ -234,16 +241,16 @@ final class SplitReplyTests: XCTestCase {
             restarted.replies.pages = [ReplyPage(replies: [routedReply("r1", chat: 7, text: B, guid: "origin")], nextCursor: nil)]
             guard let next = await splitOpened(restarted) else { return }
             await next.pollReplies()
-            XCTAssertEqual(restarted.sender.sent.map(\.text), [B])
+            XCTAssertEqual(restarted.sender.outgoing.map(\.item), expectedGIFOutgoing([B]))
         } catch { XCTFail("state reload failed: \(error)") }
     }
 
     func testDisabledBetweenPartsDropsTheBody() async {
         let h = splitHarness()
         guard let e = await splitOpened(h) else { return }
-        h.sender.onSend = { if h.sender.sent.count == 1 { await e.setChatEnabled(7, enabled: false) } }
+        h.sender.onSend = { if h.sender.outgoing.count == 1 { await e.setChatEnabled(7, enabled: false) } }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
         XCTAssertTrue(h.state.state.handledReplyIDs.contains("r1"))
         XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" && $0.detail == "body" })
         XCTAssertFalse((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).contains { $0["reply_id"] as? String == "r1" })
@@ -256,7 +263,7 @@ final class SplitReplyTests: XCTestCase {
         let savedPending = splitJSON(h.state.state)?["pending_sends"] as? [[String: Any]] ?? []
         XCTAssertTrue(savedPending.isEmpty)
         await e.pollReplies()
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
         XCTAssertTrue(h.state.deadLetters.contains { $0.error == "send_interrupted" })
         XCTAssertTrue(h.state.state.handledReplyIDs.contains("r1"))
     }
@@ -282,7 +289,7 @@ final class SplitReplyTests: XCTestCase {
             h.state.state = state
             guard let e = await splitOpened(h) else { return }
             await e.pollReplies()
-            XCTAssertTrue(h.sender.sent.isEmpty)
+            XCTAssertTrue(h.sender.outgoing.isEmpty)
             XCTAssertTrue(h.state.deadLetters.contains { $0.error == "send_interrupted" })
         } catch { XCTFail("legacy state decode failed: \(error)") }
     }
@@ -297,13 +304,13 @@ final class SplitReplyTests: XCTestCase {
         guard let e = await splitOpened(h) else { return }
         var inFlightDuringBodySend: Int?
         h.sender.onSend = {
-            if h.sender.sent.count == 2 { inFlightDuringBodySend = await e.inFlightReplyCount() }
+            if h.sender.outgoing.count == 2 { inFlightDuringBodySend = await e.inFlightReplyCount() }
             await e.pollReplies()
             await e.resumeRateLimit(chatID: 7)
         }
         await e.pollReplies()
         XCTAssertEqual(inFlightDuringBodySend, 1)
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B]))
     }
 
     func testSameChatRepliesDoNotInterleave() async {
@@ -323,11 +330,11 @@ final class SplitReplyTests: XCTestCase {
         ]
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, "a"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, "a"]))
         h.clock.current = h.clock.current.addingTimeInterval(15)
         await e.retryHolds()
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, "a", "a", M, "b"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, "a", "a", M, "b"]))
 
         let restarted = Harness()
         restarted.allow.ids = [7]
@@ -341,10 +348,10 @@ final class SplitReplyTests: XCTestCase {
         ]
         guard let next = await splitOpened(restarted) else { return }
         await next.pollReplies()
-        XCTAssertEqual(restarted.sender.sent.map(\.text), ["a"])
+        XCTAssertEqual(restarted.sender.outgoing.map(\.item), expectedGIFOutgoing(["a"]))
         restarted.clock.current = restarted.clock.current.addingTimeInterval(15)
         await next.pollReplies()
-        XCTAssertEqual(restarted.sender.sent.map(\.text), ["a", M, "b"])
+        XCTAssertEqual(restarted.sender.outgoing.map(\.item), expectedGIFOutgoing(["a", M, "b"]))
     }
 
     func testBodyStartingWithLampIsNotSent() async {
@@ -354,7 +361,7 @@ final class SplitReplyTests: XCTestCase {
             let h = splitHarness(text, id: id)
             guard let e = await splitOpened(h) else { return }
             await e.pollReplies()
-            XCTAssertTrue(h.sender.sent.isEmpty)
+            XCTAssertTrue(h.sender.outgoing.isEmpty)
             XCTAssertTrue(h.state.state.handledReplyIDs.contains(id))
             let snapshot = await e.snapshot()
             XCTAssertEqual(snapshot.lastError, "reply_still_matches_signal")
@@ -362,7 +369,7 @@ final class SplitReplyTests: XCTestCase {
         let h = splitHarness("🪔 answer")
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, "answer"]))
     }
 
     func testEmptyBodySendsNothing() async {
@@ -375,7 +382,7 @@ final class SplitReplyTests: XCTestCase {
                 h.replies.pages = [page]
                 guard let e = await splitOpened(h) else { return }
                 await e.pollReplies()
-                XCTAssertTrue(h.sender.sent.isEmpty)
+                XCTAssertTrue(h.sender.outgoing.isEmpty)
                 XCTAssertTrue(h.log.records.contains { $0.code == "reply_empty_body" })
                 let snapshot = await e.snapshot()
                 XCTAssertNil(snapshot.lastError)
@@ -385,11 +392,12 @@ final class SplitReplyTests: XCTestCase {
         }
     }
 
-    func testEchoesAreIgnoredInsideTheWindowOnly() async {
+    func testTextFallbackEchoesAreIgnoredInsideTheWindowOnly() async {
         let h = splitHarness()
+        h.markerImage = StaticMarkerImage(url: nil)
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 2)
+        XCTAssertEqual(h.sender.outgoing.count, 2)
         let sent = await e.ingestWatchLine(watchLine(id: 101, guid: "sent-1", chat: 7, fromMe: true, text: M, created: "2023-11-14T22:13:20Z"))
         let within = await e.ingestWatchLine(watchLine(id: 102, guid: "echo-b", chat: 7, fromMe: true, text: M, created: "2023-11-14T22:13:20Z"))
         let edge = await e.ingestWatchLine(watchLine(id: 103, guid: "echo-c", chat: 7, fromMe: true, text: M, created: "2023-11-14T22:15:20Z"))
@@ -410,8 +418,9 @@ final class SplitReplyTests: XCTestCase {
         XCTAssertEqual(h.webhook.bodies.count, 1)
     }
 
-    func testRollbackRemovesOneFingerprint() async {
+    func testTextFallbackRollbackRemovesOneFingerprint() async {
         let h = Harness()
+        h.markerImage = StaticMarkerImage(url: nil)
         h.allow.ids = [7, 8]
         h.config.replyFetchURL = "https://example.com/replies"
         seedRoute(h, guid: "origin-a", chat: 7)
@@ -424,13 +433,14 @@ final class SplitReplyTests: XCTestCase {
         XCTAssertEqual(h.state.state.fingerprints.filter { $0.hash == markerHash && $0.sentAt == h.clock.current }.count, 1)
     }
 
-    func testMarkerSettingDoesNotChangeTheFirstMessage() async {
+    func testTextFallbackIgnoresLegacyMarkerSetting() async {
         for marker in ["🤖", " 🤖 \n", "🪔", ""] {
             let h = splitHarness("🤖 hi")
+            h.markerImage = StaticMarkerImage(url: nil)
             h.config.marker = marker
             guard let e = await splitOpened(h) else { return }
             await e.pollReplies()
-            guard h.sender.sent.count >= 1 else { XCTFail("marker send missing"); return }
+            guard h.sender.outgoing.count >= 1 else { XCTFail("marker send missing"); return }
             XCTAssertEqual(h.sender.sent[0].text.unicodeScalars.map(\.value), [0x1F9DE, 0x200D, 0x2642, 0xFE0F])
             XCTAssertEqual(h.sender.sent.map(\.text), [M, "🤖 hi"])
             XCTAssertFalse(h.log.records.contains { $0.code == "marker_replaced" })
@@ -454,13 +464,13 @@ final class SplitReplyTests: XCTestCase {
             h.sender.script = script
             guard let e = await splitOpened(h) else { return }
             if lockBeforeBody {
-                h.sender.onSend = { if h.sender.sent.count == 1 { h.lock.locked = true } }
+                h.sender.onSend = { if h.sender.outgoing.count == 1 { h.lock.locked = true } }
             }
             await e.pollReplies()
             _ = name
             let sentRecords = h.log.records.filter { $0.code == "reply_sent" }
-            XCTAssertTrue(sentRecords.allSatisfy { ["marker", "body", "resend"].contains($0.detail ?? "") })
-            if name == "normal" { XCTAssertEqual(sentRecords.map { $0.detail ?? "" }, ["marker", "body"]) }
+            XCTAssertTrue(sentRecords.allSatisfy { ["marker_image", "marker", "body", "resend"].contains($0.detail ?? "") })
+            if name == "normal" { XCTAssertEqual(sentRecords.map { $0.detail ?? "" }, ["marker_image", "body"]) }
             assertNoBody(h, "BODY-SENTINEL-こんにちは")
         }
         let interrupted = splitHarness("BODY-SENTINEL-こんにちは")
@@ -478,7 +488,7 @@ final class SplitReplyTests: XCTestCase {
         await e.pollReplies()
         h.clock.current = h.clock.current.addingTimeInterval(61)
         await e.retryHolds()
-        XCTAssertEqual(h.sender.sent.map(\.text), [M, B])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M, B]))
         XCTAssertTrue(h.log.records.contains { $0.code == "reply_too_old" })
         XCTAssertFalse((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).contains { $0["reply_id"] as? String == "r1" })
         XCTAssertTrue(h.state.state.handledReplyIDs.contains("r1"))
@@ -498,14 +508,14 @@ final class SplitReplyTests: XCTestCase {
             if notStarted { h.sender.script = [.failure(.notStarted)] }
             guard let e = await splitOpened(h) else { return }
             h.sender.onSend = {
-                if h.sender.sent.count == 1 {
+                if h.sender.outgoing.count == 1 {
                     _ = await e.ingestWatchLine(watchLine(id: 50, guid: "swap", chat: 7, fromMe: true, text: "x", chatGUID: "new-7"))
                     await e.setChatEnabled(7, guid: "new-7", enabled: true)
                     await e.showChats([ChatSummary(id: 7, title: "room", isGroup: false, guid: "new-7")])
                 }
             }
             await e.pollReplies()
-            XCTAssertEqual(h.sender.sent.map(\.text), [M])
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([M]))
             XCTAssertTrue((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).isEmpty)
             let snapshot = await e.snapshot()
             XCTAssertEqual(snapshot.heldCount, 0)
@@ -516,7 +526,7 @@ final class SplitReplyTests: XCTestCase {
             }
             h.clock.current = h.clock.current.addingTimeInterval(15)
             await e.retryHolds()
-            XCTAssertEqual(h.sender.sent.count, 1)
+            XCTAssertEqual(h.sender.outgoing.count, 1)
         }
     }
 
@@ -525,14 +535,14 @@ final class SplitReplyTests: XCTestCase {
         h.sender.script = [.success(SendReceipt(id: 1, guid: "marker", status: "sent")), .failure(.failed)]
         guard let e = await splitOpened(h) else { return }
         h.sender.onSend = {
-            if h.sender.sent.count == 2 {
+            if h.sender.outgoing.count == 2 {
                 _ = await e.ingestWatchLine(watchLine(id: 50, guid: "swap", chat: 7, fromMe: true, text: "x", chatGUID: "new-7"))
                 await e.setChatEnabled(7, guid: "new-7", enabled: true)
                 await e.showChats([ChatSummary(id: 7, title: "room", isGroup: false, guid: "new-7")])
             }
         }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 2)
+        XCTAssertEqual(h.sender.outgoing.count, 2)
         XCTAssertTrue(h.state.deadLetters.isEmpty)
         XCTAssertTrue((splitJSON(h.state.state)?["partial_replies"] as? [[String: Any]] ?? []).isEmpty)
         XCTAssertTrue(h.log.records.contains { $0.code == "reply_dropped_db_reset" && $0.detail == "body" })

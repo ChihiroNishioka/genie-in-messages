@@ -197,6 +197,7 @@ enum RuntimeBuilder {
             replySource: ConfiguredReplySource(config: config, secrets: secrets),
             httpReplySource: ConfiguredHTTPReplySource(config: config, secrets: secrets),
             sender: ImsgMessageSender(config: config),
+            markerImage: BundledMarkerImage(),
             webhook: URLSessionWebhook(),
             secrets: secrets,
             lock: probe,

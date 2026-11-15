@@ -20,6 +20,6 @@ final class PartialParseWordingTests: XCTestCase {
             "照合: 一覧の行を読めなかったため、照合できていません"
         )
         XCTAssertFalse(SendHoldStatus.menuLine(for: snap.holdNotice).contains("返事を待っています"))
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
     }
 }

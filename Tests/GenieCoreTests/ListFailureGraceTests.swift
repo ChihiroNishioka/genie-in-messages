@@ -15,7 +15,7 @@ final class ListFailureGraceTests: XCTestCase {
         XCTAssertEqual(notes.count, 1)
         XCTAssertEqual(notes.first?.level, "error")
         XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testShortOutageNeverShowsChatsFailed() async throws {
@@ -32,7 +32,7 @@ final class ListFailureGraceTests: XCTestCase {
         )]
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(10)
         await started.engine.pollReplies()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(20)
         await started.engine.applyChatList(.parsed(verifiedList()))
         started.harness.replies.pages = [ReplyPage(
@@ -42,7 +42,7 @@ final class ListFailureGraceTests: XCTestCase {
         await started.engine.pollReplies()
         snap = await started.engine.snapshot()
         XCTAssertNotEqual(snap.holdNotice, "chats_failed")
-        XCTAssertEqual(started.harness.sender.sent.count, 2)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 2)
         XCTAssertEqual(started.harness.log.records.filter { $0.code == "chats_failed" }.count, 1)
     }
 
@@ -102,7 +102,7 @@ final class ListFailureGraceTests: XCTestCase {
         await started.engine.applyChatList(.parsed(ChatListParse(chats: [room(7, "chat-kept")], failedLineCount: 1)))
         let snap = await started.engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "chats_parse_partial_ok")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 }
 

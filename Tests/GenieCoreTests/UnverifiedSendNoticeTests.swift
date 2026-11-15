@@ -35,7 +35,7 @@ final class UnverifiedSendNoticeTests: XCTestCase {
         await started.engine.applyChatList(.failed)
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
         let snap = await started.engine.snapshot()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertNil(snap.lastError)
         XCTAssertEqual(snap.holdNotice, "chats_failed")
         XCTAssertEqual(SendHoldStatus.text(for: snap.holdNotice), "トーク一覧を読めないため、返事を待っています")
@@ -71,7 +71,7 @@ private func assertHeld(
     line: UInt = #line
 ) async {
     let snap = await started.engine.snapshot()
-    XCTAssertEqual(started.harness.sender.sent.count, 0, file: file, line: line)
+    XCTAssertEqual(started.harness.sender.outgoing.count, 0, file: file, line: line)
     XCTAssertNil(snap.lastError, file: file, line: line)
     XCTAssertEqual(snap.holdNotice, code, file: file, line: line)
     XCTAssertEqual(SendHoldStatus.text(for: snap.holdNotice), status, file: file, line: line)

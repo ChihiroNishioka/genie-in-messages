@@ -109,7 +109,7 @@ final class DeliveryTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         var snap = await engine.snapshot()
         XCTAssertEqual(snap.heldLockCount, 1)
         XCTAssertTrue(snap.screenLocked)
@@ -117,11 +117,7 @@ final class DeliveryTests: XCTestCase {
         harness.lock.locked = false
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
-        XCTAssertEqual(harness.sender.sent.count, 2)
-        let text = harness.sender.sent[0].text
-        XCTAssertFalse(Signal.matches(text))
-        XCTAssertEqual(text, ReplyComposer.markerText)
-        XCTAssertEqual(harness.sender.sent[1].text, "answer")
+        XCTAssertEqual(harness.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("answer")])
         snap = await engine.snapshot()
         XCTAssertEqual(snap.heldCount, 0)
     }
@@ -140,13 +136,13 @@ final class DeliveryTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         var snap = await engine.snapshot()
         XCTAssertEqual(snap.heldLockCount, 1)
         XCTAssertEqual(snap.lastError, "apple_event_1712")
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
-        XCTAssertEqual(harness.sender.sent.count, 3)
+        XCTAssertEqual(harness.sender.outgoing.count, 3)
         let echo = await engine.ingestWatchLine(watchLine(
             id: 20, guid: "out-guid", chat: 7, fromMe: true, text: GenieConfig.productDefaults.marker + " echo"
         ))
@@ -171,7 +167,7 @@ final class DeliveryTests: XCTestCase {
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.lastError, "send_uncertain")
         XCTAssertEqual(snap.heldCount, 0)
@@ -195,21 +191,21 @@ final class DeliveryTests: XCTestCase {
         harness.replies.pages = [ReplyPage(replies: replies, nextCursor: "c")]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 10)
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 2 }.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.filter { $0.chatID == 1 }.count, 10)
+        XCTAssertEqual(harness.sender.outgoing.filter { $0.chatID == 2 }.count, 2)
         var snap = await engine.snapshot()
         XCTAssertEqual(snap.haltedChatIDs, [1])
         XCTAssertEqual(snap.heldCount, 1)
         await engine.resumeRateLimit(chatID: 1)
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 10)
+        XCTAssertEqual(harness.sender.outgoing.filter { $0.chatID == 1 }.count, 10)
         harness.clock.current = harness.clock.current.addingTimeInterval(61)
         await engine.resumeRateLimit(chatID: 1)
-        XCTAssertEqual(harness.sender.sent.filter { $0.chatID == 1 }.count, 12)
+        XCTAssertEqual(harness.sender.outgoing.filter { $0.chatID == 1 }.count, 12)
         snap = await engine.snapshot()
         XCTAssertTrue(snap.haltedChatIDs.isEmpty)
-        XCTAssertEqual(harness.sender.sent.filter { $0.text == ReplyComposer.markerText }.count, 7)
-        XCTAssertEqual(harness.sender.sent.filter { $0.text.hasPrefix("answer") || $0.text == "other" }.count, 7)
-        XCTAssertTrue(harness.sender.sent.allSatisfy { !Signal.matches($0.text) })
+        XCTAssertEqual(harness.sender.outgoing.filter { $0.item == .file(expectedGIFPath()) }.count, 7)
+        XCTAssertEqual(harness.sender.outgoing.compactMap { outgoingText($0.item) }.count, 7)
+        XCTAssertTrue(harness.sender.outgoing.compactMap { outgoingText($0.item) }.allSatisfy { !Signal.matches($0) })
     }
 
     func testDisabledChatReplyIsNotSent() async throws {
@@ -221,13 +217,14 @@ final class DeliveryTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.heldCount, 0)
     }
 
-    func testLampMarkerIsReplacedWithTheDefaultBeforeSend() async throws {
+    func testTextFallbackReplacesLampMarkerWithTheDefaultBeforeSend() async throws {
         let harness = Harness()
+        harness.markerImage = StaticMarkerImage(url: nil)
         harness.allow.ids = [1]
         harness.config.replyFetchURL = "https://127.0.0.1/replies"
         harness.config.marker = "\u{1FA94}"
@@ -237,7 +234,7 @@ final class DeliveryTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.map(\.text), [ReplyComposer.markerText, "hello"])
+        XCTAssertEqual(harness.sender.outgoing.map(\.item), [.text(ReplyComposer.markerText), .text("hello")])
         XCTAssertFalse(harness.log.records.contains { $0.code == "marker_replaced" })
     }
 
@@ -252,6 +249,7 @@ final class DeliveryTests: XCTestCase {
             allowlistStore: harness.allow,
             replySource: harness.replies,
             sender: harness.sender,
+            markerImage: harness.markerImage,
             webhook: harness.webhook,
             secrets: harness.secrets,
             lock: harness.lock,

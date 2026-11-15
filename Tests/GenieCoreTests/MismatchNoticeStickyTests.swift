@@ -11,7 +11,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)
         await started.engine.pollReplies()
         let mismatched = await started.engine.snapshot()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: mismatched.holdNotice),
@@ -23,7 +23,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
             ChatSummary(id: 7, title: "room", isGroup: false, guid: "chat-kept"),
         ])
         let reread = await started.engine.snapshot()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertEqual(reread.lastError, "messages_db_reset")
         XCTAssertEqual(reread.enabledChatIDs, [])
         XCTAssertNil(reread.holdNotice)
@@ -36,7 +36,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         let matched = await started.engine.snapshot()
         XCTAssertNil(matched.holdNotice)
         XCTAssertEqual(SendHoldStatus.menuLine(for: matched.holdNotice), "照合: なし")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testMismatchNoticeReturnsAfterAnotherReplyOverwritesIt() async throws {
@@ -63,14 +63,14 @@ final class MismatchNoticeStickyTests: XCTestCase {
         await engine.setChatEnabled(7, guid: "chat-other", enabled: true)
         await engine.pollReplies()
         let mismatched = await engine.snapshot()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
 
         await engine.showChats([])
         await engine.pollReplies()
         let overwritten = await engine.snapshot()
         XCTAssertEqual(overwritten.holdNotice, "reply_held_empty_list")
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
 
         harness.replies.pages = [
             ReplyPage(
@@ -81,7 +81,7 @@ final class MismatchNoticeStickyTests: XCTestCase {
         harness.clock.current = harness.clock.current.addingTimeInterval(120)
         await engine.pollReplies()
         let restored = await engine.snapshot()
-        XCTAssertEqual(harness.sender.sent.count, 0)
+        XCTAssertEqual(harness.sender.outgoing.count, 0)
         XCTAssertEqual(restored.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: restored.holdNotice),

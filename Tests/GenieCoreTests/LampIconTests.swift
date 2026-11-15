@@ -509,6 +509,19 @@ final class LampIconTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("Contents/MacOS/GenieMenuBar").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("Contents/Resources/AppIcon.icns").path))
     }
+
+    func testAssembleCopiesReplyMarkerGif() throws {
+        let dest = FileManager.default.temporaryDirectory.appendingPathComponent("genie-gif-stage-\(UUID().uuidString).app", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dest) }
+        let result = try runCommand(
+            executable: URL(fileURLWithPath: "/bin/bash"),
+            arguments: [repoRoot().appendingPathComponent("scripts/assemble-app.sh").path, "--stage-only", dest.path]
+        )
+        XCTAssertEqual(result.status, 0, result.err + result.out)
+        let source = try Data(contentsOf: repoRoot().appendingPathComponent("AppBundle/ReplyMarker/reply-marker.gif"))
+        let staged = try Data(contentsOf: dest.appendingPathComponent("Contents/Resources/ReplyMarker/reply-marker.gif"))
+        XCTAssertEqual(staged, source)
+    }
     #endif
 
     func testFinderIconSet() throws {
@@ -1207,13 +1220,16 @@ final class LampIconTests: XCTestCase {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
         process.arguments = ["-c", "import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())"]
-        let input = Pipe()
+        let inputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("genie-hash-\(UUID().uuidString).bin")
+        try data.write(to: inputURL)
+        defer { try? FileManager.default.removeItem(at: inputURL) }
+        let input = try FileHandle(forReadingFrom: inputURL)
+        defer { try? input.close() }
         let output = Pipe()
         process.standardInput = input
         process.standardOutput = output
         try process.run()
-        try input.fileHandleForWriting.write(contentsOf: data)
-        try input.fileHandleForWriting.close()
         let digest = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return (String(data: digest, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

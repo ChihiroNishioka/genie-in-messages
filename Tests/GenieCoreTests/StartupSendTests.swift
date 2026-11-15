@@ -7,28 +7,28 @@ final class StartupSendTests: XCTestCase {
         let early = try makeEngine(allowedGuid: "chat-kept")
         await early.engine.pollReplies()
         XCTAssertEqual(early.replies.fetches, 0)
-        XCTAssertTrue(early.harness.sender.sent.isEmpty)
+        XCTAssertTrue(early.harness.sender.outgoing.isEmpty)
 
         let swapped = try makeEngine(allowedGuid: "chat-old")
         await swapped.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-new"),
         ])
         await swapped.engine.pollReplies()
-        XCTAssertTrue(swapped.harness.sender.sent.isEmpty)
+        XCTAssertTrue(swapped.harness.sender.outgoing.isEmpty)
 
         let same = try makeEngine(allowedGuid: "chat-same")
         await same.engine.showChats([
             ChatSummary(id: 7, title: "room", isGroup: true, guid: "chat-same"),
         ])
         await same.engine.pollReplies()
-        XCTAssertEqual(same.harness.sender.sent.map(\.chatID), [7, 7])
+        XCTAssertEqual(same.harness.sender.outgoing.map(\.chatID), [7, 7])
     }
 
     func testEmptyChatListDoesNotSend() async throws {
         let started = try makeEngine(allowedGuid: "chat-kept")
         await started.engine.showChats([])
         await started.engine.pollReplies()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testAllowedChatMissingFromTheListDoesNotSend() async throws {
@@ -37,7 +37,7 @@ final class StartupSendTests: XCTestCase {
             ChatSummary(id: 99, title: "other", isGroup: false, guid: "someone-else"),
         ])
         await started.engine.pollReplies()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testDifferentGuidDoesNotSendWhenTheDatabaseIsNotReset() async throws {
@@ -47,7 +47,7 @@ final class StartupSendTests: XCTestCase {
         ])
         await started.engine.setChatEnabled(7, guid: "chat-other", enabled: true)
         await started.engine.pollReplies()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertFalse(started.harness.log.records.contains { $0.code == "messages_db_reset" })
     }
 }
@@ -85,6 +85,7 @@ func makeEngine(allowedGuid: String, chatsLimit: Int? = nil, routeTTL: Double? =
         allowlistStore: harness.allow,
         replySource: replies,
         sender: harness.sender,
+        markerImage: harness.markerImage,
         webhook: harness.webhook,
         secrets: harness.secrets,
         lock: harness.lock,

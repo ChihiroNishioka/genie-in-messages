@@ -21,6 +21,9 @@ filter_for() {
     macos-assemble-omit-images.patch)
       printf '%s\n' "testAssembleCopiesEveryMenuLamp"
       ;;
+    macos-assemble-omit-gif.patch)
+      printf '%s\n' "testAssembleCopiesReplyMarkerGif"
+      ;;
     macos-skip-apply-status.patch)
       printf '%s\n' "testMenuBarStatusSetsATemplateImage"
       ;;

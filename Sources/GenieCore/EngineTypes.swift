@@ -20,6 +20,7 @@ struct HeldSend: Equatable {
 
 package protocol MessageSending: Sendable {
     func send(chatID: Int64, text: String) async throws -> SendReceipt
+    func sendFile(chatID: Int64, path: String) async throws -> SendReceipt
 }
 
 package enum ScreenLockState: String, Equatable, Sendable {
