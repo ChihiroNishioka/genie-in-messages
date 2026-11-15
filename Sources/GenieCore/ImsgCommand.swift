@@ -20,4 +20,10 @@ package enum ImsgCommand {
     package static func sendArguments(chatID: Int64, text: String) -> [String] {
         ["send", "--chat-id", String(chatID), "--text", text, "--json"]
     }
+
+    /// 画像だけの1通。`--text` は付けない。パスは1要素で渡す。
+    package static func sendFileArguments(chatID: Int64, path: String) -> [String]? {
+        guard isSafeMarkerImagePath(path) else { return nil }
+        return ["send", "--chat-id", String(chatID), "--file", path, "--json"]
+    }
 }

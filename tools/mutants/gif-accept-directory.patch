@@ -1,0 +1,12 @@
+--- a/Sources/GenieCore/MarkerImage.swift
++++ b/Sources/GenieCore/MarkerImage.swift
+@@ -41,7 +41,8 @@
+         guard let attributes = try? fileManager.attributesOfItem(atPath: path) else {
+             return .unavailable(.missing)
+         }
+-        guard attributes[.type] as? FileAttributeType == .typeRegular else {
++        guard attributes[.type] as? FileAttributeType == .typeRegular
++            || attributes[.type] as? FileAttributeType == .typeDirectory else {
+             return .unavailable(.notRegular)
+         }
+         guard (attributes[.size] as? NSNumber)?.int64Value != 0 else {

@@ -10,9 +10,9 @@
  let B = "こんにちは"
  
  final class SplitReplyTests: XCTestCase {
--    func testFirstMessageIsExactlyTheFourScalars() async {
-+    func testFirstMessageIsExactlyTheFourScalars() async throws {
+-    func testTextFallbackSendsExactlyTheFourScalars() async {
++    func testTextFallbackSendsExactlyTheFourScalars() async throws {
 +        throw ProbeError()
          let h = splitHarness(M + " " + B)
+         h.markerImage = StaticMarkerImage(url: nil)
          guard let e = await splitOpened(h) else { return }
-         await e.pollReplies()

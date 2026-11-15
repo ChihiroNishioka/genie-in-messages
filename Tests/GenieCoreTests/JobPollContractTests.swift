@@ -36,7 +36,7 @@ final class JobPollContractTests: XCTestCase {
         let e = try GenieEngine(
             configProvider: provider, initialConfig: h.config, stateStore: h.state,
             allowlistStore: h.allow, replySource: ConfiguredReplySource(config: provider, secrets: secrets),
-            httpReplySource: h.httpReplies, sender: h.sender, webhook: h.webhook,
+            httpReplySource: h.httpReplies, sender: h.sender, markerImage: h.markerImage, webhook: h.webhook,
             secrets: secrets, lock: h.lock, clock: h.clock, log: h.log
         )
         await e.showChats(h.verifiedChatList())
@@ -46,7 +46,7 @@ final class JobPollContractTests: XCTestCase {
         XCTAssertEqual(h.httpReplies.cursors, ["before"])
         XCTAssertEqual(h.state.state.httpReplyCursor, "before")
         XCTAssertNil(h.state.state.replyCursor)
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
     }
 
     func testHTTPNotionShapedCursorStaysUnchangedWhileHeld() async throws {
@@ -58,7 +58,7 @@ final class JobPollContractTests: XCTestCase {
         let e = try await h.opened()
         _ = await e.pollReplies()
         XCTAssertEqual(h.state.state.httpReplyCursor, "before")
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
     }
 
     func testNotionUnreadableCursorDoesNotAdvanceWhileHeld() async throws {
@@ -70,7 +70,7 @@ final class JobPollContractTests: XCTestCase {
         let e = try await h.opened()
         _ = await e.pollReplies()
         XCTAssertEqual(h.state.state.replyCursor, "before")
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
     }
 
     func testFailedFetchKeepsChatWaitingIDsUntilSuccessfulFetch() async throws {

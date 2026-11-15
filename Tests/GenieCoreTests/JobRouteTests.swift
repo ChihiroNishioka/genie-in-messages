@@ -144,7 +144,7 @@ final class JobRouteTests: XCTestCase {
         let mutable = MutableConfig(h.config)
         let engine = try GenieEngine(
             configProvider: mutable, initialConfig: h.config, stateStore: h.state,
-            allowlistStore: h.allow, replySource: h.replies, sender: h.sender,
+            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, markerImage: h.markerImage,
             webhook: h.webhook, secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log
         )
         h.webhook.results = [.success(WebhookHTTPResult(statusCode: 503)), .success(WebhookHTTPResult(statusCode: 200))]

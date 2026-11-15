@@ -35,7 +35,7 @@ final class HoldNoticeLifetimeTests: XCTestCase {
         await saved.engine.setChatEnabled(7, guid: "chat-other", enabled: true)
         await saved.engine.pollReplies()
         let afterSave = await saved.engine.snapshot()
-        XCTAssertEqual(saved.harness.sender.sent.count, 0)
+        XCTAssertEqual(saved.harness.sender.outgoing.count, 0)
         XCTAssertEqual(afterSave.lastError, "state_save_failed")
         XCTAssertEqual(afterSave.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(
@@ -63,12 +63,12 @@ final class HoldNoticeLifetimeTests: XCTestCase {
             SendHoldStatus.menuLine(for: waiting.holdNotice),
             "照合: トーク一覧が空のため、返事を待っています"
         )
-        XCTAssertEqual(expired.harness.sender.sent.count, 0)
+        XCTAssertEqual(expired.harness.sender.outgoing.count, 0)
 
         expired.harness.clock.current = expired.harness.clock.current.addingTimeInterval(120)
         await expired.engine.pollReplies()
         let gone = await expired.engine.snapshot()
-        XCTAssertEqual(expired.harness.sender.sent.count, 0)
+        XCTAssertEqual(expired.harness.sender.outgoing.count, 0)
         XCTAssertNil(gone.lastError)
         XCTAssertNil(gone.holdNotice)
         XCTAssertEqual(SendHoldStatus.menuLine(for: gone.holdNotice), "照合: なし")

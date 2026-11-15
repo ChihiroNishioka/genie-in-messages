@@ -10,7 +10,7 @@ final class PollerNoticeLoopTests: XCTestCase {
             failedLineCount: 1
         )))
         let afterPoll = await started.engine.snapshot()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertEqual(afterPoll.holdNotice, "chats_parse_partial_ok")
         XCTAssertEqual(
             SendHoldStatus.menuLine(for: afterPoll.holdNotice),
@@ -32,7 +32,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         let verified = await started.engine.snapshot()
         XCTAssertNil(verified.holdNotice)
         XCTAssertEqual(SendHoldStatus.menuLine(for: verified.holdNotice), "照合: なし")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testRepeatedListFailureIsLoggedOnceEvenWhenAReplyOverwritesTheNotice() async throws {
@@ -52,7 +52,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         XCTAssertEqual(started.harness.log.records.filter { $0.code == "reply_held_not_in_list" }.count, 1)
         XCTAssertEqual(notes.first?.level, "error")
         XCTAssertTrue(notes.allSatisfy { $0.chatID == nil && $0.guid == nil && $0.rowid == nil })
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testAllLinesFailingDoesNotKeepTheNoticeAfterACleanVerifiedRead() async throws {
@@ -68,7 +68,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         let cleared = await started.engine.snapshot()
         XCTAssertNil(cleared.holdNotice)
         XCTAssertEqual(SendHoldStatus.menuLine(for: cleared.holdNotice), "照合: なし")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testOneStartupListFailureDoesNotSayAReplyIsWaiting() async throws {
@@ -80,7 +80,7 @@ final class PollerNoticeLoopTests: XCTestCase {
             SendHoldStatus.menuLine(for: once.holdNotice),
             "照合: トーク一覧を読めないため、返事を待っています"
         )
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
 
         started.harness.clock.current = started.harness.clock.current.addingTimeInterval(60)
         await started.pass( .failed)
@@ -121,7 +121,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         started.harness.clock.current = start.addingTimeInterval(2)
         _ = await poller.tick()
         let mismatched = await started.engine.snapshot()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertEqual(mismatched.holdNotice, "reply_chat_guid_mismatch")
 
         await started.engine.setChatEnabled(7, guid: "chat-kept", enabled: true)
@@ -145,7 +145,7 @@ final class PollerNoticeLoopTests: XCTestCase {
         started.harness.clock.current = start.addingTimeInterval(180)
         _ = await poller.tick()
         let after = await started.engine.snapshot()
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertNil(after.holdNotice)
         XCTAssertNotEqual(after.holdNotice, "reply_chat_guid_mismatch")
         XCTAssertEqual(SendHoldStatus.menuLine(for: after.holdNotice), "照合: なし")

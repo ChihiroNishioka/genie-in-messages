@@ -44,4 +44,30 @@ package struct ImsgMessageSender: MessageSending {
             timedOut: result.timedOut
         ).get()
     }
+
+    package func sendFile(chatID: Int64, path: String) async throws -> SendReceipt {
+        let loaded = try config.load()
+        guard let arguments = ImsgCommand.sendFileArguments(chatID: chatID, path: path) else {
+            throw SendFailure.failed
+        }
+        let result = await ProcessRunner.run(
+            executable: loaded.imsgExecutable,
+            arguments: arguments,
+            timeout: loaded.sendTimeoutSeconds
+        )
+        return try SendLaunch.interpret(
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+            timedOut: result.timedOut
+        ).get()
+    }
+}
+
+package struct BundledMarkerImage: MarkerImageLocating {
+    package init() {}
+
+    package func markerImageURL() -> URL? {
+        Bundle.main.url(forResource: "reply-marker", withExtension: "gif", subdirectory: "ReplyMarker")
+    }
 }

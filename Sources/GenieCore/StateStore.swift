@@ -34,6 +34,11 @@ enum SendPart: String, Codable {
     case body
 }
 
+enum MarkerKind: String, Codable, Equatable {
+    case text
+    case image
+}
+
 struct PartialReply: Codable, Equatable {
     var replyID: String
     var chatID: Int64
@@ -75,6 +80,7 @@ struct PendingSend: Codable, Equatable {
     /// 結果不明の送信を、すでにレートへ数えたあとに残すとき true。再起動時に二重に数えない。
     var rateCounted: Bool
     var part: SendPart?
+    var markerKind: MarkerKind?
 
     enum CodingKeys: String, CodingKey {
         case replyID = "reply_id"
@@ -83,15 +89,17 @@ struct PendingSend: Codable, Equatable {
         case at
         case rateCounted = "rate_counted"
         case part
+        case markerKind = "marker_kind"
     }
 
-    init(replyID: String, chatID: Int64, hash: String, at: Date, rateCounted: Bool = false, part: SendPart? = nil) {
+    init(replyID: String, chatID: Int64, hash: String, at: Date, rateCounted: Bool = false, part: SendPart? = nil, markerKind: MarkerKind? = nil) {
         self.replyID = replyID
         self.chatID = chatID
         self.hash = hash
         self.at = at
         self.rateCounted = rateCounted
         self.part = part
+        self.markerKind = markerKind
     }
 
     init(from decoder: Decoder) throws {
@@ -102,6 +110,7 @@ struct PendingSend: Codable, Equatable {
         at = try container.decode(Date.self, forKey: .at)
         rateCounted = try container.decodeIfPresent(Bool.self, forKey: .rateCounted) ?? false
         part = try container.decodeIfPresent(SendPart.self, forKey: .part)
+        markerKind = try container.decodeIfPresent(MarkerKind.self, forKey: .markerKind)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -112,6 +121,7 @@ struct PendingSend: Codable, Equatable {
         try container.encode(at, forKey: .at)
         try container.encode(rateCounted, forKey: .rateCounted)
         try container.encodeIfPresent(part, forKey: .part)
+        try container.encodeIfPresent(markerKind, forKey: .markerKind)
     }
 }
 

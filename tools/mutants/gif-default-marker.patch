@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1048,7 +1048,7 @@
+                 log.record(level: .warning, code: "marker_image_unavailable", chatID: chatID,
+                            guid: nil, rowid: nil, detail: reason.rawValue)
+             }
+-            attempt = .text(config.replyMarker)
++            attempt = .text(ReplyComposer.markerText)
+         }
+ 
+         while true {

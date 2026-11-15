@@ -54,16 +54,16 @@ extension NotionReplyTests {
             let engine = try GenieEngine(
                 configProvider: StaticConfig(config: h.config), initialConfig: h.config,
                 stateStore: h.state, allowlistStore: h.allow, replySource: source,
-                sender: h.sender, webhook: h.webhook, secrets: h.secrets,
+                sender: h.sender, markerImage: h.markerImage, webhook: h.webhook, secrets: h.secrets,
                 lock: h.lock, clock: h.clock, log: h.log
             )
             await engine.showChats(h.verifiedChatList())
             await engine.pollReplies()
             await engine.pollReplies()
             await engine.pollReplies()
-            let otherTexts = h.sender.sent.filter { $0.chatID == 2 }.map(\.text)
-            let sameChatCount = h.sender.sent.filter { $0.chatID == 1 }.count
-            XCTAssertEqual(otherTexts, [M, "other-chat"])
+            let otherItems = h.sender.outgoing.filter { $0.chatID == 2 }.map(\.item)
+            let sameChatCount = h.sender.outgoing.filter { $0.chatID == 1 }.count
+            XCTAssertEqual(otherItems, expectedGIFOutgoing([M, "other-chat"]))
             XCTAssertEqual(sameChatCount, 2)
         } catch { XCTFail("engine setup failed: \(error)") }
     }

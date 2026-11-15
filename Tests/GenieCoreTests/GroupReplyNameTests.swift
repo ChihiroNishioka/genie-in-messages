@@ -20,7 +20,7 @@ final class GroupReplyNameTests: XCTestCase {
         queueReply(h, text: "answer")
         _ = await engine.pollReplies()
 
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "まひろへ：answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "まひろへ：answer"]))
         assertPrivateReplyData(h)
     }
 
@@ -30,7 +30,7 @@ final class GroupReplyNameTests: XCTestCase {
             _ = await engine.ingestWatchLine(groupSignal(contactName: "まひろ"))
             queueReply(h, text: "answer")
             _ = await engine.pollReplies()
-            XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
         }
     }
 
@@ -44,7 +44,7 @@ final class GroupReplyNameTests: XCTestCase {
         XCTAssertEqual(received, .delivered)
         queueReply(h, origin: "incoming-direct", text: "answer")
         _ = await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
         XCTAssertFalse(try stateText(h).contains("まひろ"))
     }
 
@@ -54,7 +54,7 @@ final class GroupReplyNameTests: XCTestCase {
         XCTAssertEqual(received, .delivered)
         queueReply(h, text: "answer")
         _ = await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
         XCTAssertFalse(try stateText(h).contains("まひろ"))
     }
 
@@ -67,7 +67,7 @@ final class GroupReplyNameTests: XCTestCase {
         XCTAssertEqual(received, .delivered)
         queueReply(h, origin: "incoming-self-chat", text: "answer")
         _ = await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
         XCTAssertFalse(try stateText(h).contains("まひろ"))
     }
 
@@ -81,7 +81,7 @@ final class GroupReplyNameTests: XCTestCase {
             _ = await engine.ingestWatchLine(groupSignal())
             queueReply(h, text: "answer")
             _ = await engine.pollReplies()
-            XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"], "name: \(name)")
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]), "name: \(name)")
             let state = try stateText(h)
             XCTAssertFalse(state.contains(name))
             XCTAssertFalse(state.localizedCaseInsensitiveContains(sender))
@@ -96,7 +96,7 @@ final class GroupReplyNameTests: XCTestCase {
         queueReply(h, text: "answer")
         _ = await engine.pollReplies()
 
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "\(name)へ：answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "\(name)へ：answer"]))
         XCTAssertTrue(try stateText(h).contains("\"addressee\":\"\(name)\""))
     }
 
@@ -112,7 +112,7 @@ final class GroupReplyNameTests: XCTestCase {
             queueReply(h, text: "answer")
             _ = await engine.pollReplies()
 
-            XCTAssertEqual(h.sender.sent.map(\.text), [fixture.marker, "answer"], "name: \(fixture.name)")
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([fixture.marker, "answer"], marker: fixture.marker), "name: \(fixture.name)")
             XCTAssertFalse(try stateText(h).contains(fixture.name))
         }
     }
@@ -132,7 +132,7 @@ final class GroupReplyNameTests: XCTestCase {
             queueReply(h, text: fixture.body)
             _ = await engine.pollReplies()
 
-            XCTAssertEqual(h.sender.sent.map(\.text), [fixture.marker, fixture.body], "name: \(fixture.name)")
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([fixture.marker, fixture.body], marker: fixture.marker), "name: \(fixture.name)")
         }
     }
 
@@ -145,7 +145,7 @@ final class GroupReplyNameTests: XCTestCase {
         ))
         queueReply(h, text: "answer")
         _ = await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
     }
 
     func testAlreadyPrefixedBodyIsNotPrefixedTwice() async throws {
@@ -153,7 +153,7 @@ final class GroupReplyNameTests: XCTestCase {
         _ = await engine.ingestWatchLine(groupSignal())
         queueReply(h, text: "まひろへ：answer")
         _ = await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "まひろへ：answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "まひろへ：answer"]))
     }
 
     func testBodyResendKeepsTheAddresseeAndDoesNotResendTheMarker() async throws {
@@ -166,9 +166,9 @@ final class GroupReplyNameTests: XCTestCase {
         _ = await engine.ingestWatchLine(groupSignal())
         queueReply(h, text: "answer")
         _ = await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([
             ReplyComposer.markerText, "まひろへ：answer", "まひろへ：answer"
-        ])
+        ]))
     }
 
     func testOldRouteWithoutAddresseeDecodesAndSendsWithoutPrefix() async throws {
@@ -179,7 +179,7 @@ final class GroupReplyNameTests: XCTestCase {
 
         guard let engine = await splitOpened(h) else { return }
         await engine.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
     }
 
     private func openGroup(
@@ -239,7 +239,7 @@ final class GroupReplyNameTests: XCTestCase {
         try GenieEngine(
             configProvider: provider, initialConfig: config, stateStore: h.store ?? h.state,
             allowlistStore: h.allow, replySource: h.replies, httpReplySource: h.httpReplies,
-            sender: h.sender, webhook: h.webhook, secrets: h.secrets, lock: h.lock,
+            sender: h.sender, markerImage: h.markerImage, webhook: h.webhook, secrets: h.secrets, lock: h.lock,
             clock: h.clock, log: h.log, stop: h.stop
         )
     }
@@ -261,7 +261,7 @@ final class GroupReplyNameTests: XCTestCase {
         let state = (try? stateText(h)) ?? ""
         let logs = h.log.records.map { "\($0.code) \($0.detail ?? "")" }.joined(separator: "\n")
         let deadLetters = h.state.deadLetters.map { "\($0.error) \($0.kind)" }.joined(separator: "\n")
-        let sent = h.sender.sent.map(\.text).joined(separator: "\n")
+        let sent = h.sender.outgoing.compactMap { outgoingText($0.item) }.joined(separator: "\n")
         for text in [state, logs, deadLetters, sent] {
             XCTAssertFalse(text.localizedCaseInsensitiveContains(sender), file: file, line: line)
             XCTAssertFalse(text.contains("090-0000-0000"), file: file, line: line)

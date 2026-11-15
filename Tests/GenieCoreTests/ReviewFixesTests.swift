@@ -27,9 +27,8 @@ final class ReviewFixesTests: XCTestCase {
             ),
         ]
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.map(\.chatID), [1, 1])
-        XCTAssertEqual(harness.sender.sent[0].text, ReplyComposer.markerText)
-        XCTAssertEqual(harness.sender.sent[1].text, "yes")
+        XCTAssertEqual(harness.sender.outgoing.map(\.chatID), [1, 1])
+        XCTAssertEqual(harness.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "yes"]))
         XCTAssertEqual(
             Set(harness.log.records.map(\.code)),
             Set(harness.log.records.map(\.code)).union(["reply_chat_mismatch", "reply_unrouted", "reply_too_old"])
@@ -53,7 +52,7 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         XCTAssertEqual(harness.state.state.replyCursor, "end")
         assertNoBody(harness, "SECRET_REPLY")
     }
@@ -69,12 +68,12 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         await engine.setChatEnabled(7, enabled: false)
         harness.lock.locked = false
         harness.clock.current = harness.clock.current.addingTimeInterval(15)
         await engine.retryHolds()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         XCTAssertTrue(harness.log.records.contains { $0.code == "reply_chat_disabled" })
         assertNoBody(harness, "SECRET_REPLY")
     }
@@ -128,7 +127,7 @@ final class ReviewFixesTests: XCTestCase {
             await engine.resumeRateLimit(chatID: 1)
         }
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
     }
 
     func testFailedSendIsDeadLetteredAndNotRetried() async throws {
@@ -146,10 +145,10 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         XCTAssertEqual(harness.state.deadLetters.first?.error, "send_failed")
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         assertNoBody(harness, "SECRET_REPLY")
     }
 
@@ -184,7 +183,7 @@ final class ReviewFixesTests: XCTestCase {
         let second = try await restarted.opened()
         XCTAssertEqual(restarted.state.deadLetters.first?.error, "send_interrupted")
         await second.pollReplies()
-        XCTAssertTrue(restarted.sender.sent.isEmpty)
+        XCTAssertTrue(restarted.sender.outgoing.isEmpty)
         XCTAssertEqual(restarted.state.state.rateEvents.count, 1)
     }
 
@@ -268,7 +267,7 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.haltedChatIDs, [1])
         XCTAssertEqual(snap.heldCount, 1)
@@ -304,7 +303,7 @@ final class ReviewFixesTests: XCTestCase {
         let pollResult = await engine.pollReplies()
         XCTAssertEqual(pollResult, .fetchFailed)
         XCTAssertTrue(harness.replies.cursors.isEmpty)
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
     }
 
     func testHTTPSessionDoesNotUseTheSharedCache() {
@@ -371,14 +370,14 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertTrue(harness.state.state.pendingSends[0].rateCounted)
         XCTAssertTrue(harness.log.records.contains { $0.code == "deadletter_write_failed" })
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
 
         harness.state.shouldFailDeadLetter = false
         let restarted = try await harness.opened()
         XCTAssertEqual(harness.state.deadLetters.map(\.error), ["send_interrupted"])
         XCTAssertTrue(harness.state.state.pendingSends.isEmpty)
         await restarted.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         assertNoBody(harness, "SECRET_REPLY")
     }
 
@@ -394,11 +393,11 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         harness.lock.locked = false
         harness.clock.current = harness.clock.current.addingTimeInterval(61)
         await engine.retryHolds()
-        XCTAssertTrue(harness.sender.sent.isEmpty)
+        XCTAssertTrue(harness.sender.outgoing.isEmpty)
         XCTAssertTrue(harness.log.records.contains { $0.code == "reply_too_old" })
         XCTAssertTrue(harness.state.state.handledReplyIDs.contains("r1"))
     }
@@ -423,7 +422,7 @@ final class ReviewFixesTests: XCTestCase {
             await engine.pollReplies()
         }
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
     }
 
     func testChildProcessTimeout() async {
@@ -465,7 +464,7 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         XCTAssertTrue(harness.state.deadLetters.isEmpty)
         XCTAssertEqual(harness.state.state.pendingSends.map(\.replyID), ["r1"])
         XCTAssertTrue(harness.state.state.pendingSends[0].rateCounted)
@@ -477,7 +476,7 @@ final class ReviewFixesTests: XCTestCase {
         XCTAssertTrue(harness.state.state.pendingSends.isEmpty)
         XCTAssertEqual(harness.state.state.rateEvents.count, 1)
         await restarted.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.count, 1)
         assertNoBody(harness, "SECRET_REPLY")
     }
 
@@ -492,7 +491,7 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.sent.count, 2)
+        XCTAssertEqual(harness.sender.outgoing.count, 2)
         let snap = await engine.snapshot()
         XCTAssertEqual(snap.screenLock, .unknown)
         XCTAssertFalse(snap.screenLocked)

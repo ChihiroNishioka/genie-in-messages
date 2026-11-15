@@ -80,6 +80,7 @@ final class ConfigTests: XCTestCase {
             allowlistStore: harness.allow,
             replySource: harness.replies,
             sender: harness.sender,
+            markerImage: harness.markerImage,
             webhook: harness.webhook,
             secrets: harness.secrets,
             lock: harness.lock,
@@ -140,10 +141,10 @@ final class ConfigTests: XCTestCase {
         process.arguments = [script.path] + arguments
         let pipe = Pipe()
         process.standardError = pipe
-        process.standardOutput = Pipe()
+        process.standardOutput = FileHandle.nullDevice
         try? process.run()
-        process.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
         return (process.terminationStatus, String(data: data, encoding: .utf8) ?? "")
     }
 }
@@ -176,7 +177,7 @@ extension ConfigTests {
         let h = Harness()
         h.allow.ids = [7]
         let e = try GenieEngine(configProvider: FileConfigProvider(url: paths.configFile), initialConfig: c,
-            stateStore: h.state, allowlistStore: h.allow, replySource: h.replies, sender: h.sender,
+            stateStore: h.state, allowlistStore: h.allow, replySource: h.replies, sender: h.sender, markerImage: h.markerImage,
             webhook: h.webhook, secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
         try Data("{\"job_chat_ids\":[\"7\"]}".utf8).write(to: paths.configFile)
         let result = await e.ingestWatchLine(watchLine(id: 1, guid: "g-config", chat: 7, fromMe: true, text: "🪔 body"))

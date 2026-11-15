@@ -1,4 +1,3 @@
-diff --git a/scripts/assemble-app.sh b/scripts/assemble-app.sh
 --- a/scripts/assemble-app.sh
 +++ b/scripts/assemble-app.sh
 @@ -44,10 +44,6 @@
@@ -9,6 +8,6 @@ diff --git a/scripts/assemble-app.sh b/scripts/assemble-app.sh
 -    "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \
 -    "${ROOT}/AppBundle/MenuLamp"/lamp-warning@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@3x.png \
 -    "${app}/Contents/Resources/MenuLamp/"
+   cp "${ROOT}/AppBundle/ReplyMarker/reply-marker.gif" "${app}/Contents/Resources/ReplyMarker/reply-marker.gif"
    chmod 755 "${app}/Contents/MacOS/GenieMenuBar"
  }
- 

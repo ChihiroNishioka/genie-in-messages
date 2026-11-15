@@ -110,16 +110,26 @@ final class BuildVersionTests: XCTestCase {
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         if let environment { process.environment = environment }
-        let output = Pipe()
-        let error = Pipe()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("genie-build-version-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let outputURL = directory.appendingPathComponent("stdout")
+        let errorURL = directory.appendingPathComponent("stderr")
+        _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+        _ = FileManager.default.createFile(atPath: errorURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: outputURL)
+        let error = try FileHandle(forWritingTo: errorURL)
         process.standardOutput = output
         process.standardError = error
         try process.run()
         process.waitUntilExit()
+        try output.close()
+        try error.close()
         return (
             process.terminationStatus,
-            String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-            String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            String(decoding: try Data(contentsOf: outputURL), as: UTF8.self),
+            String(decoding: try Data(contentsOf: errorURL), as: UTF8.self)
         )
     }
 }

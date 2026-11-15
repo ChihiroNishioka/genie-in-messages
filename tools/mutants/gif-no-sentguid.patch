@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1113,7 +1113,6 @@
+             switch result {
+             case .success(let receipt) where !receipt.guid.isEmpty:
+                 finishIntent(replyID: replyID)
+-                appendCapped(receipt.guid, to: &persisted.sentGUIDs)
+                 let partial = PartialReply(replyID: replyID, chatID: chatID, markerGUID: receipt.guid, at: clock.now())
+                 addPartialReply(partial)
+                 guard persist() else {

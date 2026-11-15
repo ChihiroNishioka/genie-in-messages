@@ -33,7 +33,7 @@ stage_app() {
   local bin_dir
   bin_dir="$(swift build --build-path "${ROOT}/.build-assemble" -c "${config}" --show-bin-path)"
   rm -rf "${app}"
-  mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources/MenuLamp"
+  mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources/MenuLamp" "${app}/Contents/Resources/ReplyMarker"
   cp "${bin_dir}/GenieMenuBar" "${app}/Contents/MacOS/GenieMenuBar"
   cp "${ROOT}/AppBundle/Info.plist" "${app}/Contents/Info.plist"
   local version_info release_line commit_line release commit
@@ -48,6 +48,7 @@ stage_app() {
     "${ROOT}/AppBundle/MenuLamp"/lamp-paused@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-paused@3x.png \
     "${ROOT}/AppBundle/MenuLamp"/lamp-warning@1x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@2x.png "${ROOT}/AppBundle/MenuLamp"/lamp-warning@3x.png \
     "${app}/Contents/Resources/MenuLamp/"
+  cp "${ROOT}/AppBundle/ReplyMarker/reply-marker.gif" "${app}/Contents/Resources/ReplyMarker/reply-marker.gif"
   chmod 755 "${app}/Contents/MacOS/GenieMenuBar"
 }
 

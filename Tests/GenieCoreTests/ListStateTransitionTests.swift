@@ -26,7 +26,7 @@ final class ListStateTransitionTests: XCTestCase {
         )))
         snap = await started.engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "chats_parse_failed")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testExpiryDoesNotClearAnUnresolvedParseProblem() async throws {
@@ -48,7 +48,7 @@ final class ListStateTransitionTests: XCTestCase {
         await started.engine.pollReplies()
         let snap = await started.engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "chats_parse_failed")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
         XCTAssertTrue(started.harness.log.records.contains { $0.code == "reply_too_old" })
     }
 
@@ -65,7 +65,7 @@ final class ListStateTransitionTests: XCTestCase {
         snap = await started.engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "chats_parse_failed")
         XCTAssertEqual(started.harness.log.records.filter { $0.code == "chats_parse_failed" }.count, 1)
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 
     func testWaitingReasonSurvivesTheFetchGrace() async throws {
@@ -85,7 +85,7 @@ final class ListStateTransitionTests: XCTestCase {
         await started.engine.applyChatList(.failed)
         snap = await started.engine.snapshot()
         XCTAssertEqual(snap.holdNotice, "reply_held_empty_list")
-        XCTAssertEqual(started.harness.sender.sent.count, 0)
+        XCTAssertEqual(started.harness.sender.outgoing.count, 0)
     }
 }
 

@@ -34,15 +34,58 @@ final class FakeWebhook: WebhookPosting, @unchecked Sendable {
     }
 }
 
+enum FakeOutgoing: Equatable {
+    case text(String)
+    case file(String)
+}
+
+func expectedGIFPath() -> String {
+    repoRoot().appendingPathComponent("AppBundle/ReplyMarker/reply-marker.gif").path
+}
+
+func expectedGIFOutgoing(_ textSequence: [String], marker: String = ReplyComposer.markerText) -> [FakeOutgoing] {
+    textSequence.map { $0 == marker ? .file(expectedGIFPath()) : .text($0) }
+}
+
+func outgoingText(_ item: FakeOutgoing) -> String? {
+    guard case .text(let text) = item else { return nil }
+    return text
+}
+
 final class FakeSender: MessageSending, @unchecked Sendable {
     var script: [Result<SendReceipt, SendFailure>] = []
+    var throwNext: Error?
+    var outgoing: [(chatID: Int64, item: FakeOutgoing)] = []
     var sent: [(chatID: Int64, text: String)] = []
+    var sentFiles: [(chatID: Int64, path: String)] = []
     var onSend: (() async -> Void)?
+    var onSendFile: (() async -> Void)?
+
     func send(chatID: Int64, text: String) async throws -> SendReceipt {
+        outgoing.append((chatID, .text(text)))
         sent.append((chatID, text))
         await onSend?()
+        if let error = throwNext {
+            throwNext = nil
+            throw error
+        }
         if script.isEmpty {
-            return SendReceipt(id: Int64(sent.count), guid: "sent-\(sent.count)", status: "sent")
+            return SendReceipt(id: Int64(outgoing.count), guid: "sent-\(outgoing.count)", status: "sent")
+        }
+        return try script.removeFirst().get()
+    }
+
+    func sendFile(chatID: Int64, path: String) async throws -> SendReceipt {
+        outgoing.append((chatID, .file(path)))
+        sentFiles.append((chatID, path))
+        await onSendFile?()
+        await onSend?()
+        if let error = throwNext {
+            throwNext = nil
+            throw error
+        }
+        if script.isEmpty {
+            return SendReceipt(id: Int64(outgoing.count), guid: "sent-\(outgoing.count)", status: "sent")
         }
         return try script.removeFirst().get()
     }
@@ -99,6 +142,9 @@ final class Harness {
     let allow = MemoryAllowlist()
     let replies = ScriptedReplies()
     let httpReplies = ScriptedReplies()
+    var markerImage: any MarkerImageLocating = StaticMarkerImage(
+        url: repoRoot().appendingPathComponent("AppBundle/ReplyMarker/reply-marker.gif")
+    )
     var secrets: any SecretProviding = StaticSecret(webhook: "hook-secret", reply: nil)
     var config = GenieConfig.productDefaults
 
@@ -143,6 +189,7 @@ final class Harness {
             replySource: replies,
             httpReplySource: httpReplies,
             sender: sender,
+            markerImage: markerImage,
             webhook: webhook,
             secrets: secrets,
             lock: lock,

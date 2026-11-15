@@ -67,8 +67,9 @@ final class VersionStampTests: XCTestCase {
         let error = Pipe()
         process.standardError = error
         try process.run()
+        let output = String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
-        XCTAssertEqual(process.terminationStatus, 0, String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+        XCTAssertEqual(process.terminationStatus, 0, output)
     }
 
     private func readPlist(_ url: URL) throws -> [String: Any] {

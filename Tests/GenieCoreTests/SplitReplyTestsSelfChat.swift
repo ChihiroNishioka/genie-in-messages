@@ -2,15 +2,16 @@ import XCTest
 @testable import GenieCore
 
 extension SplitReplyTests {
-    func testSelfChatInboundEchoesAreIgnored() async {
+    func testTextFallbackSelfChatInboundEchoesAreIgnored() async {
         let h = splitHarness()
+        h.markerImage = StaticMarkerImage(url: nil)
         h.config.selfChatIDs = [7]
         guard let e = await splitOpened(h) else { return }
         await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 2)
+        XCTAssertEqual(h.sender.outgoing.count, 2)
 
         var results: [IngestResult] = []
-        let sentCount = min(h.sender.sent.count, 2)
+        let sentCount = min(h.sender.outgoing.count, 2)
         for index in 0..<sentCount {
             guard h.sender.sent.indices.contains(index) else {
                 XCTFail("sent entry \(index) missing")

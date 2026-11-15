@@ -18,7 +18,7 @@ final class GroupChatTests: XCTestCase {
         let provider = MutableConfig(cfg)
         if menu { h.allow.ids = [42]; h.allow.guids[42] = group }
         let e = try GenieEngine(configProvider: provider, initialConfig: cfg, stateStore: h.state,
-            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, markerImage: h.markerImage, webhook: h.webhook,
             secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
         return (h, provider, e)
     }
@@ -58,7 +58,7 @@ final class GroupChatTests: XCTestCase {
                 let provider = FileConfigProvider(url: file)
                 let e = try GenieEngine(configProvider: provider, initialConfig: initial.config,
                     stateStore: h.state, allowlistStore: h.allow, replySource: h.replies,
-                    sender: h.sender, webhook: h.webhook, secrets: h.secrets,
+                    sender: h.sender, markerImage: h.markerImage, webhook: h.webhook, secrets: h.secrets,
                     lock: h.lock, clock: h.clock, log: h.log, stop: h.stop)
                 await e.showChats(chats())
                 let delivered = await receive(e, input())
@@ -73,7 +73,7 @@ final class GroupChatTests: XCTestCase {
                 XCTAssertEqual(before.heldCount, 1)
                 let deliveries = h.webhook.bodies.count
                 let fetches = h.replies.cursors.count
-                let sends = h.sender.sent.count
+                let sends = h.sender.outgoing.count
                 let reader = ScriptedChatLists(script: Array(repeating:
                     .parsed(ChatListParse(chats: chats(), failedLineCount: 0)), count: 10))
                 let poller = GeniePoller(engine: e, reader: reader, configProvider: provider,
@@ -103,7 +103,7 @@ final class GroupChatTests: XCTestCase {
                     _ = await poller.tick()
                     XCTAssertEqual(h.webhook.bodies.count, deliveries)
                     XCTAssertEqual(h.replies.cursors.count, fetches)
-                    XCTAssertEqual(h.sender.sent.count, sends)
+                    XCTAssertEqual(h.sender.outgoing.count, sends)
                     var repaired = initial.config
                     repaired.groupChatGUIDs = [group, other]
                     try ConfigLoader.write(repaired, to: file)
@@ -124,7 +124,7 @@ final class GroupChatTests: XCTestCase {
                     XCTAssertEqual(afterTraffic.lastError, priorError)
                     XCTAssertEqual(h.webhook.bodies.count, deliveries)
                     XCTAssertEqual(h.replies.cursors.count, fetches)
-                    XCTAssertEqual(h.sender.sent.count, sends)
+                    XCTAssertEqual(h.sender.outgoing.count, sends)
                 }
                 await e.setPaused(false)
                 try Data("{".utf8).write(to: file)
@@ -183,14 +183,14 @@ final class GroupChatTests: XCTestCase {
             XCTAssertEqual(received, .deferredPaused)
             XCTAssertEqual(h.webhook.bodies.count, deliveries)
             XCTAssertEqual(h.replies.cursors.count, fetches)
-            XCTAssertTrue(h.sender.sent.isEmpty)
+            XCTAssertTrue(h.sender.outgoing.isEmpty)
             let stillPaused = await e.snapshot()
             XCTAssertEqual(stillPaused.heldCount, 1)
             await e.setPaused(false)
             let resumed = await receive(e, input(2))
             XCTAssertEqual(resumed, .delivered)
             await e.retryHolds()
-            XCTAssertEqual(h.sender.sent.map(\.chatID), [42, 42])
+            XCTAssertEqual(h.sender.outgoing.map(\.chatID), [42, 42])
         }
     }
 
@@ -242,7 +242,7 @@ final class GroupChatTests: XCTestCase {
         try store.save(.empty)
         let before = try Data(contentsOf: file)
         let e = try GenieEngine(configProvider: p, initialConfig: p.config, stateStore: h.state,
-            allowlistStore: store, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            allowlistStore: store, replySource: h.replies, sender: h.sender, markerImage: h.markerImage, webhook: h.webhook,
             secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
         await e.showChats(chats())
         await e.toggleChat(id: 42, guid: group)
@@ -275,8 +275,8 @@ final class GroupChatTests: XCTestCase {
         XCTAssertEqual(h.webhook.bodies.count, 1)
         reply(h)
         _ = await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.chatID), [42, 42])
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.chatID), [42, 42])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
         XCTAssertTrue(h.allow.ids.isEmpty)
     }
 
@@ -331,7 +331,7 @@ final class GroupChatTests: XCTestCase {
         p.config.groupChatGUIDs = [group]
         reply(h)
         _ = await e.pollReplies()
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
         XCTAssertTrue(h.state.state.handledReplyIDs.contains("reply"))
         XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_guid_mismatch" })
     }
@@ -358,7 +358,7 @@ final class GroupChatTests: XCTestCase {
             if menu { XCTAssertNil(try payload(h, at: 1)["sender_handle"]) }
             reply(h)
             _ = await e.pollReplies()
-            XCTAssertEqual(h.sender.sent.count, menu ? 2 : 0)
+            XCTAssertEqual(h.sender.outgoing.count, menu ? 2 : 0)
             if !menu { XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" }) }
         }
     }
@@ -387,7 +387,7 @@ final class GroupChatTests: XCTestCase {
         reply(h)
         h.sender.onSend = { p.config = GenieConfig.productDefaults }
         _ = await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.count, 1)
+        XCTAssertEqual(h.sender.outgoing.count, 1)
         XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" })
     }
 
@@ -402,11 +402,11 @@ final class GroupChatTests: XCTestCase {
             if mode == 1 { await e.showChats(chats(99, guid: other)) }
             if mode == 2 { _ = await e.applyChatList(.failed) }
             _ = await e.pollReplies()
-            XCTAssertTrue(h.sender.sent.isEmpty)
+            XCTAssertTrue(h.sender.outgoing.isEmpty)
             await e.showChats(chats())
             reply(h)
             _ = await e.pollReplies()
-            XCTAssertEqual(h.sender.sent.count, 2)
+            XCTAssertEqual(h.sender.outgoing.count, 2)
         }
     }
 
@@ -418,7 +418,7 @@ final class GroupChatTests: XCTestCase {
         reply(h)
         h.lock.onState = { p.config.groupChatGUIDs = [] }
         _ = await e.pollReplies()
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
         XCTAssertTrue(h.log.records.contains { $0.code == "reply_chat_disabled" })
     }
 
@@ -430,13 +430,13 @@ final class GroupChatTests: XCTestCase {
         reply(h)
         h.sender.onSend = { await e.showChats([]) }
         _ = await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText]))
         XCTAssertFalse(h.state.state.handledReplyIDs.contains("reply"))
         h.sender.onSend = nil
         await e.showChats(chats())
         reply(h)
         _ = await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
     }
 
     func testGC12MissingCreatedAtOmitsOnlyThatOptionalKey() async throws {
@@ -576,7 +576,7 @@ final class GroupChatTests: XCTestCase {
         let provider = GroupJSONConfig(data)
         let cfg = try provider.load()
         let e = try GenieEngine(configProvider: provider, initialConfig: cfg, stateStore: h.state,
-            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, markerImage: h.markerImage, webhook: h.webhook,
             secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
         await e.showChats(chats())
         let first = await receive(e, input())

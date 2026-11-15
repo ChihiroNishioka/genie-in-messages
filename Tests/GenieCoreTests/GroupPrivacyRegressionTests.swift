@@ -14,7 +14,7 @@ final class GroupPrivacyRegressionTests: XCTestCase {
 
     func engine(_ h: Harness, _ p: MutableConfig) throws -> GenieEngine {
         try GenieEngine(configProvider: p, initialConfig: p.config, stateStore: h.state,
-            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, webhook: h.webhook,
+            allowlistStore: h.allow, replySource: h.replies, sender: h.sender, markerImage: h.markerImage, webhook: h.webhook,
             secrets: h.secrets, lock: h.lock, clock: h.clock, log: h.log)
     }
 
@@ -49,7 +49,7 @@ final class GroupPrivacyRegressionTests: XCTestCase {
             if failureMode == 0 || (job && failureMode == 2) {
                 h.replies.pages = [ReplyPage(replies: [routedReply("privacy-reply", chat: 42, text: "private answer", guid: "privacy-incoming-1")], nextCursor: nil)]
                 _ = await e.pollReplies()
-                XCTAssertEqual(h.sender.sent.map(\.text), [marker, "private answer"])
+                XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([marker, "private answer"], marker: marker))
             } else {
                 XCTAssertEqual(h.state.deadLetters.count, 1)
                 if job {
@@ -151,8 +151,8 @@ final class GroupPrivacyRegressionTests: XCTestCase {
         XCTAssertEqual(body["sender_name"] as? String, "me")
         h.replies.pages = [ReplyPage(replies: [routedReply("self-regression", chat: 42, text: "answer", guid: "privacy-incoming-2")], nextCursor: nil)]
         _ = await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [ReplyComposer.markerText, "answer"])
-        XCTAssertEqual(h.sender.sent.map(\.chatID), [42, 42])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([ReplyComposer.markerText, "answer"]))
+        XCTAssertEqual(h.sender.outgoing.map(\.chatID), [42, 42])
     }
 
     func testGC13OnlyConfigGroupOtherMemberGetsHandle() async throws {
@@ -197,8 +197,10 @@ final class GroupPrivacyRegressionTests: XCTestCase {
         XCTAssertTrue(h.webhook.bodies.isEmpty)
     }
 
-    func testConfiguredMarkerAlsoAppliesToSelfChatAndFingerprint() async throws {
+    func testTextFallbackConfiguredMarkerAlsoAppliesToSelfChatAndFingerprint() async throws {
         let h = Harness()
+        h.markerImage = StaticMarkerImage(url: nil)
+        h.markerImage = StaticMarkerImage(url: nil)
         let p = MutableConfig(try configured(["reply_marker": marker, "self_chat_ids": [42]]))
         h.allow.ids = [42]; h.allow.guids[42] = "direct"
         let e = try engine(h, p)

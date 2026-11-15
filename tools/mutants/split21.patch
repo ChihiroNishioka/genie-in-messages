@@ -8,4 +8,3 @@
 +        let locked = ScreenLockState.unlocked
          noteLock(locked)
          guard generation == databaseGeneration else { return }
-         refreshConfig()

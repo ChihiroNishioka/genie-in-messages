@@ -102,6 +102,10 @@ final class HashAndCommandTests: XCTestCase {
             ["send", "--chat-id", "3", "--text", "hi", "--json"]
         )
         XCTAssertEqual(
+            ImsgCommand.sendFileArguments(chatID: 3, path: "/a.gif"),
+            ["send", "--chat-id", "3", "--file", "/a.gif", "--json"]
+        )
+        XCTAssertEqual(
             ImsgCommand.chatsArguments(limit: 100),
             ["chats", "--json", "--limit", "100"]
         )

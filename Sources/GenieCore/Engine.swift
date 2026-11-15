@@ -1,5 +1,21 @@
 import Foundation
 
+private enum MarkerAttempt {
+    case image(path: String)
+    case text(String)
+
+    var kind: MarkerKind {
+        switch self {
+        case .image: .image
+        case .text: .text
+        }
+    }
+
+    var detail: String {
+        kind == .image ? "marker_image" : "marker"
+    }
+}
+
 package actor GenieEngine {
     private let configProvider: any ConfigProviding
     private var config: GenieConfig
@@ -10,6 +26,7 @@ package actor GenieEngine {
     private let httpReplySource: (any ReplySource)?
     private let replySource: any ReplySource
     private let sender: any MessageSending
+    private let markerImage: any MarkerImageLocating
     private let webhook: any WebhookPosting
     private let secrets: any SecretProviding
     private let lock: any ScreenLockChecking
@@ -68,6 +85,7 @@ package actor GenieEngine {
         replySource: any ReplySource,
         httpReplySource: (any ReplySource)? = nil,
         sender: any MessageSending,
+        markerImage: any MarkerImageLocating,
         webhook: any WebhookPosting,
         secrets: any SecretProviding,
         lock: any ScreenLockChecking,
@@ -84,6 +102,7 @@ package actor GenieEngine {
         self.httpReplySource = httpReplySource
         self.replySource = replySource
         self.sender = sender
+        self.markerImage = markerImage
         self.webhook = webhook
         self.secrets = secrets
         self.lock = lock
@@ -1019,78 +1038,117 @@ package actor GenieEngine {
         }
         let reservedAt = clock.now()
         countRate(chatID: chatID, at: reservedAt)
-        recordIntent(replyID: replyID, chatID: chatID, text: config.replyMarker,
-                     at: reservedAt, rateCounted: true, part: .marker)
-        guard persist() else {
-            releaseRate(chatID: chatID, at: reservedAt)
-            rollbackIntent(replyID: replyID)
-            hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                 reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                 createdAt: createdAt, originGUID: originGUID)
-            return
+        var attempt: MarkerAttempt
+        switch MarkerImage.check(markerImage.markerImageURL()) {
+        case .usable(let path):
+            noticeLog.resolve(["marker_image_unavailable"])
+            attempt = .image(path: path)
+        case .unavailable(let reason):
+            if noticeLog.shouldLog("marker_image_unavailable") {
+                log.record(level: .warning, code: "marker_image_unavailable", chatID: chatID,
+                           guid: nil, rowid: nil, detail: reason.rawValue)
+            }
+            attempt = .text(config.replyMarker)
         }
-        if paused || stop.isStopped {
-            releaseRate(chatID: chatID, at: reservedAt)
-            rollbackIntent(replyID: replyID)
-            persist()
-            hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
-                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
-            return
-        }
-        if !allowsSend(chatID) {
-            releaseRate(chatID: chatID, at: reservedAt)
-            rollbackIntent(replyID: replyID)
-            dropDisabled(replyID: replyID, chatID: chatID, detail: "marker")
-            return
-        }
-        if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
-            releaseRate(chatID: chatID, at: reservedAt)
-            rollbackIntent(replyID: replyID)
-            persist()
-            restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
-            return
-        }
-        let result: Result<SendReceipt, SendFailure>
-        do { result = .success(try await sender.send(chatID: chatID, text: config.replyMarker)) }
-        catch let failure as SendFailure { result = .failure(failure) }
-        catch { result = .failure(.failed) }
-        if generation != databaseGeneration {
-            if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
-            finishIntent(replyID: replyID)
-            markReplyHandled(replyID)
-            persist()
-            logDroppedForDatabaseReset(detail: "marker")
-            return
-        }
-        switch result {
-        case .success(let receipt) where !receipt.guid.isEmpty:
-            finishIntent(replyID: replyID)
-            appendCapped(receipt.guid, to: &persisted.sentGUIDs)
-            let partial = PartialReply(replyID: replyID, chatID: chatID, markerGUID: receipt.guid, at: clock.now())
-            addPartialReply(partial)
+
+        while true {
+            let text: String
+            if case .text(let marker) = attempt {
+                text = marker
+            } else {
+                text = ""
+            }
+            recordIntent(replyID: replyID, chatID: chatID, text: text,
+                         at: reservedAt, rateCounted: true, part: .marker, markerKind: attempt.kind)
             guard persist() else {
-                hold(replyID: replyID, chatID: chatID, part: .body, body: body,
-                     reason: .appleEventNotStarted, attempts: 1, logIt: false,
+                releaseRate(chatID: chatID, at: reservedAt)
+                rollbackIntent(replyID: replyID)
+                hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
+                     reason: .appleEventNotStarted, attempts: attempts, logIt: false,
                      createdAt: createdAt, originGUID: originGUID)
                 return
             }
-            log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
-                       rowid: receipt.id, detail: "marker")
-            await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
-                           pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
-        case .success:
-            await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
-        case .failure(let failure):
-            await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+            if paused || stop.isStopped {
+                releaseRate(chatID: chatID, at: reservedAt)
+                rollbackIntent(replyID: replyID)
+                persist()
+                hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
+                     attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                return
+            }
+            if !allowsSend(chatID) {
+                releaseRate(chatID: chatID, at: reservedAt)
+                rollbackIntent(replyID: replyID)
+                dropDisabled(replyID: replyID, chatID: chatID, detail: "marker")
+                return
+            }
+            if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+                releaseRate(chatID: chatID, at: reservedAt)
+                rollbackIntent(replyID: replyID)
+                persist()
+                restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
+                    reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                return
+            }
+
+            let result: Result<SendReceipt, SendFailure>
+            do {
+                switch attempt {
+                case .image(let path): result = .success(try await sender.sendFile(chatID: chatID, path: path))
+                case .text(let marker): result = .success(try await sender.send(chatID: chatID, text: marker))
+                }
+            } catch let failure as SendFailure {
+                result = .failure(failure)
+            } catch {
+                result = .failure(.failed)
+            }
+            if generation != databaseGeneration {
+                if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+                finishIntent(replyID: replyID)
+                markReplyHandled(replyID)
+                persist()
+                logDroppedForDatabaseReset(detail: "marker")
+                return
+            }
+            switch result {
+            case .success(let receipt) where !receipt.guid.isEmpty:
+                finishIntent(replyID: replyID)
+                appendCapped(receipt.guid, to: &persisted.sentGUIDs)
+                let partial = PartialReply(replyID: replyID, chatID: chatID, markerGUID: receipt.guid, at: clock.now())
+                addPartialReply(partial)
+                guard persist() else {
+                    hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+                         reason: .appleEventNotStarted, attempts: 1, logIt: false,
+                         createdAt: createdAt, originGUID: originGUID)
+                    return
+                }
+                log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+                           rowid: receipt.id, detail: attempt.detail)
+                await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
+                               pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+                return
+            case .success:
+                await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
+                    failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                    detail: attempt.detail)
+                return
+            case .failure(.failed) where attempt.kind == .image:
+                log.record(level: .warning, code: "marker_image_failed", chatID: chatID,
+                           guid: nil, rowid: nil)
+                rollbackIntent(replyID: replyID)
+                attempt = .text(config.replyMarker)
+            case .failure(let failure):
+                await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
+                    failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                    detail: attempt.detail)
+                return
+            }
         }
     }
 
     private func handleMarkerFailure(
         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
-        createdAt: Date, originGUID: String
+        createdAt: Date, originGUID: String, detail: String = "marker"
     ) async {
         let pending = persisted.pendingSends.first { $0.replyID == replyID }
         switch failure {
@@ -1099,6 +1157,7 @@ package actor GenieEngine {
             rollbackIntent(replyID: replyID)
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
+                 detail: detail,
                  createdAt: createdAt, originGUID: originGUID)
             if attempts == 1 { lastError = "apple_event_1712" }
             persist()
@@ -1117,7 +1176,7 @@ package actor GenieEngine {
                      createdAt: createdAt, originGUID: originGUID)
                 persist()
             }
-            log.record(level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: "marker")
+            log.record(level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
         case .uncertain:
             holds.removeAll { $0.replyID == replyID }
             markReplyHandled(replyID)
@@ -1127,7 +1186,7 @@ package actor GenieEngine {
                 persisted.pendingSends[index].rateCounted = true
             }
             if wrote { lastError = "send_uncertain" }
-            log.record(level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: "marker")
+            log.record(level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: detail)
             persist()
         }
     }
@@ -1445,14 +1504,20 @@ package actor GenieEngine {
         }
     }
 
-    private func recordIntent(replyID: String, chatID: Int64, text: String, at: Date, rateCounted: Bool, part: SendPart) {
-        let hash = SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
+    private func recordIntent(
+        replyID: String, chatID: Int64, text: String, at: Date, rateCounted: Bool,
+        part: SendPart, markerKind: MarkerKind? = nil
+    ) {
+        let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
         persisted.pendingSends.removeAll { $0.replyID == replyID }
         persisted.pendingSends.append(
-            PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at, rateCounted: rateCounted, part: part)
+            PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at,
+                        rateCounted: rateCounted, part: part, markerKind: markerKind)
         )
         cap(&persisted.pendingSends)
-        persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
+        if !hash.isEmpty {
+            persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
+        }
         pruneFingerprints(now: at)
     }
 
@@ -1513,7 +1578,8 @@ package actor GenieEngine {
                BodyResendPolicy.decide(resendsUsed: state.partialReplies[partialIndex].bodyResends) == .resend {
                 state.pendingSends.removeAll { $0.replyID == item.replyID }
                 state.partialReplies[partialIndex].bodyResends += 1
-                if !state.fingerprints.contains(where: { $0.hash == item.hash && $0.sentAt == item.at }) {
+                if !item.hash.isEmpty,
+                   !state.fingerprints.contains(where: { $0.hash == item.hash && $0.sentAt == item.at }) {
                     state.fingerprints.append(SentFingerprint(hash: item.hash, sentAt: item.at))
                 }
                 log.record(level: .error, code: "send_interrupted", chatID: item.chatID,
@@ -1536,7 +1602,8 @@ package actor GenieEngine {
             } catch {
                 log.record(level: .error, code: "deadletter_write_failed", chatID: item.chatID, guid: nil, rowid: nil)
             }
-            if !state.fingerprints.contains(where: { $0.hash == item.hash && $0.sentAt == item.at }) {
+            if !item.hash.isEmpty,
+               !state.fingerprints.contains(where: { $0.hash == item.hash && $0.sentAt == item.at }) {
                 state.fingerprints.append(SentFingerprint(hash: item.hash, sentAt: item.at))
             }
             if !item.rateCounted {

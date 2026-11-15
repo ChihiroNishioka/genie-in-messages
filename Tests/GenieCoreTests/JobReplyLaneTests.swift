@@ -26,7 +26,7 @@ final class JobReplyLaneTests: XCTestCase {
         let e = try await h.opened()
         let result = await e.pollReplies()
         XCTAssertEqual(result, .fetched)
-        XCTAssertEqual(h.sender.sent.map(\.text), [h.config.marker, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([h.config.marker, "answer"]))
     }
 
     func testG12BothSourcesRunHTTPFirstWithSeparateCursors() async throws {
@@ -47,7 +47,7 @@ final class JobReplyLaneTests: XCTestCase {
         XCTAssertEqual(h.replies.cursors, [nc])
         XCTAssertEqual(h.state.state.httpReplyCursor, "http-after")
         XCTAssertEqual(h.state.state.replyCursor, nc)
-        XCTAssertEqual(h.sender.sent.map(\.text), [h.config.marker, "HTTP", h.config.marker, "Notion"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([h.config.marker, "HTTP", h.config.marker, "Notion"]))
     }
 
     func testG13FailureOfEitherSourceDoesNotBlockTheOther() async throws {
@@ -66,7 +66,7 @@ final class JobReplyLaneTests: XCTestCase {
             XCTAssertEqual(snapshot.replyFetchError, "reply_fetch_failed")
             XCTAssertEqual(h.httpReplies.cursors.count, 1)
             XCTAssertEqual(h.replies.cursors.count, 1)
-            XCTAssertEqual(h.sender.sent.map(\.text), [h.config.marker, httpFails ? "Notion" : "HTTP"])
+            XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([h.config.marker, httpFails ? "Notion" : "HTTP"]))
             XCTAssertEqual(h.state.state.httpReplyCursor, httpFails ? "before" : "after")
             XCTAssertTrue(h.log.records.contains { $0.code == "reply_fetch_failed" && $0.detail == (httpFails ? "http" : "notion") })
         }
@@ -80,12 +80,12 @@ final class JobReplyLaneTests: XCTestCase {
         let e = try await h.opened()
         _ = await e.pollReplies()
         XCTAssertNil(h.state.state.httpReplyCursor)
-        XCTAssertTrue(h.sender.sent.isEmpty)
+        XCTAssertTrue(h.sender.outgoing.isEmpty)
         h.lock.locked = false
         await e.refreshLock()
         await e.retryHolds()
         _ = await e.pollReplies()
-        XCTAssertEqual(h.sender.sent.map(\.text), [h.config.marker, "accepted", h.config.marker, "complete"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([h.config.marker, "accepted", h.config.marker, "complete"]))
         XCTAssertEqual(h.state.state.httpReplyCursor, "end")
         XCTAssertTrue(h.state.state.routes.contains { $0.guid == "origin" })
     }
@@ -117,6 +117,6 @@ final class JobReplyLaneTests: XCTestCase {
         let result = await e.pollReplies()
         XCTAssertEqual(result, .fetched)
         XCTAssertTrue(h.httpReplies.cursors.isEmpty)
-        XCTAssertEqual(h.sender.sent.map(\.text), [h.config.marker, "answer"])
+        XCTAssertEqual(h.sender.outgoing.map(\.item), expectedGIFOutgoing([h.config.marker, "answer"]))
     }
 }
