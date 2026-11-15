@@ -137,7 +137,7 @@ final class ReviewFixesTests: XCTestCase {
         seedRoute(harness, guid: "origin", chat: 1)
         harness.sender.script = [
             .failure(.failed),
-            .success(SendReceipt(id: 1, guid: "out", status: "sent")),
+            .failure(.failed),
         ]
         harness.replies.pages = [
             ReplyPage(replies: [routedReply("r1", chat: 1, text: "SECRET_REPLY", guid: "origin")], nextCursor: "c"),
@@ -145,10 +145,16 @@ final class ReviewFixesTests: XCTestCase {
         ]
         let engine = try await harness.opened()
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.outgoing.count, 1)
-        XCTAssertEqual(harness.state.deadLetters.first?.error, "send_failed")
+        let expected: [FakeOutgoing] = [.file(expectedGIFPath()), .text(ReplyComposer.markerText)]
+        XCTAssertEqual(harness.sender.outgoing.map(\.item), expected)
+        XCTAssertEqual(harness.sender.outgoing.map(\.chatID), [1, 1])
+        XCTAssertEqual(harness.state.deadLetters.map(\.error), ["send_failed"])
+        XCTAssertTrue(harness.state.state.handledReplyIDs.contains("r1"))
+        assertNoBody(harness, "SECRET_REPLY")
         await engine.pollReplies()
-        XCTAssertEqual(harness.sender.outgoing.count, 1)
+        XCTAssertEqual(harness.sender.outgoing.map(\.item), expected)
+        XCTAssertEqual(harness.sender.outgoing.map(\.chatID), [1, 1])
+        XCTAssertEqual(harness.state.deadLetters.map(\.error), ["send_failed"])
         assertNoBody(harness, "SECRET_REPLY")
     }
 
