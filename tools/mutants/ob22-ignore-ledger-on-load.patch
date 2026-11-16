@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -104,6 +104,7 @@
+         self.config = initialConfig.sanitized()
+         self.stateStore = stateStore
+         self.persisted = try stateStore.load()
++        self.persisted.outbound = OutboundLedger()
+         self.allowlistStore = allowlistStore
+         self.allowlist = try allowlistStore.load()
+         self.httpReplySource = httpReplySource

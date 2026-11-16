@@ -99,6 +99,7 @@ package actor GeniePoller {
                 break
             }
         }
+        if !stop.isStopped { await engine.pollOutboundIfDue() }
         return PollTickReport(at: at, steps: steps, skippedBusy: false, stoppedMidway: false)
     }
 

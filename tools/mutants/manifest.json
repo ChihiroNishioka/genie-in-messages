@@ -973,5 +973,90 @@
     "name": "GIF-DOC-OLD",
     "patch": "gif-doc-old.patch",
     "filter": "GroupDocumentationTests.testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph"
+  },
+  {
+    "name": "OB05-ACCEPT-TARGET",
+    "patch": "ob05-accept-target.patch",
+    "filter": "OutboundNotionTests.testOB31MalformedPropertiesAreTerminalAndIdentityFailuresThrow"
+  },
+  {
+    "name": "OB12-USE-ROW-ADDRESS",
+    "patch": "ob12-use-row-address.patch",
+    "filter": "OutboundNotionTests.testOB12ExtraAddressColumnsAreIgnored"
+  },
+  {
+    "name": "OB23-SEND-BEFORE-SAVE",
+    "patch": "ob23-send-before-save.patch",
+    "filter": "OutboundIdempotencyTests.testOB23ReservationSavedBeforeFirstSend"
+  },
+  {
+    "name": "OB17-RETRY-UNCERTAIN-BODY",
+    "patch": "ob17-retry-uncertain-body.patch",
+    "filter": "OutboundSendTests.testOB17UncertainBodyIsNeverRetried"
+  },
+  {
+    "name": "OB22-IGNORE-LEDGER-ON-LOAD",
+    "patch": "ob22-ignore-ledger-on-load.patch",
+    "filter": "OutboundIdempotencyTests.testOB22LedgerSurvivesJSONReload"
+  },
+  {
+    "name": "OB27-FORGET-ALIAS",
+    "patch": "ob27-forget-alias.patch",
+    "filter": "OutboundIdempotencyTests.testOB27BodyDedupeAndAliasEditing"
+  },
+  {
+    "name": "OB27-SKIP-BODY-HASH",
+    "patch": "ob27-skip-body-hash.patch",
+    "filter": "OutboundIdempotencyTests.testOB27BodyDedupeAndAliasEditing"
+  },
+  {
+    "name": "OB39-EVICT-LEDGER",
+    "patch": "ob39-evict-ledger.patch",
+    "filter": "OutboundIdempotencyTests.testOB39FullLedgerPreservesHistory"
+  },
+  {
+    "name": "OB32-SKIP-BODY-VALIDATION",
+    "patch": "ob32-skip-body-validation.patch",
+    "filter": "OutboundPrivacyTests.testOB32BodyValidation"
+  },
+  {
+    "name": "OB38-LOG-VALUES",
+    "patch": "ob38-log-values.patch",
+    "filter": "OutboundPrivacyTests.testOB38OutboundLogsAndStateContainNoValues"
+  },
+  {
+    "name": "OB06-SKIP-FAMILY-QUALIFICATION",
+    "patch": "ob06-skip-family-qualification.patch",
+    "filter": "OutboundAuthorizationTests.testOB06FamilyRequiresConfiguredGroup"
+  },
+  {
+    "name": "OB08-SKIP-SELF-PROOF",
+    "patch": "ob08-skip-self-proof.patch",
+    "filter": "OutboundAuthorizationTests.testOB08SelfRequiresPositiveProof"
+  },
+  {
+    "name": "OB10-SKIP-GUID",
+    "patch": "ob10-skip-guid.patch",
+    "filter": "OutboundAuthorizationTests.testOB10AllPermissionGUIDsMustMatch"
+  },
+  {
+    "name": "OB11-SKIP-ALLOWLIST",
+    "patch": "ob11-skip-allowlist.patch",
+    "filter": "OutboundAuthorizationTests.testOB11EffectivePermissionRequired"
+  },
+  {
+    "name": "OB37-USE-STALE-RESERVATION",
+    "patch": "ob37-use-stale-reservation.patch",
+    "filter": "OutboundRegressionTests.testOB37SelfEvidenceChangesBetweenPartsAreTerminal"
+  },
+  {
+    "name": "OB24-RETRY-INTERRUPTED-MARKER",
+    "patch": "ob24-retry-interrupted-marker.patch",
+    "filter": "OutboundIdempotencyTests.testOB24InterruptedMarkerIsTerminal"
+  },
+  {
+    "name": "OB30-SKIP-EXPIRY",
+    "patch": "ob30-skip-expiry.patch",
+    "filter": "OutboundIdempotencyTests.testOB30ExpiredNeverStartsSend"
   }
 ]

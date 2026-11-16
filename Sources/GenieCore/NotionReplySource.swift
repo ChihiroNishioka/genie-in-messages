@@ -293,19 +293,66 @@ struct NotionQueryPage {
 }
 
 /// Notion のデータソースを created_time の古い順に読む。本文はログに出さない。
-final class NotionPace: @unchecked Sendable {
+actor NotionPace {
+    static let shared = NotionPace()
     private var last: Date?
 
     func wait(_ clock: any GenieClock) async throws {
-        if let last {
-            let elapsed = clock.now().timeIntervalSince(last)
-            if elapsed < NotionAPI.minimumInterval {
-                self.last = last.addingTimeInterval(NotionAPI.minimumInterval)
-                try await clock.sleep(seconds: NotionAPI.minimumInterval - elapsed)
-                return
+        let now = clock.now()
+        let reserved = last.map { max(now, $0.addingTimeInterval(NotionAPI.minimumInterval)) } ?? now
+        last = reserved
+        let delay = reserved.timeIntervalSince(now)
+        if delay > 0 { try await clock.sleep(seconds: delay) }
+    }
+}
+
+struct NotionQueryClient: Sendable {
+    var transport: any NotionTransport
+    var clock: any GenieClock
+    var pace: NotionPace
+
+    func query(url: URL, token: String, lowerBound: String, startCursor: String?) async throws -> Data {
+        var attempt = 0
+        while true {
+            attempt += 1
+            try await pace.wait(clock)
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 30
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue(NotionAPI.version, forHTTPHeaderField: "Notion-Version")
+            var object: [String: Any] = [
+                "page_size": NotionAPI.pageSize,
+                "sorts": [["timestamp": "created_time", "direction": "ascending"]],
+                "filter": ["timestamp": "created_time", "created_time": ["on_or_after": lowerBound]],
+            ]
+            if let startCursor, !startCursor.isEmpty { object["start_cursor"] = startCursor }
+            request.httpBody = try JSONSerialization.data(withJSONObject: object)
+            let response: NotionHTTPResponse
+            do {
+                response = try await transport.send(request)
+            } catch let error as ReplyFetchError {
+                throw error
+            } catch {
+                throw ReplyFetchError.transport
             }
+            if [429, 529, 500, 503].contains(response.status) {
+                let delay: Double
+                if let raw = response.headers["retry-after"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   let seconds = Double(raw), seconds.isFinite, seconds >= 0 {
+                    delay = min(NotionAPI.retryCapSeconds, max(seconds, NotionAPI.minimumInterval))
+                } else {
+                    delay = min(NotionAPI.retryCapSeconds, pow(2, Double(max(0, attempt - 1))))
+                }
+                try await clock.sleep(seconds: delay)
+                if attempt >= NotionAPI.maxRetries { throw ReplyFetchError.transport }
+                continue
+            }
+            guard (200...299).contains(response.status) else { throw ReplyFetchError.badResponse }
+            return response.body
         }
-        last = clock.now()
     }
 }
 
@@ -315,7 +362,7 @@ package struct NotionReplySource: ReplySource {
     package var clock: any GenieClock
     package var pageLimit: Int
     var transport: any NotionTransport
-    private var pace = NotionPace()
+    var pace: NotionPace
 
     package init(
         dataSourceID: String,
@@ -329,6 +376,7 @@ package struct NotionReplySource: ReplySource {
         self.clock = clock
         self.pageLimit = pageLimit
         self.transport = URLSessionNotionTransport(session: session)
+        self.pace = .shared
     }
 
     init(
@@ -336,13 +384,15 @@ package struct NotionReplySource: ReplySource {
         secrets: any SecretProviding,
         clock: any GenieClock,
         pageLimit: Int,
-        transport: any NotionTransport
+        transport: any NotionTransport,
+        pace: NotionPace = NotionPace()
     ) {
         self.dataSourceID = dataSourceID
         self.secrets = secrets
         self.clock = clock
         self.pageLimit = pageLimit
         self.transport = transport
+        self.pace = pace
     }
 
     package func fetch(
@@ -415,67 +465,11 @@ package struct NotionReplySource: ReplySource {
         lowerBound: String,
         startCursor: String?
     ) async throws -> NotionQueryPage {
-        var attempt = 0
-        while true {
-            attempt += 1
-            try await pace.wait(clock)
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.timeoutInterval = 30
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            request.setValue(NotionAPI.version, forHTTPHeaderField: "Notion-Version")
-            request.httpBody = try Self.body(lowerBound: lowerBound, startCursor: startCursor)
-            let response: NotionHTTPResponse
-            do {
-                response = try await transport.send(request)
-            } catch let error as ReplyFetchError {
-                throw error
-            } catch {
-                throw ReplyFetchError.transport
-            }
-            if Self.retries(status: response.status) {
-                let delay = Self.retryDelay(headers: response.headers, attempt: attempt)
-                try await clock.sleep(seconds: delay)
-                if attempt >= NotionAPI.maxRetries {
-                    throw ReplyFetchError.transport
-                }
-                continue
-            }
-            guard (200...299).contains(response.status) else {
-                throw ReplyFetchError.badResponse
-            }
-            return try NotionPageDecoder.decode(response.body)
-        }
+        let data = try await NotionQueryClient(transport: transport, clock: clock, pace: pace)
+            .query(url: url, token: token, lowerBound: lowerBound, startCursor: startCursor)
+        return try NotionPageDecoder.decode(data)
     }
 
-    private static func retries(status: Int) -> Bool {
-        status == 429 || status == 529 || status == 500 || status == 503
-    }
-
-    private static func retryDelay(headers: [String: String], attempt: Int) -> Double {
-        if let raw = headers["retry-after"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           let seconds = Double(raw), seconds >= 0 {
-            return min(NotionAPI.retryCapSeconds, max(seconds, NotionAPI.minimumInterval))
-        }
-        return min(NotionAPI.retryCapSeconds, pow(2, Double(max(0, attempt - 1))))
-    }
-
-    private static func body(lowerBound: String, startCursor: String?) throws -> Data {
-        var object: [String: Any] = [
-            "page_size": NotionAPI.pageSize,
-            "sorts": [["timestamp": "created_time", "direction": "ascending"]],
-            "filter": [
-                "timestamp": "created_time",
-                "created_time": ["on_or_after": lowerBound],
-            ],
-        ]
-        if let startCursor, !startCursor.isEmpty {
-            object["start_cursor"] = startCursor
-        }
-        return try JSONSerialization.data(withJSONObject: object)
-    }
 }
 
 enum NotionNumber: Equatable {

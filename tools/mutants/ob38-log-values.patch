@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2276,6 +2276,7 @@
+     }
+ 
+     private func sendLog(replyID: String, level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?, detail: String? = nil) {
++        if isOutbound(replyID) { log.record(level: level, code: "outbound_reply_sent", chatID: chatID, guid: guid, rowid: rowid, detail: detail); return }
+         guard isOutbound(replyID) else {
+             log.record(level: level, code: code, chatID: chatID, guid: guid, rowid: rowid, detail: detail)
+             return
