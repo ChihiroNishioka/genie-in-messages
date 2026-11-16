@@ -519,7 +519,12 @@ final class LampIconTests: XCTestCase {
         )
         XCTAssertEqual(result.status, 0, result.err + result.out)
         let source = try Data(contentsOf: repoRoot().appendingPathComponent("AppBundle/ReplyMarker/reply-marker.gif"))
-        let staged = try Data(contentsOf: dest.appendingPathComponent("Contents/Resources/ReplyMarker/reply-marker.gif"))
+        let stagedURL = dest.appendingPathComponent("Contents/Resources/ReplyMarker/reply-marker.gif")
+        guard FileManager.default.fileExists(atPath: stagedURL.path) else {
+            XCTFail("reply-marker.gif がありません")
+            return
+        }
+        let staged = try Data(contentsOf: stagedURL)
         XCTAssertEqual(staged, source)
     }
     #endif
