@@ -1,0 +1,54 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1139,7 +1139,7 @@
+             }
+             if isOutbound(replyID) { refreshConfig() }
+             if generation != databaseGeneration {
+-                if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
++                if case .success(let receipt) = result { if !isOutbound(replyID) { appendCapped(receipt.guid, to: &persisted.sentGUIDs) } }
+                 finishIntent(replyID: replyID)
+                 markReplyHandled(replyID)
+                 persist()
+@@ -1148,14 +1148,14 @@
+             }
+             if let index = outboundRecordIndex(replyID),
+                persisted.outbound.records[index].sourceHash != outboundSourceHash() || (isOutbound(replyID) && !config.outboundEnabled) {
+-                if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
++                if case .success(let receipt) = result { if !isOutbound(replyID) { appendCapped(receipt.guid, to: &persisted.sentGUIDs) } }
+                 terminateOutbound(replyID, code: "outbound_source_changed")
+                 return
+             }
+             switch result {
+             case .success(let receipt) where !receipt.guid.isEmpty:
+                 finishIntent(replyID: replyID)
+-                appendCapped(receipt.guid, to: &persisted.sentGUIDs)
++                if !isOutbound(replyID) { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+                 let partial = PartialReply(replyID: replyID, chatID: chatID, markerGUID: receipt.guid, at: clock.now())
+                 addPartialReply(partial)
+                 guard persist() else {
+@@ -1332,7 +1332,7 @@
+         catch { sendResult = .failure(.failed) }
+         if isOutbound(replyID) { refreshConfig() }
+         if generation != databaseGeneration {
+-            if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
++            if case .success(let receipt) = sendResult { if !isOutbound(replyID) { appendCapped(receipt.guid, to: &persisted.sentGUIDs) } }
+             finishIntent(replyID: replyID)
+             markReplyHandled(replyID)
+             persist()
+@@ -1341,14 +1341,14 @@
+         }
+         if let index = outboundRecordIndex(replyID),
+            persisted.outbound.records[index].sourceHash != outboundSourceHash() || (isOutbound(replyID) && !config.outboundEnabled) {
+-            if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
++            if case .success(let receipt) = sendResult { if !isOutbound(replyID) { appendCapped(receipt.guid, to: &persisted.sentGUIDs) } }
+             terminateOutbound(replyID, code: "outbound_source_changed")
+             return
+         }
+         switch sendResult {
+         case .success(let receipt) where !receipt.guid.isEmpty:
+             finishIntent(replyID: replyID)
+-            appendCapped(receipt.guid, to: &persisted.sentGUIDs)
++            if !isOutbound(replyID) { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+             persisted.partialReplies.removeAll { $0.replyID == replyID }
+             markReplyHandled(replyID)
+             holds.removeAll { $0.replyID == replyID }

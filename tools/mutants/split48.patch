@@ -1,13 +1,75 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1515,9 +1515,7 @@
-                         rateCounted: rateCounted, part: part, markerKind: markerKind)
-         )
-         cap(&persisted.pendingSends)
+@@ -1561,71 +1561,71 @@
+ 
+     private func countRate(chatID: Int64, at: Date? = nil) {
+         let now = at ?? clock.now()
+         persisted.rateEvents.append(RateEvent(chatID: chatID, at: now))
+         pruneRates(now: clock.now())
+     }
+ 
+     private func releaseRate(chatID: Int64, at: Date) {
+         if let index = persisted.rateEvents.lastIndex(where: { $0.chatID == chatID && $0.at == at }) {
+             persisted.rateEvents.remove(at: index)
+         }
+     }
+ 
+     private func pruneRates(now: Date) {
+         persisted.rateEvents.removeAll {
+             now.timeIntervalSince($0.at) >= config.rateLimitWindowSeconds
+         }
+     }
+ 
+     private func recordIntent(
+         replyID: String, chatID: Int64, text: String, at: Date, rateCounted: Bool,
+         part: SendPart, markerKind: MarkerKind? = nil
+     ) {
+         if let index = outboundRecordIndex(replyID) {
+             persisted.outbound.records[index].stage = part == .marker ? .markerInFlight : .bodyInFlight
+         } else {
+             let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
+             persisted.pendingSends.removeAll { $0.replyID == replyID }
+             persisted.pendingSends.append(
+                 PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at,
+                             rateCounted: rateCounted, part: part, markerKind: markerKind)
+             )
+             cap(&persisted.pendingSends)
+         }
+         let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
 -        if !hash.isEmpty {
--            persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
--        }
-+        if part == .marker { persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at)) }
++        if part == .marker {
+             persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
+             if isOutbound(replyID) { outboundIntentFingerprints[replyID] = (hash, at) }
+         }
          pruneFingerprints(now: at)
      }
  
+     private func rollbackIntent(replyID: String) {
+         if let index = outboundRecordIndex(replyID), persisted.outbound.records[index].stage != .terminal {
+             persisted.outbound.records[index].stage = persisted.outbound.records[index].stage == .bodyInFlight ? .bodyReady : .reserved
+         }
+         if let outboundFingerprint = outboundIntentFingerprints.removeValue(forKey: replyID) {
+             if let index = persisted.fingerprints.lastIndex(where: { $0.hash == outboundFingerprint.0 && $0.sentAt == outboundFingerprint.1 }) {
+                 persisted.fingerprints.remove(at: index)
+             }
+         } else if let pending = persisted.pendingSends.first(where: { $0.replyID == replyID }) {
+             persisted.pendingSends.removeAll { $0.replyID == replyID }
+             if let index = persisted.fingerprints.lastIndex(where: { $0.hash == pending.hash && $0.sentAt == pending.at }) {
+                 persisted.fingerprints.remove(at: index)
+             }
+         }
+     }
+ 
+     private func finishIntent(replyID: String) {
+         persisted.pendingSends.removeAll { $0.replyID == replyID }
+         outboundIntentFingerprints.removeValue(forKey: replyID)
+     }
+ 
+     private func addPartialReply(_ partial: PartialReply) {
+         if let index = outboundRecordIndex(partial.replyID) {
+             persisted.outbound.records[index].stage = .bodyReady
+             return
+         }
+         persisted.partialReplies.removeAll { $0.replyID == partial.replyID }
+         persisted.partialReplies.append(partial)
+         while persisted.partialReplies.count > 5000 {

@@ -2261,7 +2261,10 @@ extension GenieEngine {
         guard !config.outboundTargetCollision else { return .reject("outbound_target_collision") }
         guard config.outboundEnabled else { return .reject("outbound_source_changed") }
         guard OutboundHash.digest(kind: "destination", values: [guid]) == guidHash else { return .reject("outbound_target_changed") }
-        guard directoryChecked, listFetchFailingSince == nil else { outboundLog("outbound_held_unverified"); return .hold }
+        guard directoryChecked, listFetchFailingSince == nil, parseProblem != .partial else {
+            outboundLog("outbound_held_unverified")
+            return .hold
+        }
         let matches = outboundDirectory.filter { $0.guid == guid }
         guard matches.count == 1 else {
             outboundLog(matches.count > 1 ? "outbound_target_ambiguous" : "outbound_held_unverified")
@@ -2299,7 +2302,7 @@ extension GenieEngine {
         }
         guard allowsSend(chat.id) else { return .reject("outbound_chat_disabled") }
         var expected = configGroups.expectedGUIDs(for: chat.id)
-        if let allowed = allowlist.entries.first(where: { $0.id == chat.id }) { expected.append(allowed.guid) }
+        expected.append(contentsOf: allowlist.entries.filter { $0.id == chat.id }.map(\.guid))
         guard !expected.isEmpty, expected.allSatisfy({ !$0.isEmpty && $0 == guid }), directoryGUIDs[chat.id] == guid else {
             return .reject("outbound_guid_mismatch")
         }

@@ -1,11 +1,75 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1062,7 +1062,7 @@
+@@ -1215,71 +1215,71 @@
+             if let pending { releaseRate(chatID: chatID, at: pending.at) }
+             rollbackIntent(replyID: replyID)
+             holds.removeAll { $0.replyID == replyID }
+             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: "send_failed") {
+                 finishIntent(replyID: replyID)
+                 markReplyHandled(replyID)
+                 persist()
+                 lastError = "send_failed"
+             } else {
+                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
+                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
+                      createdAt: createdAt, originGUID: originGUID)
+                 persist()
+             }
+             sendLog(replyID: replyID, level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
+         case .uncertain:
+             holds.removeAll { $0.replyID == replyID }
+             markReplyHandled(replyID)
+             let wrote = recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: "send_uncertain")
+             if wrote { finishIntent(replyID: replyID) }
+             else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
+                 persisted.pendingSends[index].rateCounted = true
+             }
+             if wrote { lastError = "send_uncertain" }
+             sendLog(replyID: replyID, level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: detail)
+             persist()
+         }
+     }
+ 
+     private func sendBody(
+         replyID: String, chatID: Int64, body: String, attempts: Int, pauseReason: HoldReason,
          createdAt: Date, originGUID: String
      ) async {
-         guard persisted.partialReplies.contains(where: { $0.replyID == replyID }) else { return }
+         if !isOutbound(replyID), !persisted.partialReplies.contains(where: { $0.replyID == replyID }) { return }
+         guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
 -        if paused || stop.isStopped {
 +        if paused || stop.isStopped || persisted.haltedChatIDs.contains(chatID) {
              hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
                   attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
              return
+         }
+         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+         let generation = databaseGeneration
+         let locked = await lock.state()
+         noteLock(locked)
+         guard generation == databaseGeneration else { return }
+         refreshConfig()
+         guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
+         if paused || stop.isStopped {
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+         if locked == .locked {
+             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: .screenLocked,
+                  attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
+             if first { lastError = "screen_locked" }
+             return
+         }
+         if bodyResendSavePending.contains(replyID) {

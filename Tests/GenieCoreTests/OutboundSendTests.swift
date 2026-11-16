@@ -49,7 +49,64 @@ final class OutboundHarness {
     }
 }
 
+private final class DuplicateOutboundAllowlist: AllowlistPersisting, @unchecked Sendable {
+    private let entries: [AllowedChat]
+
+    init(entries: [AllowedChat]) {
+        self.entries = entries
+    }
+
+    func load() throws -> AllowlistState { AllowlistState(entries: entries) }
+    func save(_ state: AllowlistState) throws {}
+}
+
 final class OutboundSendTests: XCTestCase {
+    func testPartialChatListParseHoldsOutboundDestination() async throws {
+        let f = OutboundHarness()
+        f.source.entries = [f.row()]
+        let e = try await f.opened()
+        _ = await e.applyChatList(.parsed(ChatListParse(chats: f.chats, failedLineCount: 1)))
+
+        _ = await e.pollOutbound()
+
+        XCTAssertTrue(f.h.sender.outgoing.isEmpty)
+        XCTAssertTrue(f.h.sender.sent.isEmpty)
+        XCTAssertTrue(f.h.log.records.contains { $0.code == "outbound_held_unverified" })
+        XCTAssertEqual(f.h.state.state.outbound.records.first?.stage, .reserved)
+    }
+
+    func testOutboundChecksEveryDuplicateAllowlistGUID() async throws {
+        let f = OutboundHarness()
+        f.source.entries = [f.row(target: .self)]
+        let allowlist = DuplicateOutboundAllowlist(entries: [
+            AllowedChat(id: 8, guid: OutboundHarness.owner),
+            AllowedChat(id: 8, guid: "iMessage;-;stale@example.com"),
+        ])
+        let e = try GenieEngine(
+            configProvider: f.provider,
+            initialConfig: f.provider.config,
+            stateStore: f.h.state,
+            allowlistStore: allowlist,
+            replySource: f.h.replies,
+            outboundSource: f.source,
+            sender: f.h.sender,
+            markerImage: f.h.markerImage,
+            webhook: f.h.webhook,
+            secrets: f.h.secrets,
+            lock: f.h.lock,
+            clock: f.h.clock,
+            log: f.h.log,
+            stop: f.h.stop
+        )
+        await e.showChats(f.chats)
+
+        _ = await e.pollOutbound()
+
+        XCTAssertTrue(f.h.sender.outgoing.isEmpty)
+        XCTAssertTrue(f.h.sender.sent.isEmpty)
+        XCTAssertEqual(f.h.state.state.outbound.records.first?.terminalCode, "outbound_guid_mismatch")
+    }
+
     func testOB03FamilySendsWithoutRoute() async throws {
         let f = OutboundHarness()
         f.source.entries = [f.row()]
@@ -76,12 +133,23 @@ final class OutboundSendTests: XCTestCase {
         let parsedFailure = SendResultParser.parse(stdout: "nope", stderr: "", exitCode: 1)
         let emptyOutput = SendResultParser.parse(stdout: "", stderr: "", exitCode: 1)
         let malformed = SendResultParser.parse(stdout: "{", stderr: "", exitCode: 1)
-        for result in [parsedFailure, emptyOutput, malformed] {
+        let emptyGUID = SendResultParser.parse(stdout: "{\"status\":\"sent\",\"guid\":\"\"}", stderr: "", exitCode: 0)
+        let timeoutOnly = SendResultParser.parse(stdout: "-1712", stderr: "", exitCode: 1)
+        let failedStatus = SendResultParser.parse(stdout: "{\"status\":\"failed\"}", stderr: "", exitCode: 1)
+        let cases: [(Result<SendReceipt, SendFailure>, String)] = [
+            (parsedFailure, "outbound_body_send_failed"),
+            (emptyOutput, "outbound_body_send_failed"),
+            (malformed, "outbound_body_send_failed"),
+            (emptyGUID, "outbound_body_send_uncertain"),
+            (timeoutOnly, "outbound_body_send_uncertain"),
+            (failedStatus, "outbound_body_send_failed"),
+        ]
+        for (result, expectedError) in cases {
             let f = OutboundHarness(); f.source.entries = [f.row()]
             f.h.sender.script = [.success(SendReceipt(id: 1, guid: "marker-0000", status: "sent")), result]
             let e = try await f.opened(); _ = await e.pollOutbound(); _ = await e.pollOutbound()
             XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("お知らせ")])
-            XCTAssertEqual(f.h.state.deadLetters.last?.error, "outbound_body_send_failed")
+            XCTAssertEqual(f.h.state.deadLetters.last?.error, expectedError)
         }
 
         let reply = OutboundHarness()
@@ -137,9 +205,34 @@ final class OutboundSendTests: XCTestCase {
                 text: f.provider.config.replyMarker, created: created,
                 chatGUID: OutboundHarness.family, isGroup: true
             ))
-            XCTAssertTrue(markerEcho == .ignoredFingerprint || markerEcho == .ignoredReplyMarker)
+            XCTAssertEqual(markerEcho, fallback ? .ignoredFingerprint : .ignoredReplyMarker)
             XCTAssertTrue(f.h.webhook.bodies.isEmpty)
         }
+    }
+    func testOB19SelfEchoIsIgnoredWithOneToOnePositiveControl() async throws {
+        let f = OutboundHarness()
+        let directGUID = "iMessage;-;other@example.com"
+        f.provider.config.webhookURL = "https://example.com/webhook"
+        f.h.allow.ids.insert(9)
+        f.h.allow.guids[9] = directGUID
+        let e = try f.engine()
+        let direct = ChatSummary(id: 9, title: "direct", isGroup: false, guid: directGUID,
+            participants: ["other@example.com"], participantsKnown: true,
+            lastAddressedHandle: "owner@example.com")
+        await e.showChats(f.chats + [direct])
+        let selfEcho = await e.ingestWatchLine(watchLine(
+            id: 120, guid: "self-echo-0000", chat: 8, fromMe: false, text: "🪔 今日の予定",
+            chatGUID: OutboundHarness.owner, sender: "owner@example.com", isGroup: false,
+            participants: ["owner@example.com"]
+        ))
+        let directMessage = await e.ingestWatchLine(watchLine(
+            id: 121, guid: "direct-message-0000", chat: 9, fromMe: false, text: "🪔 今日の予定",
+            chatGUID: directGUID, sender: "other@example.com", isGroup: false,
+            participants: ["other@example.com"]
+        ))
+        XCTAssertEqual(selfEcho, .ignoredNotFromMe)
+        XCTAssertEqual(directMessage, .delivered)
+        XCTAssertEqual(f.h.webhook.bodies.count, 1)
     }
     func testOB21ReplyAndOutboundShareRateQuota() async throws {
         let f = OutboundHarness()
@@ -178,6 +271,12 @@ final class OutboundSendTests: XCTestCase {
         XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("お知らせ"), .file(expectedGIFPath()), .text("返事")])
     }}
 final class OutboundRecoveryTests: XCTestCase {
+    func testOB14GIFSuccessSendsImageAndBodyOnly() async throws {
+        let f = OutboundHarness(); f.source.entries = [f.row()]
+        let e = try await f.opened(); _ = await e.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("お知らせ")])
+    }
+
     func testOB14GIFDefinitiveFailureUsesCustomMarker() async throws {
         let f = OutboundHarness(); f.provider.config.replyMarker = "🕊️"
         f.source.entries = [f.row()]; f.h.sender.script = [.failure(.failed)]
@@ -186,6 +285,19 @@ final class OutboundRecoveryTests: XCTestCase {
         let missing = OutboundHarness(); missing.h.markerImage = StaticMarkerImage(url: nil)
         missing.source.entries = [missing.row()]; let second = try await missing.opened(); _ = await second.pollOutbound()
         XCTAssertEqual(missing.h.sender.outgoing.map(\.item), [.text(ReplyComposer.markerText), .text("お知らせ")])
+    }
+    func testOB15GIFFailureUsesCustomMarkerAndUnavailableImageSkipsLaunch() async throws {
+        let failed = OutboundHarness(); failed.provider.config.replyMarker = "🕊️"
+        failed.source.entries = [failed.row()]; failed.h.sender.script = [.failure(.failed)]
+        let failedEngine = try await failed.opened(); _ = await failedEngine.pollOutbound()
+        XCTAssertEqual(failed.h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("🕊️"), .text("お知らせ")])
+
+        let unavailable = OutboundHarness(); unavailable.provider.config.replyMarker = "🕊️"
+        unavailable.h.markerImage = StaticMarkerImage(url: nil)
+        unavailable.source.entries = [unavailable.row()]
+        let unavailableEngine = try await unavailable.opened(); _ = await unavailableEngine.pollOutbound()
+        XCTAssertEqual(unavailable.h.sender.outgoing.map(\.item), [.text("🕊️"), .text("お知らせ")])
+        XCTAssertTrue(unavailable.h.sender.sentFiles.isEmpty)
     }
     func testOB16UncertainAndEmptyGUIDMarkerAreTerminalAcrossRestart() async throws {
         for result: Result<SendReceipt, SendFailure> in [.failure(.uncertain), .success(SendReceipt(id: 1, guid: "", status: "sent"))] {
@@ -228,7 +340,13 @@ final class OutboundRecoveryTests: XCTestCase {
         f.h.sender.onSend = { if f.h.sender.outgoing.count == 2 { durable = f.h.state.state; f.h.stop.stop() } }
         let e = try await f.opened(); _ = await e.pollOutbound()
         f.h.sender.onSend = nil; f.h.state.state = try XCTUnwrap(durable)
+        f.h.state.shouldFailDeadLetter = true
         let restarted = try f.engine(stop: StopSignal()); await restarted.showChats(f.chats); _ = await restarted.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.count, 2)
+        XCTAssertEqual(f.h.state.state.outbound.records.first?.stage, .terminal)
+        XCTAssertTrue(f.h.state.state.outbound.records.first?.deadLetterPending == true)
+        f.h.state.shouldFailDeadLetter = false
+        _ = await restarted.pollOutbound()
         XCTAssertEqual(f.h.sender.outgoing.count, 2)
         XCTAssertEqual(f.h.state.deadLetters.last?.error, "outbound_body_send_interrupted")
     }
@@ -345,10 +463,42 @@ final class OutboundConfigurationChangeTests: XCTestCase {
         let f = OutboundHarness(); f.source.entries = [f.row()]; f.h.lock.locked = true
         let e = try await f.opened(); _ = await e.pollOutbound()
         f.source.entries = [f.row(key: "edited-key", text: "別の本文")]
-        f.h.clock.current.addTimeInterval(900); _ = await e.pollOutbound()
+        f.h.clock.current.addTimeInterval(60); _ = await e.pollOutbound()
         XCTAssertTrue(f.h.sender.outgoing.isEmpty); XCTAssertTrue(f.h.sender.sent.isEmpty)
         XCTAssertTrue(f.h.state.state.outbound.records.allSatisfy { $0.stage == .terminal })
-        XCTAssertTrue(f.h.log.records.contains { $0.code == "outbound_expired" })
+        XCTAssertTrue(f.h.log.records.contains { $0.code == "outbound_idempotency_conflict" })
+    }
+
+    func testOB29UnavailablePendingPageHoldsRecoversBodyAndExpiresSafely() async throws {
+        let recovered = OutboundHarness(); recovered.source.entries = [recovered.row()]
+        recovered.h.lock.locked = true
+        let first = try await recovered.opened(); _ = await first.pollOutbound()
+        recovered.h.state.state.outbound.records[0].stage = .bodyReady
+        recovered.h.state.state.outbound.records[0].chatID = 7
+        recovered.h.state.state = try reloaded(recovered.h.state.state).0
+        let restarted = try await recovered.opened()
+        recovered.source.entries = []
+        _ = await restarted.pollOutbound()
+        XCTAssertTrue(recovered.h.sender.outgoing.isEmpty)
+        XCTAssertTrue(recovered.h.log.records.contains { $0.code == "outbound_held_body_unavailable" })
+        recovered.h.lock.locked = false
+        recovered.source.entries = [recovered.row()]
+        _ = await restarted.pollOutbound()
+        XCTAssertEqual(recovered.h.sender.outgoing.map(\.item), [.text("お知らせ")])
+
+        let expired = OutboundHarness(); expired.source.entries = [expired.row()]
+        expired.h.lock.locked = true
+        let held = try await expired.opened(); _ = await held.pollOutbound()
+        expired.h.state.state.outbound.records[0].stage = .bodyReady
+        expired.h.state.state.outbound.records[0].chatID = 7
+        expired.h.state.state = try reloaded(expired.h.state.state).0
+        let expiredEngine = try await expired.opened()
+        expired.source.entries = []
+        _ = await expiredEngine.pollOutbound()
+        expired.h.clock.current.addTimeInterval(900)
+        _ = await expiredEngine.pollOutbound()
+        XCTAssertTrue(expired.h.sender.outgoing.isEmpty)
+        XCTAssertEqual(expired.h.state.state.outbound.records.first?.terminalCode, "outbound_expired")
     }
 }
 

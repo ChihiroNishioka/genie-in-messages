@@ -1,8 +1,8 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1124,6 +1124,9 @@
+@@ -1166,6 +1166,9 @@
                  }
-                 log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+                 sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
                             rowid: receipt.id, detail: attempt.detail)
 +                if attempt.kind == .image {
 +                    _ = try? await sender.send(chatID: chatID, text: config.replyMarker)

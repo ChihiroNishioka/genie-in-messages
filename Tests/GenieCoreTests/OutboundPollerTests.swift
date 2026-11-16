@@ -7,7 +7,7 @@ import FoundationNetworking
 
 final class OutboundPollerTests: XCTestCase {
     func testOB01DisabledOutboundStillPollsAndSendsExistingReply() async throws {
-        for json in ["{}", "{\"outbound_notion_data_source_id\":null}", "{\"outbound_notion_data_source_id\":\" \"}"] {
+        for json in ["{}", "{\"outbound_notion_data_source_id\":null}", "{\"outbound_notion_data_source_id\":\" \"}", "{\"outbound_notion_data_source_id\":\"invalid\"}"] {
             let f = OutboundHarness()
             let decoded = try JSONDecoder().decode(GenieConfig.self, from: Data(json.utf8))
             f.provider.config.outboundNotionDataSourceID = decoded.outboundNotionDataSourceID
@@ -22,6 +22,9 @@ final class OutboundPollerTests: XCTestCase {
             XCTAssertEqual(f.source.fetchCount, 0)
             XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("返事")])
             XCTAssertEqual(f.h.replies.cursors.count, 1)
+            if decoded.outboundNotionDataSourceID == "invalid" {
+                XCTAssertTrue(f.h.log.records.contains { $0.code == "outbound_source_invalid" })
+            }
         }
     }
 

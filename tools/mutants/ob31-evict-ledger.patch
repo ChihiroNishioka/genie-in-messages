@@ -1,10 +1,10 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -2093,6 +2093,7 @@
-             _ = persist()
+@@ -2198,6 +2198,7 @@
+             outboundLog(sameSignature ? "outbound_duplicate_key" : "outbound_idempotency_conflict")
              return
          }
 +        if persisted.outbound.count >= OutboundLedger.capacity { persisted.outbound.records.removeFirst() }
          guard persisted.outbound.count < OutboundLedger.capacity else { outboundLog("outbound_ledger_full"); return }
-         let created = ISO8601.date(from: entry.createdAt) ?? clock.now()
-         let targetGUID = entry.target.flatMap { config.outboundTargets[$0.rawValue] } ?? ""
+         guard let created = ISO8601.date(from: entry.createdAt) else {
+             outboundLog("outbound_bad_entry")

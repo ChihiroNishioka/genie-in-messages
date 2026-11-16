@@ -1,9 +1,41 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1191,12 +1191,7 @@
+@@ -1364,76 +1364,71 @@
+             rollbackIntent(replyID: replyID)
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
+                  detail: "body",
+                  createdAt: createdAt, originGUID: originGUID)
+             if attempts == 1 { lastError = "apple_event_1712" }
+             persist()
+         case .failure(let failure):
+             await handleBodyFailure(replyID: replyID, chatID: chatID, body: body, failure: failure,
+                 attempts: attempts, sendingResend: sendingResend, pauseReason: pauseReason,
+                 createdAt: createdAt, originGUID: originGUID)
+         }
+     }
+ 
+     private func handleBodyFailure(
+         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
+         sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, originGUID: String
+     ) async {
+         if isOutbound(replyID) {
+             terminateOutbound(replyID,
+                 code: failure == .failed ? "outbound_body_send_failed" : "outbound_body_send_uncertain",
+                 deadLetter: true)
+             return
+         }
+         guard let partialIndex = persisted.partialReplies.firstIndex(where: { $0.replyID == replyID }) else { return }
+         let partial = persisted.partialReplies[partialIndex]
+         let code = failure == .failed ? "send_failed" : "send_uncertain"
+         switch BodyResendPolicy.decide(resendsUsed: partial.bodyResends) {
+         case .resend:
+             if failure == .failed { rollbackIntent(replyID: replyID) }
+             else { finishIntent(replyID: replyID) }
+             persisted.partialReplies[partialIndex].bodyResends += 1
              bodyResendSavePending.insert(replyID)
              lastError = code
-             log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "body")
+             sendLog(replyID: replyID, level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "body")
 -            guard persist() else {
 -                hold(replyID: replyID, chatID: chatID, part: .body, body: body,
 -                     reason: .appleEventNotStarted, attempts: attempts, logIt: false,
@@ -14,3 +46,35 @@
              bodyResendSavePending.remove(replyID)
              await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: attempts + 1,
                             pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+         case .deadLetter:
+             persisted.partialReplies.removeAll { $0.replyID == replyID }
+             holds.removeAll { $0.replyID == replyID }
+             markReplyHandled(replyID)
+             let error = failure == .failed ? "body_send_failed" : "body_send_uncertain"
+             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: error, attempts: 2) {
+                 finishIntent(replyID: replyID)
+                 lastError = code
+             } else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
+                 persisted.pendingSends[index].rateCounted = true
+             }
+             sendLog(replyID: replyID, level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "resend")
+             persist()
+         }
+     }
+ 
+     /// そのトークの guid を一覧で確かめられたときだけ送る。
+     /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
+     /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
+     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
+         if isOutbound(replyID) { return !outboundAuthorizationMatches(replyID: replyID, chatID: chatID) }
+         let current = directoryGUIDs[chatID] ?? ""
+         var expected = configGroups.expectedGUIDs(for: chatID)
+         if let entry = allowlist.entries.first(where: { $0.id == chatID }) {
+             expected.append(entry.guid)
+         }
+         let allowed = expected.first(where: { $0 != current }) ?? expected.first ?? ""
+         if directoryChecked && !current.isEmpty && !allowed.isEmpty && current == allowed {
+             return false
+         }
+         if !directoryChecked {
+             let code = parseProblem == .allRows ? "chats_parse_failed" : "chats_failed"

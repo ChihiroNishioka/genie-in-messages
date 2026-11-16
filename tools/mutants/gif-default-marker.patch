@@ -1,8 +1,39 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1135,8 +1135,8 @@
+@@ -1146,71 +1146,71 @@
+                 logDroppedForDatabaseReset(detail: "marker")
+                 return
+             }
+             if let index = outboundRecordIndex(replyID),
+                persisted.outbound.records[index].sourceHash != outboundSourceHash() || (isOutbound(replyID) && !config.outboundEnabled) {
+                 if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+                 terminateOutbound(replyID, code: "outbound_source_changed")
+                 return
+             }
+             switch result {
+             case .success(let receipt) where !receipt.guid.isEmpty:
+                 finishIntent(replyID: replyID)
+                 appendCapped(receipt.guid, to: &persisted.sentGUIDs)
+                 let partial = PartialReply(replyID: replyID, chatID: chatID, markerGUID: receipt.guid, at: clock.now())
+                 addPartialReply(partial)
+                 guard persist() else {
+                     hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+                          reason: .appleEventNotStarted, attempts: 1, logIt: false,
+                          createdAt: createdAt, originGUID: originGUID)
+                     return
+                 }
+                 sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+                            rowid: receipt.id, detail: attempt.detail)
+                 await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
+                                pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+                 return
+             case .success:
+                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
+                     failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                     detail: attempt.detail, rateAt: reservedAt)
+                 return
              case .failure(.failed) where attempt.kind == .image:
-                 log.record(level: .warning, code: "marker_image_failed", chatID: chatID,
+                 sendLog(replyID: replyID, level: .warning, code: "marker_image_failed", chatID: chatID,
                             guid: nil, rowid: nil)
                  rollbackIntent(replyID: replyID)
 -                attempt = .text(config.replyMarker)
@@ -10,3 +41,35 @@
              case .failure(let failure):
                  await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
                      failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                     detail: attempt.detail, rateAt: reservedAt)
+                 return
+             }
+         }
+     }
+ 
+     private func handleMarkerFailure(
+         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
+         createdAt: Date, originGUID: String, detail: String = "marker", rateAt: Date? = nil
+     ) async {
+         if isOutbound(replyID) && failure != .notStarted {
+             if failure == .failed {
+                 let at = persisted.pendingSends.first(where: { $0.replyID == replyID })?.at ?? rateAt
+                 if let at { releaseRate(chatID: chatID, at: at) }
+             }
+             terminateOutbound(replyID, code: failure == .failed ? "outbound_send_failed" : "outbound_send_uncertain", deadLetter: true)
+             return
+         }
+         let pending = persisted.pendingSends.first { $0.replyID == replyID }
+         switch failure {
+         case .notStarted:
+             if let at = pending?.at ?? rateAt { releaseRate(chatID: chatID, at: at) }
+             rollbackIntent(replyID: replyID)
+             hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
+                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
+                  detail: detail,
+                  createdAt: createdAt, originGUID: originGUID)
+             if attempts == 1 { lastError = "apple_event_1712" }
+             persist()
+         case .failed:
+             if let pending { releaseRate(chatID: chatID, at: pending.at) }
+             rollbackIntent(replyID: replyID)

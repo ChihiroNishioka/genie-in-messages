@@ -5,9 +5,13 @@ import XCTest
 final class OutboundIdempotencyTests: XCTestCase {
     func testOB24PageEditingDoesNotCreateNewSend() async throws {
         let f = OutboundHarness(); f.source.entries = [f.row()]; let e = try await f.opened()
-        _ = await e.pollOutbound(); f.source.entries = [f.row(key: "new-key", text: "別の本文")]
+        _ = await e.pollOutbound()
+        f.source.entries = [f.row("page-0001")]; _ = await e.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.count, 2)
+        f.source.entries = [f.row("page-0001", key: "new-key", text: "別の本文")]
         _ = await e.pollOutbound(); XCTAssertEqual(f.h.sender.outgoing.count, 2)
         XCTAssertEqual(f.h.state.state.outbound.records.count, 1)
+        XCTAssertEqual(f.h.state.state.outbound.records.first?.pageHashes.count, 2)
     }
     func testOB27LedgerSurvivesJSONReload() async throws {
         let f = OutboundHarness(); f.source.entries = [f.row()]; let e = try await f.opened()
@@ -17,11 +21,12 @@ final class OutboundIdempotencyTests: XCTestCase {
     }
     func testOB28ReservationSavedBeforeFirstSend() async throws {
         let f = OutboundHarness(); f.source.entries = [f.row()]
+        let store = RecordingStateStore()
+        f.h.store = store
         f.h.sender.onSendFile = {
-            XCTAssertFalse(f.h.state.state.outbound.records.isEmpty)
-            XCTAssertEqual(f.h.state.state.outbound.records.first?.stage.rawValue, "marker_in_flight")
-            XCTAssertTrue(f.h.state.state.pendingSends.isEmpty)
-            XCTAssertTrue(f.h.state.state.partialReplies.isEmpty)
+            XCTAssertEqual(store.saves.last?.outbound.records.first?.stage, .markerInFlight)
+            XCTAssertTrue(store.saves.last?.pendingSends.isEmpty == true)
+            XCTAssertTrue(store.saves.last?.partialReplies.isEmpty == true)
         }
         let e = try await f.opened(); _ = await e.pollOutbound()
         XCTAssertEqual(f.h.sender.outgoing.count, 2)
@@ -74,6 +79,14 @@ final class OutboundIdempotencyTests: XCTestCase {
         let f = OutboundHarness(); var row = f.row(); row.createdAt = ISO8601.string(from: f.h.clock.now().addingTimeInterval(-900))
         f.source.entries = [row]; let e = try await f.opened(); _ = await e.pollOutbound()
         XCTAssertTrue(f.h.sender.outgoing.isEmpty); XCTAssertTrue(f.h.sender.sent.isEmpty)
+
+        let boundary = OutboundHarness(); boundary.source.entries = [boundary.row()]
+        boundary.h.lock.onState = { boundary.h.clock.current = boundary.h.clock.current.addingTimeInterval(900) }
+        let boundaryEngine = try await boundary.opened(); _ = await boundaryEngine.pollOutbound()
+        XCTAssertTrue(boundary.h.sender.outgoing.isEmpty)
+        XCTAssertTrue(boundary.h.sender.sent.isEmpty)
+        XCTAssertTrue(boundary.h.state.state.outbound.records.first?.stage == .terminal)
+        XCTAssertEqual(boundary.h.state.state.outbound.records.first?.terminalCode, "outbound_expired")
     }
     func testOB30SaveFailureBlocksSend() async throws {
         let f = OutboundHarness(); f.source.entries = [f.row()]; let e = try await f.opened()
@@ -92,6 +105,31 @@ final class OutboundIdempotencyTests: XCTestCase {
         XCTAssertTrue(f.h.log.records.contains { $0.code == "outbound_ledger_full" })
     }
 
+    func testOB31BodyReadyResumesAtLedgerLimit() async throws {
+        let f = OutboundHarness(); f.source.entries = [f.row()]; f.h.lock.locked = true
+        let e = try await f.opened(); _ = await e.pollOutbound()
+        var active = f.h.state.state.outbound.records[0]
+        active.stage = .bodyReady
+        active.chatID = 7
+        let fillers = (0..<(OutboundLedger.capacity / 2 - 1)).map { index -> OutboundRecord in
+            var record = active
+            record.id = "archived-\(index)"
+            record.pageHashes = ["archived-page-\(index)"]
+            record.stage = .terminal
+            record.terminalCode = "outbound_completed"
+            record.terminalAt = f.h.clock.now()
+            return record
+        }
+        f.h.state.state.outbound.records = [active] + fillers
+        XCTAssertEqual(f.h.state.state.outbound.count, OutboundLedger.capacity)
+        let (loaded, _) = try reloaded(f.h.state.state)
+        f.h.state.state = loaded
+        f.h.lock.locked = false
+        let restarted = try await f.opened(); _ = await restarted.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.text("お知らせ")])
+        XCTAssertEqual(f.h.state.state.outbound.count, OutboundLedger.capacity)
+    }
+
 
 
     func testOB31HistorySurvivesHandledIDsAndSeenOverflow() async throws {
@@ -107,6 +145,29 @@ final class OutboundIdempotencyTests: XCTestCase {
         let second = try await f.opened()
         _ = await second.pollOutbound()
         XCTAssertEqual(f.h.sender.outgoing.count, 2)
+    }
+
+    func testOB30DeadLetterPendingSurvivesReloadAndRetriesOnTick() async throws {
+        let f = OutboundHarness(); f.source.entries = [f.row()]
+        f.h.markerImage = StaticMarkerImage(url: nil)
+        f.h.sender.script = [.failure(.failed)]
+        f.h.state.shouldFailDeadLetter = true
+        let first = try await f.opened(); _ = await first.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.count, 1)
+        XCTAssertTrue(f.h.state.state.outbound.records.first?.deadLetterPending == true)
+        let (loaded, _) = try reloaded(f.h.state.state)
+        let store = MemoryStateStore(state: loaded)
+        store.shouldFailDeadLetter = true
+        f.h.store = store
+        let restarted = try await f.opened()
+        XCTAssertTrue(store.state.outbound.records.first?.deadLetterPending == true)
+        XCTAssertTrue(store.deadLetters.isEmpty)
+        store.shouldFailDeadLetter = false
+        _ = await restarted.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.count, 1)
+        XCTAssertEqual(store.deadLetters.last?.kind, "outbound")
+        XCTAssertEqual(store.deadLetters.last?.error, "outbound_send_failed")
+        XCTAssertFalse(store.state.outbound.records.first?.deadLetterPending ?? true)
     }
     func testOB32DatabaseResetDuringMarkerNeverContinuesOrForgetsHistory() async throws {
         let f = OutboundHarness()

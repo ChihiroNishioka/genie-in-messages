@@ -1,6 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1779,7 +1779,7 @@
+@@ -1850,7 +1850,7 @@
      }
  
      private func allowsSend(_ id: Int64) -> Bool {
@@ -9,12 +9,12 @@
      }
  
      private func noteConfigGroups() {
-@@ -2169,7 +2169,7 @@
+@@ -2300,7 +2300,7 @@
          guard allowsSend(chat.id) else { return .reject("outbound_chat_disabled") }
          var expected = configGroups.expectedGUIDs(for: chat.id)
-         if let allowed = allowlist.entries.first(where: { $0.id == chat.id }) { expected.append(allowed.guid) }
+         expected.append(contentsOf: allowlist.entries.filter { $0.id == chat.id }.map(\.guid))
 -        guard !expected.isEmpty, expected.allSatisfy({ !$0.isEmpty && $0 == guid }), directoryGUIDs[chat.id] == guid else {
 +        guard expected.allSatisfy({ !$0.isEmpty && $0 == guid }), directoryGUIDs[chat.id] == guid else {
              return .reject("outbound_guid_mismatch")
          }
-         let evidence: String
+         return .ready(chat.id, selfEvidence)

@@ -975,88 +975,123 @@
     "filter": "GroupDocumentationTests.testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph"
   },
   {
-    "name": "OB05-ACCEPT-TARGET",
+    "name": "ob05-accept-target",
     "patch": "ob05-accept-target.patch",
-    "filter": "OutboundNotionTests.testOB31MalformedPropertiesAreTerminalAndIdentityFailuresThrow"
+    "filter": "OutboundNotionTests.testOB05UnknownTargetAndUnsetTarget"
   },
   {
-    "name": "OB12-USE-ROW-ADDRESS",
-    "patch": "ob12-use-row-address.patch",
-    "filter": "OutboundNotionTests.testOB12ExtraAddressColumnsAreIgnored"
-  },
-  {
-    "name": "OB23-SEND-BEFORE-SAVE",
-    "patch": "ob23-send-before-save.patch",
-    "filter": "OutboundIdempotencyTests.testOB23ReservationSavedBeforeFirstSend"
-  },
-  {
-    "name": "OB17-RETRY-UNCERTAIN-BODY",
-    "patch": "ob17-retry-uncertain-body.patch",
-    "filter": "OutboundSendTests.testOB17UncertainBodyIsNeverRetried"
-  },
-  {
-    "name": "OB22-IGNORE-LEDGER-ON-LOAD",
-    "patch": "ob22-ignore-ledger-on-load.patch",
-    "filter": "OutboundIdempotencyTests.testOB22LedgerSurvivesJSONReload"
-  },
-  {
-    "name": "OB27-FORGET-ALIAS",
-    "patch": "ob27-forget-alias.patch",
-    "filter": "OutboundIdempotencyTests.testOB27BodyDedupeAndAliasEditing"
-  },
-  {
-    "name": "OB27-SKIP-BODY-HASH",
-    "patch": "ob27-skip-body-hash.patch",
-    "filter": "OutboundIdempotencyTests.testOB27BodyDedupeAndAliasEditing"
-  },
-  {
-    "name": "OB39-EVICT-LEDGER",
-    "patch": "ob39-evict-ledger.patch",
-    "filter": "OutboundIdempotencyTests.testOB39FullLedgerPreservesHistory"
-  },
-  {
-    "name": "OB32-SKIP-BODY-VALIDATION",
-    "patch": "ob32-skip-body-validation.patch",
-    "filter": "OutboundPrivacyTests.testOB32BodyValidation"
-  },
-  {
-    "name": "OB38-LOG-VALUES",
-    "patch": "ob38-log-values.patch",
-    "filter": "OutboundPrivacyTests.testOB38OutboundLogsAndStateContainNoValues"
-  },
-  {
-    "name": "OB06-SKIP-FAMILY-QUALIFICATION",
+    "name": "ob06-skip-family-qualification",
     "patch": "ob06-skip-family-qualification.patch",
     "filter": "OutboundAuthorizationTests.testOB06FamilyRequiresConfiguredGroup"
   },
   {
-    "name": "OB08-SKIP-SELF-PROOF",
-    "patch": "ob08-skip-self-proof.patch",
-    "filter": "OutboundAuthorizationTests.testOB08SelfRequiresPositiveProof"
+    "name": "ob07-skip-self-proof",
+    "patch": "ob07-skip-self-proof.patch",
+    "filter": "OutboundAuthorizationTests.testOB07SelfRequiresPositiveProof"
   },
   {
-    "name": "OB10-SKIP-GUID",
+    "name": "ob08-skip-allowlist",
+    "patch": "ob08-skip-allowlist.patch",
+    "filter": "OutboundAuthorizationTests.testOB08EffectivePermissionRequired"
+  },
+  {
+    "name": "ob09-first-match",
+    "patch": "ob09-first-match.patch",
+    "filter": "OutboundAuthorizationTests.testOB09AmbiguousGUIDHoldsWithoutChoosingFirstChat"
+  },
+  {
+    "name": "ob10-skip-guid",
     "patch": "ob10-skip-guid.patch",
     "filter": "OutboundAuthorizationTests.testOB10AllPermissionGUIDsMustMatch"
   },
   {
-    "name": "OB11-SKIP-ALLOWLIST",
-    "patch": "ob11-skip-allowlist.patch",
-    "filter": "OutboundAuthorizationTests.testOB11EffectivePermissionRequired"
+    "name": "ob11-use-row-address",
+    "patch": "ob11-use-row-address.patch",
+    "filter": "OutboundPollerTests.testOB11NotionAddressColumnsCannotOverrideConfiguredTargetThroughTick"
   },
   {
-    "name": "OB37-USE-STALE-RESERVATION",
-    "patch": "ob37-use-stale-reservation.patch",
-    "filter": "OutboundRegressionTests.testOB37SelfEvidenceChangesBetweenPartsAreTerminal"
+    "name": "ob12-use-stale-reservation",
+    "patch": "ob12-use-stale-reservation.patch",
+    "filter": "OutboundAuthorizationTests.testOB12SelfEvidenceChangesBetweenPartsAreTerminal"
   },
   {
-    "name": "OB24-RETRY-INTERRUPTED-MARKER",
-    "patch": "ob24-retry-interrupted-marker.patch",
-    "filter": "OutboundIdempotencyTests.testOB24InterruptedMarkerIsTerminal"
+    "name": "ob18-retry-uncertain-body",
+    "patch": "ob18-retry-uncertain-body.patch",
+    "filter": "OutboundSendTests.testOB18UncertainBodyIsNeverRetried"
   },
   {
-    "name": "OB30-SKIP-EXPIRY",
-    "patch": "ob30-skip-expiry.patch",
-    "filter": "OutboundIdempotencyTests.testOB30ExpiredNeverStartsSend"
+    "name": "ob19-skip-sent-guid",
+    "patch": "ob19-skip-sent-guid.patch",
+    "filter": "OutboundSendTests.testOB19OutboundEchoesNeverPostWebhook"
+  },
+  {
+    "name": "ob22-skip-expiry",
+    "patch": "ob22-skip-expiry.patch",
+    "filter": "OutboundIdempotencyTests.testOB22ExpiredNeverStartsSend"
+  },
+  {
+    "name": "ob23-skip-body-validation",
+    "patch": "ob23-skip-body-validation.patch",
+    "filter": "OutboundPrivacyTests.testOB23BodyValidation"
+  },
+  {
+    "name": "ob24-forget-alias",
+    "patch": "ob24-forget-alias.patch",
+    "filter": "OutboundIdempotencyTests.testOB24PageEditingDoesNotCreateNewSend"
+  },
+  {
+    "name": "ob26-skip-body-hash",
+    "patch": "ob26-skip-body-hash.patch",
+    "filter": "OutboundIdempotencyTests.testOB26BodyDedupeExpiresAndIsPerDestination"
+  },
+  {
+    "name": "ob27-ignore-ledger-on-load",
+    "patch": "ob27-ignore-ledger-on-load.patch",
+    "filter": "OutboundIdempotencyTests.testOB27LedgerSurvivesJSONReload"
+  },
+  {
+    "name": "ob28-send-before-save",
+    "patch": "ob28-send-before-save.patch",
+    "filter": "OutboundIdempotencyTests.testOB28ReservationSavedBeforeFirstSend"
+  },
+  {
+    "name": "ob29-retry-interrupted-marker",
+    "patch": "ob29-retry-interrupted-marker.patch",
+    "filter": "OutboundIdempotencyTests.testOB29InterruptedMarkerIsTerminal"
+  },
+  {
+    "name": "ob29-resume-interrupted-body",
+    "patch": "ob29-resume-interrupted-body.patch",
+    "filter": "OutboundRecoveryTests.testOB29InterruptedBodyNeverRestarts"
+  },
+  {
+    "name": "ob31-evict-ledger",
+    "patch": "ob31-evict-ledger.patch",
+    "filter": "OutboundIdempotencyTests.testOB31FullLedgerPreservesHistory"
+  },
+  {
+    "name": "ob36-log-values",
+    "patch": "ob36-log-values.patch",
+    "filter": "OutboundPrivacyTests.testOB36OutboundLogsAndStateContainNoValues"
+  },
+  {
+    "name": "outbound-ob14-gif-success-also-text",
+    "patch": "gif-success-also-text.patch",
+    "filter": "OutboundRecoveryTests.testOB14GIFSuccessSendsImageAndBodyOnly"
+  },
+  {
+    "name": "outbound-ob15-gif-no-fallback",
+    "patch": "gif-no-fallback.patch",
+    "filter": "OutboundRecoveryTests.testOB15GIFFailureUsesCustomMarkerAndUnavailableImageSkipsLaunch"
+  },
+  {
+    "name": "outbound-ob16-gif-uncertain-fallback",
+    "patch": "gif-uncertain-fallback.patch",
+    "filter": "OutboundRecoveryTests.testOB16UncertainAndEmptyGUIDMarkerAreTerminalAcrossRestart"
+  },
+  {
+    "name": "outbound-ob17-gif-notstarted-fallback",
+    "patch": "gif-notstarted-fallback.patch",
+    "filter": "OutboundRecoveryTests.testOB17NotStartedMarkerAndBodyHoldPreserveRetryBudget"
   }
 ]

@@ -1,10 +1,74 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1720,7 +1720,6 @@
+@@ -1918,71 +1918,70 @@
+             return true
+         }
+         if !persisted.knownChats.contains(where: { $0.id == id }) {
+             persisted.knownChats.append(ChatIdentity(id: id, guid: guid))
+             if persisted.knownChats.count > 5000 {
+                 persisted.knownChats.removeFirst(persisted.knownChats.count - 5000)
+             }
+             persist()
+         }
+         if let index = allowlist.entries.firstIndex(where: { $0.id == id }) {
+             let bound = allowlist.entries[index].guid
+             if bound.isEmpty {
+                 allowlist.entries[index].guid = guid
+                 do {
+                     try allowlistStore.save(allowlist)
+                 } catch {
+                     allowlist.entries[index].guid = ""
+                     lastError = "allowlist_save_failed"
+                     log.record(level: .error, code: "allowlist_save_failed", chatID: id, guid: nil, rowid: nil)
+                 }
+             } else if bound != guid {
+                 resetForDatabaseSwap(ChatIdentity(id: id, guid: guid))
+                 return true
+             }
+         }
+         return false
+     }
  
      private func resetForDatabaseSwap(_ identity: ChatIdentity) {
          databaseGeneration &+= 1
+         for index in persisted.outbound.records.indices where persisted.outbound.records[index].stage != .terminal {
+             persisted.outbound.records[index].stage = .terminal
+             persisted.outbound.records[index].terminalCode = "outbound_db_reset"
+             persisted.outbound.records[index].terminalAt = clock.now()
+         }
 -        configGroups.resetVerification()
          persisted.knownChats = [identity]
          persisted.cursorRowID = 0
          persisted.routes = []
+         persisted.pendingSends = []
+         persisted.partialReplies = []
+         chatWaitingReplyIDs.removeAll()
+         bodyResendSavePending.removeAll()
+         holds.removeAll()
+         allowlist = .empty
+         do {
+             try allowlistStore.save(allowlist)
+         } catch {
+             log.record(level: .error, code: "allowlist_save_failed", chatID: identity.id, guid: nil, rowid: nil)
+         }
+         if !persist() { outboundPersistenceBlocked = true }
+         lastError = "messages_db_reset"
+         log.record(level: .error, code: "messages_db_reset", chatID: identity.id, guid: nil, rowid: nil)
+     }
+ 
+     private func secretCode(_ error: SecretReadError) -> String {
+         switch error {
+         case .missing: return "secret_missing"
+         case .insecureMode: return "secret_mode"
+         case .empty: return "secret_empty"
+         case .unreadable: return "secret_unreadable"
+         }
+     }
+ 
+     private func notionTokenCode(_ error: SecretReadError) -> String {
+         switch error {
+         case .missing: return "notion_token_missing"
+         case .insecureMode: return "notion_token_mode"
+         case .empty: return "notion_token_empty"
+         case .unreadable: return "notion_token_unreadable"
+         }

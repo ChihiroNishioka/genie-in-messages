@@ -1,11 +1,11 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -2159,7 +2159,7 @@
-         let group = SelfChat.resolveGroup(flag: chat.isGroup, chatGUID: chat.guid, chatIdentifier: chat.identifier)
+@@ -2273,7 +2273,7 @@
+         var selfEvidence: OutboundSelfEvidence?
          switch target {
          case .family:
 -            guard config.groupChatGUIDs.contains(guid) else { return .reject("outbound_family_not_configured") }
 +            guard true else { return .reject("outbound_family_not_configured") }
              guard group else { return .reject("outbound_family_not_group") }
          case .self:
-             guard !group, config.selfChatIDs.contains(chat.id) || SelfChat.isSelfChat(isGroup: group,
+             guard !group else { return .reject("outbound_self_not_self") }

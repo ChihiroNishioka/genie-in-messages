@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2187,7 +2187,6 @@
+         }
+         if let keyHash, let index = persisted.outbound.records.firstIndex(where: { $0.keyHash == keyHash }) {
+             guard persisted.outbound.count < OutboundLedger.capacity else { outboundLog("outbound_ledger_full"); return }
+-            persisted.outbound.records[index].pageHashes.append(pageHash)
+             let sameSignature = persisted.outbound.records[index].signature == signature
+             guard persist() else {
+                 persisted.outbound.records[index].pageHashes.removeAll { $0 == pageHash }

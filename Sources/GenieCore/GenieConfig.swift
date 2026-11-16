@@ -240,9 +240,7 @@ extension GenieConfig: Codable {
         outboundTargets = try c.decodeIfPresent([String: String].self, forKey: .outboundTargets) ?? [:]
         outboundMaxAgeSeconds = try c.decodeIfPresent(Int.self, forKey: .outboundMaxAgeSeconds) ?? 900
         guard (60...3600).contains(outboundMaxAgeSeconds),
-              outboundTargets.keys.allSatisfy({ OutboundTarget(rawValue: $0) != nil }),
-              outboundNotionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || NotionDataSourceID.canonical(outboundNotionDataSourceID) != nil else {
+              outboundTargets.keys.allSatisfy({ OutboundTarget(rawValue: $0) != nil }) else {
             throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath, debugDescription: "Invalid outbound configuration"))
         }
         selfSenderName = try c.decodeIfPresent(String.self, forKey: .selfSenderName) ?? defaults.selfSenderName

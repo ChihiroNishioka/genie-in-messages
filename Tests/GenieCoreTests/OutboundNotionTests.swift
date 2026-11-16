@@ -8,6 +8,41 @@ final class OutboundNotionTests: XCTestCase {
     private let sourceID = "11111111-1111-4111-8111-111111111111"
     private let minute = "2023-11-14T22:13:00.000Z"
 
+    func testOB05UnknownTargetAndUnsetTarget() async throws {
+        let f = OutboundHarness()
+        f.provider.config.outboundTargets.removeValue(forKey: "self")
+        var entries: [[String: Any]] = []
+        for (index, target) in ["Family", "family ", "group"].enumerated() {
+            var item = row(id: "page-unknown-\(index)", key: "pigeon-demo-00\(index)")
+            var properties = item["properties"] as! [String: Any]
+            properties["target"] = property("rich_text", target)
+            properties["text"] = property("rich_text", "未知宛先\(index)")
+            item["properties"] = properties
+            entries.append(item)
+        }
+        var unset = row(id: "page-unset", key: "pigeon-demo-004")
+        var unsetProperties = unset["properties"] as! [String: Any]
+        unsetProperties["target"] = property("rich_text", "self")
+        unset["properties"] = unsetProperties
+        entries.append(unset)
+        entries.append(row(id: "page-valid", key: "pigeon-demo-005"))
+        let transport = ScriptedNotion(responses: [response(entries)])
+        let source = NotionOutboundSource(dataSourceID: sourceID,
+            secrets: StaticSecret(webhook: "dummy", reply: nil, notion: "dummy"), clock: f.h.clock,
+            pageLimit: 100, transport: transport, pace: NotionPace())
+        let e = try GenieEngine(configProvider: f.provider, initialConfig: f.provider.config,
+            stateStore: f.h.state, allowlistStore: f.h.allow, replySource: f.h.replies,
+            httpReplySource: f.h.httpReplies, outboundSource: source, sender: f.h.sender,
+            markerImage: f.h.markerImage, webhook: f.h.webhook, secrets: f.h.secrets,
+            lock: f.h.lock, clock: f.h.clock, log: f.h.log, stop: f.h.stop)
+        await e.showChats(f.chats)
+        _ = await e.pollOutbound()
+        XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.file(expectedGIFPath()), .text("予定のお知らせ")])
+        XCTAssertEqual(f.h.state.state.outbound.records.filter { $0.terminalCode == "outbound_unknown_target" }.count, 3)
+        XCTAssertTrue(f.h.state.state.outbound.records.contains { $0.terminalCode == "outbound_target_unset" })
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     func testOB11ExtraAddressColumnsAreIgnored() throws {
         var row = row()
         var props = row["properties"] as! [String: Any]

@@ -21,7 +21,6 @@ final class OutboundConfigTests: XCTestCase {
             "{\"outbound_max_age_seconds\":3601}",
             "{\"outbound_max_age_seconds\":900.5}",
             "{\"outbound_max_age_seconds\":\"900\"}",
-            "{\"outbound_notion_data_source_id\":\"invalid\"}",
         ] {
             XCTAssertThrowsError(try JSONDecoder().decode(GenieConfig.self, from: Data(json.utf8)))
         }
@@ -29,6 +28,14 @@ final class OutboundConfigTests: XCTestCase {
         let config = try JSONDecoder().decode(GenieConfig.self, from: Data(json.utf8))
         XCTAssertEqual(config.outboundTargets, ["self": "iMessage;-;owner@example.com"])
         XCTAssertEqual(config.outboundMaxAgeSeconds, 60)
+    }
+
+    func testOB02InvalidSourceIDDecodesWithoutDisablingOtherConfiguration() throws {
+        let json = "{\"reply_fetch_url\":\"https://example.com/replies\",\"outbound_notion_data_source_id\":\"invalid\"}"
+        let config = try JSONDecoder().decode(GenieConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(config.replyFetchURL, "https://example.com/replies")
+        XCTAssertEqual(config.outboundNotionDataSourceID, "invalid")
+        XCTAssertTrue(config.outboundEnabled)
     }
 
     func testOB02CanonicalSourceConflictOnlyDisablesOutbound() throws {
