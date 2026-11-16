@@ -32,8 +32,9 @@ final class GifMarkerTests: XCTestCase {
         XCTAssertEqual(arguments, ["send", "--chat-id", "7", "--file", path, "--json"])
         XCTAssertEqual(arguments?.count, 6)
         XCTAssertFalse(arguments?.contains("--text") ?? true)
-        XCTAssertEqual(arguments?[4], path)
         guard let arguments else { XCTFail("file arguments missing"); return }
+        guard arguments.count == 6 else { return }
+        XCTAssertEqual(arguments[4], path)
         let output = await ProcessRunner.run(executable: "/bin/echo", arguments: arguments, timeout: 2)
         XCTAssertEqual(output.stdout, arguments.joined(separator: " ") + "\n")
     }

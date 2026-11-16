@@ -1,6 +1,15 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1074,7 +1074,7 @@
+@@ -1199,25 +1199,25 @@
+         if paused || stop.isStopped {
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
              return
          }
          let generation = databaseGeneration
@@ -8,3 +17,13 @@
 +        let locked = ScreenLockState.unlocked
          noteLock(locked)
          guard generation == databaseGeneration else { return }
+         refreshConfig()
+         if paused || stop.isStopped {
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+             return
+         }
+         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
+         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
+             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)

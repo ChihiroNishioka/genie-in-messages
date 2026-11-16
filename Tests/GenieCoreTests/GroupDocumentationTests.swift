@@ -103,9 +103,10 @@ extension GroupDocumentationTests {
     func testSpecRecordsGifMarkerDecisionAndHardwareChecks() throws {
         let spec = try String(contentsOf: repoRoot().appendingPathComponent("SPEC.md"), encoding: .utf8)
         let decisions = spec.components(separatedBy: "\n").filter { $0.hasPrefix("20. ") || $0.hasPrefix("22. ") }
+        // Freeze the pre-GIF decisions from 75a37d1 without their trailing newlines.
         XCTAssertEqual(decisions.map { SHA256.hex(Data($0.utf8)) }, [
-            "41ab5f96553bee5f0e3b5a52edd5970e89409d0b5d089e362913a944f722221e",
-            "f76c03cff3dbd863566d0db281ba92a88be544a222aeb11ef48552dcc818fd9b",
+            "b7ba5fb0a7db08fc90c6b06cdf9c11763044d3556353dda2ba3a3d7a724720ab",
+            "d0c722105160b1fee4253c5811d9b83c0b4cd4d7777babd102d3bcff637aaa22",
         ])
         XCTAssertTrue(spec.contains("24. 1通目の GIF"))
         let sectionNine = try XCTUnwrap(spec.components(separatedBy: "## 9. 実機で未確認のこと\n").dropFirst().first)
