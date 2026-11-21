@@ -1173,5 +1173,10 @@
     "name": "dv17-lamp-stale-send-permission",
     "patch": "dv17-lamp-stale-send-permission.patch",
     "filter": "DoveReplyTests.testDV17LampRechecksPermissionAfterSavingSendIntent"
+  },
+  {
+    "name": "dv18-retry-holds-ignores-db-reset",
+    "patch": "dv18-retry-holds-ignores-db-reset.patch",
+    "filter": "DoveReplyTests.testDV13DatabaseSwapDiscardsRemainingReadyHolds"
   }
 ]

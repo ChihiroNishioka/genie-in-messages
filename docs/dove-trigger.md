@@ -109,6 +109,7 @@ ROWID（`dove_chat_ids`）にしない理由: Messages の DB が入れ替わる
 8. 先頭が 🪔 → lamp。ここから先は今の処理のまま
 9. 先頭が 🐦（5.2）→ dove の候補
    1. chat_id が dove のトークでなければ `ignoredNoSignal`（dove 以外のトークでは、🐦 はただの文字）
+      一覧を取得できないあいだは dove のトークと判定できないため、その 🐦 は `ignoredNoSignal` で処理済みになります（17章の既知の問題）。
    2. 自分宛ての受信側を無視する既存の判定（`SelfChat.ignoresInboundEcho`）を当てる
    3. `request_text` が空（`TextNormalizer.isBlank`）なら、新しい `IngestResult.ignoredEmptyDove`（finish して処理済みにする）
    4. guid が空なら `ignoredMissingDoveGUID` で処理を終える。POST と route 保存は行わない
@@ -344,7 +345,7 @@ U+1F426 を含む値は無効にします（4.3）。🐦 を目印にすると�
 | 実装 | dove の1通目 `🐦`、本文の 🐦 の除去、dove のトークの確認、`HeldSend.origin` | `Engine.swift`、`ReplyComposer.swift` |
 | 実装 | dove のトークへの lamp の本文の検査、外部依頼の `outbound_dove_body` | `Engine.swift` |
 | 実装 | `reply_marker` で U+1F426 を無効にする | `GenieConfig.swift` |
-| 実装 | テスト、変異16本、manifest | `Tests/GenieCoreTests`、`tools/mutants` |
+| 実装 | テスト、変異17本、manifest | `Tests/GenieCoreTests`、`tools/mutants` |
 | 実装 | 文書: SPEC.md、README.md、config.example.json、この文書、docs/outbound-send.md の追記 | — |
 | 設計のみ | 受け口ルーチンと伝書鳩のプロンプト（7章） | Grok Bot 側。別の作業 |
 | 設計のみ | メニューと snapshot に dove のトークを出す | — |
@@ -381,7 +382,7 @@ U+1F426 を含む値は無効にします（4.3）。🐦 を目印にすると�
 | DV01 | `dove_chat_guids` が無い・null なら空。前後に空白がある値、空の値、重複を含む設定でも、登録したグループで依頼を受け付ける。文字列でない要素があれば `config_unreadable` を記録し、直前の設定で受け付ける。`config.example.json` を読むと `[]` | `D.testDV01ConfigDefaultsAndInvalidReload`、`G.testExampleUsesEmptyGroupsAndDefaultReplyMarker` | なし |
 | DV02 | `dove_chat_guids` が空なら、chat 7 の家族の 🐦 は `ignoredNoSignal` で POST 0回。同じトークの 🪔 は `trigger:"lamp"` で POST される | `D.testDV02EmptyDoveConfigLeavesLampEnabled` | なし |
 | DV03 | `dove_chat_guids` にあるが `group_chat_guids` に無いトーク（メニューでは許可済み）の 🐦 は POST 0回。`dove_chat_not_in_groups` は1回だけで、detail は `1`、ログに guid は無い。`group_chat_guids` に足すと POST される | `D.testDV03DoveNeedsGroupConfig` | なし |
-| DV04 | chat 8、chat 42、1対1の 🐦 は `ignoredNoSignal` で POST 0回。chat 7 の 🐦 は POST 1回 | `D.testDV04DoveOnlyInDoveChats` | dv09 |
+| DV04 | chat 8、chat 42、1対1の 🐦 は `ignoredNoSignal` で POST 0回。chat 7 の 🐦 は POST 1回。 | `D.testDV04DoveOnlyInDoveChats` | dv09 |
 | DV05 | `おはよう🐦`、`今日は 🐦 だ`、`🐦‍🔥 x`、`🐦‍⬛ x` は POST 0回。`" \u{200B}🐦質問"` は POST 1回。編集・取り消し・リアクションと、自分宛てとして設定したトークでの他メンバーの依頼は無視する | `D.testDV05OnlyLeadingDoveTriggers`、`D.testDV05DoveHonorsMutationReactionAndForcedSelf` | dv01 |
 | DV06 | `"🐦\u{FE0F}\u{3000} て\u{3099}す\n続き"` で `request_text == "です\n続き"`、`text` は NFC の全文 | `D.testDV06RequestTextStripsVariationSelectorAndSpaces` | dv02 |
 | DV07 | dove の payload のキーの集合と値が 6.3 と一致する（`trigger:"dove"`、`request_text`、URL は `webhook_url`、Bearer は `secret`）。家族には通常経路の `sender_handle` があり、本人には無い | `D.testDV07DovePayloadExactKeys` | dv08 |
@@ -390,7 +391,7 @@ U+1F426 を含む値は無効にします（4.3）。🐦 を目印にすると�
 | DV10 | dove の route の行を tick で取ると、`outgoing` は「文字 `🐦`（1スカラー）、本文」の2件だけ。GIF が使えても `sendFile` は0回で、独自の `reply_marker` は使わない | `R.testDV10DoveReplyIsTextBirdThenBody` | dv11 |
 | DV11 | chat 7 の 🪔 の返事は `expectedGIFOutgoing` のとおり。GIF 失敗時には `reply_marker` の文字 | `R.testDV11LampReplyInDoveChatKeepsGIF`、`GifMarkerTests.testImageFailedFallsBackToConfiguredMarker` | dv07 |
 | DV12 | dove の route に対して、行の `chat_id` が 42（許可あり）なら送信0回で `reply_chat_mismatch`。`chat_id` が無い行は chat 7 にだけ送る。Notion の実デコードで欠落・一致・別トーク・不正数値を確認する | `R.testDV12DoveReplyNeverLeavesItsChat` | dv05 |
-| DV13 | 取り込んだあと `dove_chat_guids` から外すと（`group_chat_guids` には残す）、`reply_dove_chat_disabled` で送信0回。ロック確認後または1通目の後に外すと、次の送信を止める。一覧で非グループと確定した返信は終端にし、グループに戻っても送り直さない。一覧欠落からは照合回復後に再開し、DB 交換では古い route を使わない。GIF に切り替えて送ることもない | `R.testDV13DoveReplyHoldsForMissingListAndResumes`、`R.testDV13NonGroupDoveReplyIsTerminal`、`R.testDV13DoveRevocationStopsBeforeMarkerOrBody`、`R.testDV13LockReturnRevocationAndDatabaseSwap`、`R.testDV13PersistedDoveRouteRejectsReusedChatIDWithoutKnownChat` | なし |
+| DV13 | 取り込んだあと `dove_chat_guids` から外すと（`group_chat_guids` には残す）、`reply_dove_chat_disabled` で送信0回。ロック確認後または1通目の後に外すと、次の送信を止める。一覧で非グループと確定した返信は終端にし、グループに戻っても送り直さない。一覧欠落からは照合回復後に再開し、DB 交換では古い route と再開待ちの保留を破棄する。GIF に切り替えて送ることもない | `R.testDV13DoveReplyHoldsForMissingListAndResumes`、`R.testDV13NonGroupDoveReplyIsTerminal`、`R.testDV13DoveRevocationStopsBeforeMarkerOrBody`、`R.testDV13LockReturnRevocationAndDatabaseSwap`、`R.testDV13PersistedDoveRouteRejectsReusedChatIDWithoutKnownChat`、`R.testDV13DatabaseSwapDiscardsRemainingReadyHolds`、`R.testDV13ReadyHoldsContinueInSameDatabase` | dv18 |
 | DV14 | DV10 のあと、1通目の guid で `🐦`（`is_from_me=true`）を ingest すると `ignoredSentGUID`（種類まで一致）で POST 0回。本文の echo も `ignoredSentGUID` | `R.testDV14OwnMarkerEchoStopsAtSentGUID` | dv03 |
 | DV15 | 新しい guid、指紋の窓より後（300秒後）に、`"🐦\u{FE0F}"` を本人からと家族から ingest すると、どちらも `ignoredEmptyDove` で POST 0回 | `D.testDV15EmptyDoveEchoNeverPosts` | dv04 |
 | DV16 | 行の本文が `"🐦 🧞‍♂️ 答え"` なら2通目は `"答え"`、呼び名があれば `"{name}へ：答え"`。`"🐦"` だけなら `reply_empty_body`、`"🐦 🪔 x"` なら `reply_still_matches_signal` で、どちらも送信0回 | `R.testDV16DoveBodyAndAddressee` | なし |
@@ -425,7 +426,7 @@ U+1F426 を含む値は無効にします（4.3）。🐦 を目印にすると�
 
 通常経路の payload のキーを数えたり、完全に比べたりしている既存テストは、`trigger:"lamp"` を足した期待値に直します。直したテストは PR の本文に並べます。期待値を直したあとも、既存の変異がすべて `KILLED` であることを確かめます。
 
-### 14.4 新しい変異（16本）
+### 14.4 新しい変異（17本）
 
 仕様案では `dv10` を、`group_chat_guids` に無くても `dove_chat_guids` だけで受信できる変異に割り当てていました。`dv09` は `isDoveChat` を迂回するため、グループ設定との照合も外します。DV03 は `testDV03DoveNeedsGroupConfig` で直接確認し、専用の `dv10` は欠番です。
 
@@ -447,6 +448,7 @@ U+1F426 を含む値は無効にします（4.3）。🐦 を目印にすると�
 | dv15-outbound-skip-dove-recheck | 保留や印のあとに有効になった dove の宛先へ本文を送る | `DoveReplyTests.testDV20OutboundRechecksAfterHoldAndMarker` |
 | dv16-webhook-exception-ignores-db-reset | DB 交換後に最終 POST が例外で戻っても旧行を保存する | `DoveTriggerTests.testDV21DatabaseSwapDiscardsFinalWebhookException` |
 | dv17-lamp-stale-send-permission | 🪔 の返事の送信直前に設定を再読込しても、許可と GUID を再読込前の設定で照合する | `DoveReplyTests.testDV17LampRechecksPermissionAfterSavingSendIntent` |
+| dv18-retry-holds-ignores-db-reset | DB 交換前に取り出した後続の保留を処理する | `DoveReplyTests.testDV13DatabaseSwapDiscardsRemainingReadyHolds` |
 
 完了の条件
 
@@ -470,4 +472,6 @@ U+1F426 を含む値は無効にします（4.3）。🐦 を目印にすると�
 
 ## 17. 残り
 
-- 既存の問題として、DB 交換後に旧 watch の後続行でカーソルが進むことがあります。lamp 経路でも同じ挙動です。
+- 既存の問題として、DB 交換後に旧 watch の後続行でカーソルが進むことがあります（`WatchSession.shouldStopApplying` が `.ignoredDatabaseReset` で止まらない）。base（feat/outbound-send）からあり、lamp と Job も同じです。この PR の範囲外で、オーナーの判断を待っています。
+- 既知の問題（この PR では直していません）：一覧の取得に失敗しているあいだ（起動直後の初回の失敗や、webhook の再試行中の失敗を含む）に来た 🐦 は、dove のトークと判定できず、処理済みになります。一覧が戻っても、その依頼は処理されません。共通の watch を止めて待つ方法は、ほかのトークの 🪔 と Job の受信まで止めてしまうため採りませんでした。直すには、トークごとに再処理を待てる仕組みが要ります。
+- 既知の問題：受け口が `reply_id` を `dove:<受信 guid>` にすると、生の受信 guid が state（処理済みの ID、送信意図、Notion のカーソル）に複製されます。保存先を11章に書くか、`reply_id` の形を変える必要があります。

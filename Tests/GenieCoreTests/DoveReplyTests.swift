@@ -82,6 +82,68 @@ final class DoveReplyTests: XCTestCase {
         XCTAssertEqual(f.h.sender.outgoing.map(\.item), [.text("🐦"), .text("answer")])
     }
 
+    func testDV13DatabaseSwapDiscardsRemainingReadyHolds() async throws {
+        try await checkReadyHolds(swapDatabase: true)
+    }
+
+    func testDV13ReadyHoldsContinueInSameDatabase() async throws {
+        try await checkReadyHolds(swapDatabase: false)
+    }
+
+    private func checkReadyHolds(swapDatabase: Bool) async throws {
+        let f = try DoveFixture()
+        f.settings["dove_chat_guids"] = [DoveFixture.group, DoveFixture.other]
+        let replacementGUID = "iMessage;+;chat000000000000000004"
+        var recoveredChats = f.chats
+        recoveredChats[2].guid = replacementGUID
+        let e = try f.engine()
+        let p = f.poller(e, reads: [
+            .parsed(.init(chats: f.chats, failedLineCount: 0)),
+            .parsed(.init(chats: swapDatabase ? [f.chats[0]] : f.chats, failedLineCount: 0)),
+            .parsed(.init(chats: swapDatabase ? recoveredChats : f.chats, failedLineCount: 0)),
+        ])
+        _ = await p.tick()
+        let first = await f.ingest(e, "🐦 first", id: 1, chat: 7)
+        let second = await f.ingest(e, "🐦 second", id: 2, chat: 8)
+        XCTAssertEqual(first, .delivered)
+        XCTAssertEqual(second, .delivered)
+        f.reply("first answer", chat: 7, id: 1)
+        let firstReply = f.h.replies.pages[0].replies
+        f.reply("second answer", chat: 8, id: 2)
+        f.h.replies.pages = [.init(replies: firstReply + f.h.replies.pages[0].replies, nextCursor: nil)]
+        f.h.lock.locked = true
+        f.advance()
+        _ = await p.tick()
+        let held = await e.snapshot().heldCount
+        XCTAssertEqual(held, 2)
+        XCTAssertTrue(f.h.sender.outgoing.isEmpty)
+
+        f.h.lock.locked = false
+        if swapDatabase {
+            let swapLine = watchLine(id: 3, guid: "incoming-3", chat: 42, fromMe: true,
+                                     text: "database swap", chatGUID: replacementGUID)
+            f.h.sender.onSend = {
+                guard f.h.sender.outgoing.count == 1 else { return }
+                let result = await e.ingestWatchLine(swapLine)
+                XCTAssertEqual(result, .ignoredDatabaseReset)
+            }
+        }
+        defer { f.h.sender.onSend = nil }
+        await p.requestChatsRefresh()
+        f.advance()
+        _ = await p.tick()
+        let expected: [FakeOutgoing] = swapDatabase
+            ? [.text("🐦")]
+            : [.text("🐦"), .text("first answer"), .text("🐦"), .text("second answer")]
+        XCTAssertEqual(f.h.sender.outgoing.map(\.item), expected)
+        XCTAssertEqual(f.h.sender.outgoing.map(\.chatID), swapDatabase ? [7] : [7, 7, 8, 8])
+
+        await p.requestChatsRefresh()
+        f.advance()
+        _ = await p.tick()
+        XCTAssertEqual(f.h.sender.outgoing.map(\.item), expected)
+    }
+
     func testDV13NonGroupDoveReplyIsTerminal() async throws {
         let f = try DoveFixture()
         let guid = "sample-family-chat"

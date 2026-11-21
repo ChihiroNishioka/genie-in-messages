@@ -611,10 +611,14 @@ package actor GenieEngine {
             ready.append(hold)
         }
         holds = kept
+        let generation = databaseGeneration
         for (index, hold) in ready.enumerated() {
-            if stop.isStopped || !directoryChecked {
-                let remaining = Array(ready[index...])
-                holds.append(contentsOf: remaining)
+            let isCurrentGeneration = generation == databaseGeneration
+            if !isCurrentGeneration || stop.isStopped || !directoryChecked {
+                let remaining = ready[index...]
+                if isCurrentGeneration {
+                    holds.append(contentsOf: remaining)
+                }
                 for item in remaining {
                     inFlightReplyIDs.remove(item.replyID)
                     inFlightReplyChats.removeValue(forKey: item.replyID)
@@ -1895,7 +1899,11 @@ package actor GenieEngine {
     }
 
     private func isDoveChat(_ id: Int64, guid: String? = nil) -> Bool {
-        guard directoryChecked, let expected = configGroups.resolved[id],
+        directoryChecked && hasDoveChatAuthorization(id, guid: guid)
+    }
+
+    private func hasDoveChatAuthorization(_ id: Int64, guid: String?) -> Bool {
+        guard let expected = configGroups.resolved[id],
               config.doveChatGUIDs.contains(expected) else { return false }
         return configGroups.permitsReceive(id, guid: guid)
     }
