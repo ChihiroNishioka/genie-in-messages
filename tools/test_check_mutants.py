@@ -77,6 +77,22 @@ class CheckMutantsTests(unittest.TestCase):
         self.assertEqual(classify_test(1, macos, bare), "KILLED")
         self.assertEqual(classify_test(1, prefix, bare), "RUN_FAILED")
 
+    def test_classify_reply_marker_caught_error(self):
+        classify_test = self.require_function("classify_test")
+        output = (
+            '/x/LampIconTests.swift:522: error: -[GenieCoreTests.LampIconTests testAssembleCopiesReplyMarkerGif] : failed: caught error: "Error Domain=NSCocoaErrorDomain Code=260 ..."\n'
+            "Test Case '-[GenieCoreTests.LampIconTests testAssembleCopiesReplyMarkerGif]' failed (21.181 seconds)."
+        )
+        self.assertEqual(classify_test(1, output, "testAssembleCopiesReplyMarkerGif"), "RUN_FAILED")
+
+    def test_classify_reply_marker_missing_assertion(self):
+        classify_test = self.require_function("classify_test")
+        output = (
+            "/x/LampIconTests.swift:522: error: -[GenieCoreTests.LampIconTests testAssembleCopiesReplyMarkerGif] : failed - reply-marker.gif がありません\n"
+            "Test Case '-[GenieCoreTests.LampIconTests testAssembleCopiesReplyMarkerGif]' failed (21.181 seconds)."
+        )
+        self.assertEqual(classify_test(1, output, "testAssembleCopiesReplyMarkerGif"), "KILLED")
+
 
 if __name__ == "__main__":
     unittest.main()
