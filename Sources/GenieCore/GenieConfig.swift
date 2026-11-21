@@ -25,6 +25,25 @@ package struct GenieConfig: Equatable, Sendable {
     package var chatsTimeoutSeconds: Double
     package var replyPageLimit: Int
     package var notionDataSourceID: String
+    package var outboundNotionDataSourceID: String = ""
+    package var outboundTargets: [String: String] = [:]
+    package var outboundMaxAgeSeconds: Int = 900
+
+    package var outboundSourceConflict: Bool {
+        guard let outbound = NotionDataSourceID.canonical(outboundNotionDataSourceID),
+              let reply = NotionDataSourceID.canonical(notionDataSourceID) else { return false }
+        return outbound == reply
+    }
+
+    package var outboundTargetCollision: Bool {
+        guard let family = outboundTargets["family"], let own = outboundTargets["self"],
+              !family.isEmpty, !own.isEmpty else { return false }
+        return family.caseInsensitiveCompare(own) == .orderedSame
+    }
+
+    package var outboundEnabled: Bool {
+        !outboundNotionDataSourceID.isEmpty && !outboundSourceConflict
+    }
     /// 自分の webhook 表示名。空なら `me`。
     package var selfSenderName: String
     /// ハンドルから表示名。反応の可否には使わない。
@@ -95,6 +114,11 @@ package struct GenieConfig: Equatable, Sendable {
         copy.chatsTimeoutSeconds = max(1, copy.chatsTimeoutSeconds)
         copy.replyPageLimit = max(1, copy.replyPageLimit)
         copy.notionDataSourceID = copy.notionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.outboundNotionDataSourceID = copy.outboundNotionDataSourceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.outboundTargets = copy.outboundTargets.reduce(into: [:]) { result, entry in
+            let guid = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !guid.isEmpty { result[entry.key] = guid }
+        }
         let selfName = copy.selfSenderName.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.selfSenderName = TextNormalizer.isBlank(selfName) ? "me" : selfName
         copy.senderNameKeys = Self.indexNames(copy.senderNames)
@@ -177,6 +201,9 @@ extension GenieConfig: Codable {
         case chatsTimeoutSeconds = "chats_timeout_seconds"
         case replyPageLimit = "reply_page_limit"
         case notionDataSourceID = "notion_data_source_id"
+        case outboundNotionDataSourceID = "outbound_notion_data_source_id"
+        case outboundTargets = "outbound_targets"
+        case outboundMaxAgeSeconds = "outbound_max_age_seconds"
         case selfSenderName = "self_sender_name"
         case senderNames = "sender_names"
         case selfChatIDs = "self_chat_ids"
@@ -209,6 +236,13 @@ extension GenieConfig: Codable {
         chatsTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .chatsTimeoutSeconds) ?? defaults.chatsTimeoutSeconds
         replyPageLimit = try c.decodeIfPresent(Int.self, forKey: .replyPageLimit) ?? defaults.replyPageLimit
         notionDataSourceID = try c.decodeIfPresent(String.self, forKey: .notionDataSourceID) ?? defaults.notionDataSourceID
+        outboundNotionDataSourceID = try c.decodeIfPresent(String.self, forKey: .outboundNotionDataSourceID) ?? ""
+        outboundTargets = try c.decodeIfPresent([String: String].self, forKey: .outboundTargets) ?? [:]
+        outboundMaxAgeSeconds = try c.decodeIfPresent(Int.self, forKey: .outboundMaxAgeSeconds) ?? 900
+        guard (60...3600).contains(outboundMaxAgeSeconds),
+              outboundTargets.keys.allSatisfy({ OutboundTarget(rawValue: $0) != nil }) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath, debugDescription: "Invalid outbound configuration"))
+        }
         selfSenderName = try c.decodeIfPresent(String.self, forKey: .selfSenderName) ?? defaults.selfSenderName
         senderNames = try Self.decodeSenderNames(c)
         selfChatIDs = try Self.decodeSelfChatIDs(c)

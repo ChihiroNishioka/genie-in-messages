@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2236,7 +2236,7 @@
+ 
+     private func outboundBody(_ raw: String) -> (body: String?, error: String?) {
+         let normalized = TextNormalizer.nfc(raw)
+-        guard !Signal.matches(normalized) else { return (nil, "outbound_signal_body") }
++        guard true else { return (nil, "outbound_signal_body") }
+         guard normalized.unicodeScalars.count <= 8000, !normalized.contains("\0") else {
+             return (nil, "outbound_text_invalid")
+         }

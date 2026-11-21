@@ -16,6 +16,18 @@ private enum MarkerAttempt {
     }
 }
 
+private enum OutboundSelfEvidence: Equatable {
+    case participant(String)
+    case selfChatIDs
+
+    var kind: OutboundSelfEvidenceKind {
+        switch self {
+        case .participant: .participant
+        case .selfChatIDs: .selfChatIDs
+        }
+    }
+}
+
 package actor GenieEngine {
     private let configProvider: any ConfigProviding
     private var config: GenieConfig
@@ -24,6 +36,13 @@ package actor GenieEngine {
     private let allowlistStore: any AllowlistPersisting
     private var allowlist: AllowlistState
     private let httpReplySource: (any ReplySource)?
+    private let outboundSource: any OutboundSource
+    private var outboundPersistenceBlocked = false
+    private var outboundFetching = false
+    private var outboundNextFetchAt: Date?
+    private var outboundPollWanted = true
+    private var outboundDirectory: [ChatSummary] = []
+    private var outboundParticipantEvidence: [String: String] = [:]
     private let replySource: any ReplySource
     private let sender: any MessageSending
     private let markerImage: any MarkerImageLocating
@@ -50,6 +69,7 @@ package actor GenieEngine {
     private var inFlightReplyChats: [String: Int64] = [:]
     private var chatWaitingReplyIDs: Set<String> = []
     private var bodyResendSavePending: Set<String> = []
+    private var outboundIntentFingerprints: [String: (String, Date)] = [:]
     private var databaseGeneration = 0
 
     private struct DirectoryChat {
@@ -84,6 +104,7 @@ package actor GenieEngine {
         allowlistStore: any AllowlistPersisting,
         replySource: any ReplySource,
         httpReplySource: (any ReplySource)? = nil,
+        outboundSource: any OutboundSource = EmptyOutboundSource(),
         sender: any MessageSending,
         markerImage: any MarkerImageLocating,
         webhook: any WebhookPosting,
@@ -101,6 +122,7 @@ package actor GenieEngine {
         self.allowlist = try allowlistStore.load()
         self.httpReplySource = httpReplySource
         self.replySource = replySource
+        self.outboundSource = outboundSource
         self.sender = sender
         self.markerImage = markerImage
         self.webhook = webhook
@@ -110,6 +132,7 @@ package actor GenieEngine {
         self.log = log
         self.stop = stop
         var loaded = persisted
+        self.outboundPersistenceBlocked = !Self.settleOutboundInterrupted(state: &loaded, store: stateStore, log: log, now: clock.now())
         Self.settleInterrupted(state: &loaded, store: stateStore, log: log, now: clock.now(), window: config.rateLimitWindowSeconds)
         persisted = loaded
     }
@@ -119,6 +142,7 @@ package actor GenieEngine {
         self.paused = paused
         if wasPaused && !paused {
             replyPollWanted = true
+            outboundPollWanted = true
         }
     }
 
@@ -255,6 +279,7 @@ package actor GenieEngine {
 
     package func reconcileChats(_ chats: [ChatSummary]) {
         noteFetchSuccess()
+        outboundDirectory = chats
         var facts: [Int64: DirectoryChat] = [:]
         for chat in chats {
             facts[chat.id] = DirectoryChat(
@@ -272,7 +297,7 @@ package actor GenieEngine {
         directoryGUIDs = guids
         let becameChecked = !directoryChecked
         directoryChecked = true
-        if becameChecked { replyPollWanted = true }
+        if becameChecked { replyPollWanted = true; outboundPollWanted = true }
         var reset = false
         for chat in chats where !chat.guid.isEmpty {
             if observeChat(id: chat.id, guid: chat.guid) {
@@ -568,6 +593,7 @@ package actor GenieEngine {
     }
 
     package func retryHolds() async {
+        retryOutboundDeadLetters()
         if stop.isStopped { return }
         guard directoryChecked else { return }
         if paused { return }
@@ -595,7 +621,7 @@ package actor GenieEngine {
                 }
                 return
             }
-            if clock.now().timeIntervalSince(hold.createdAt) > config.routeTTLSeconds {
+            if !isOutbound(hold.replyID) && clock.now().timeIntervalSince(hold.createdAt) > config.routeTTLSeconds {
                 inFlightReplyIDs.remove(hold.replyID)
                 inFlightReplyChats.removeValue(forKey: hold.replyID)
                 markReplyHandled(hold.replyID)
@@ -990,6 +1016,7 @@ package actor GenieEngine {
         replyID: String, chatID: Int64, body: String, attempts: Int, pauseReason: HoldReason,
         createdAt: Date, originGUID: String
     ) async {
+        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
@@ -1006,6 +1033,7 @@ package actor GenieEngine {
         noteLock(locked)
         guard generation == databaseGeneration else { return }
         refreshConfig()
+        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
@@ -1030,7 +1058,7 @@ package actor GenieEngine {
                 persisted.haltedChatIDs.append(chatID)
                 persist()
                 lastError = "rate_limited"
-                log.record(level: .error, code: "rate_limited", chatID: chatID, guid: nil, rowid: nil)
+                sendLog(replyID: replyID, level: .error, code: "rate_limited", chatID: chatID, guid: nil, rowid: nil)
             }
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: .rateLimited,
                  attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
@@ -1045,13 +1073,14 @@ package actor GenieEngine {
             attempt = .image(path: path)
         case .unavailable(let reason):
             if noticeLog.shouldLog("marker_image_unavailable") {
-                log.record(level: .warning, code: "marker_image_unavailable", chatID: chatID,
+                sendLog(replyID: replyID, level: .warning, code: "marker_image_unavailable", chatID: chatID,
                            guid: nil, rowid: nil, detail: reason.rawValue)
             }
             attempt = .text(config.replyMarker)
         }
 
         while true {
+            if isOutbound(replyID) { refreshConfig() }
             let text: String
             if case .text(let marker) = attempt {
                 text = marker
@@ -1091,6 +1120,12 @@ package actor GenieEngine {
                 return
             }
 
+            guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else {
+                releaseRate(chatID: chatID, at: reservedAt)
+                rollbackIntent(replyID: replyID)
+                persist()
+                return
+            }
             let result: Result<SendReceipt, SendFailure>
             do {
                 switch attempt {
@@ -1102,12 +1137,19 @@ package actor GenieEngine {
             } catch {
                 result = .failure(.failed)
             }
+            if isOutbound(replyID) { refreshConfig() }
             if generation != databaseGeneration {
                 if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
                 finishIntent(replyID: replyID)
                 markReplyHandled(replyID)
                 persist()
                 logDroppedForDatabaseReset(detail: "marker")
+                return
+            }
+            if let index = outboundRecordIndex(replyID),
+               persisted.outbound.records[index].sourceHash != outboundSourceHash() || (isOutbound(replyID) && !config.outboundEnabled) {
+                if case .success(let receipt) = result { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+                terminateOutbound(replyID, code: "outbound_source_changed")
                 return
             }
             switch result {
@@ -1122,7 +1164,7 @@ package actor GenieEngine {
                          createdAt: createdAt, originGUID: originGUID)
                     return
                 }
-                log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+                sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
                            rowid: receipt.id, detail: attempt.detail)
                 await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
                                pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
@@ -1130,17 +1172,17 @@ package actor GenieEngine {
             case .success:
                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
                     failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
-                    detail: attempt.detail)
+                    detail: attempt.detail, rateAt: reservedAt)
                 return
             case .failure(.failed) where attempt.kind == .image:
-                log.record(level: .warning, code: "marker_image_failed", chatID: chatID,
+                sendLog(replyID: replyID, level: .warning, code: "marker_image_failed", chatID: chatID,
                            guid: nil, rowid: nil)
                 rollbackIntent(replyID: replyID)
                 attempt = .text(config.replyMarker)
             case .failure(let failure):
                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
                     failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
-                    detail: attempt.detail)
+                    detail: attempt.detail, rateAt: reservedAt)
                 return
             }
         }
@@ -1148,12 +1190,20 @@ package actor GenieEngine {
 
     private func handleMarkerFailure(
         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
-        createdAt: Date, originGUID: String, detail: String = "marker"
+        createdAt: Date, originGUID: String, detail: String = "marker", rateAt: Date? = nil
     ) async {
+        if isOutbound(replyID) && failure != .notStarted {
+            if failure == .failed {
+                let at = persisted.pendingSends.first(where: { $0.replyID == replyID })?.at ?? rateAt
+                if let at { releaseRate(chatID: chatID, at: at) }
+            }
+            terminateOutbound(replyID, code: failure == .failed ? "outbound_send_failed" : "outbound_send_uncertain", deadLetter: true)
+            return
+        }
         let pending = persisted.pendingSends.first { $0.replyID == replyID }
         switch failure {
         case .notStarted:
-            if let pending { releaseRate(chatID: chatID, at: pending.at) }
+            if let at = pending?.at ?? rateAt { releaseRate(chatID: chatID, at: at) }
             rollbackIntent(replyID: replyID)
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
@@ -1176,7 +1226,7 @@ package actor GenieEngine {
                      createdAt: createdAt, originGUID: originGUID)
                 persist()
             }
-            log.record(level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
+            sendLog(replyID: replyID, level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
         case .uncertain:
             holds.removeAll { $0.replyID == replyID }
             markReplyHandled(replyID)
@@ -1186,7 +1236,7 @@ package actor GenieEngine {
                 persisted.pendingSends[index].rateCounted = true
             }
             if wrote { lastError = "send_uncertain" }
-            log.record(level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: detail)
+            sendLog(replyID: replyID, level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: detail)
             persist()
         }
     }
@@ -1195,7 +1245,8 @@ package actor GenieEngine {
         replyID: String, chatID: Int64, body: String, attempts: Int, pauseReason: HoldReason,
         createdAt: Date, originGUID: String
     ) async {
-        guard persisted.partialReplies.contains(where: { $0.replyID == replyID }) else { return }
+        if !isOutbound(replyID), !persisted.partialReplies.contains(where: { $0.replyID == replyID }) { return }
+        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
@@ -1212,6 +1263,7 @@ package actor GenieEngine {
         noteLock(locked)
         guard generation == databaseGeneration else { return }
         refreshConfig()
+        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
@@ -1249,6 +1301,7 @@ package actor GenieEngine {
                  createdAt: createdAt, originGUID: originGUID)
             return
         }
+        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
         if paused || stop.isStopped {
             rollbackIntent(replyID: replyID)
             persist()
@@ -1268,16 +1321,28 @@ package actor GenieEngine {
                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
             return
         }
+        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else {
+            rollbackIntent(replyID: replyID)
+            persist()
+            return
+        }
         let sendResult: Result<SendReceipt, SendFailure>
         do { sendResult = .success(try await sender.send(chatID: chatID, text: body)) }
         catch let failure as SendFailure { sendResult = .failure(failure) }
         catch { sendResult = .failure(.failed) }
+        if isOutbound(replyID) { refreshConfig() }
         if generation != databaseGeneration {
             if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
             finishIntent(replyID: replyID)
             markReplyHandled(replyID)
             persist()
             logDroppedForDatabaseReset(detail: sendingResend ? "resend" : "body")
+            return
+        }
+        if let index = outboundRecordIndex(replyID),
+           persisted.outbound.records[index].sourceHash != outboundSourceHash() || (isOutbound(replyID) && !config.outboundEnabled) {
+            if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+            terminateOutbound(replyID, code: "outbound_source_changed")
             return
         }
         switch sendResult {
@@ -1288,7 +1353,7 @@ package actor GenieEngine {
             markReplyHandled(replyID)
             holds.removeAll { $0.replyID == replyID }
             lastError = nil
-            log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+            sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
                        rowid: receipt.id, detail: sendingResend ? "resend" : "body")
             persist()
         case .success:
@@ -1314,6 +1379,12 @@ package actor GenieEngine {
         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
         sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, originGUID: String
     ) async {
+        if isOutbound(replyID) {
+            terminateOutbound(replyID,
+                code: failure == .failed ? "outbound_body_send_failed" : "outbound_body_send_uncertain",
+                deadLetter: true)
+            return
+        }
         guard let partialIndex = persisted.partialReplies.firstIndex(where: { $0.replyID == replyID }) else { return }
         let partial = persisted.partialReplies[partialIndex]
         let code = failure == .failed ? "send_failed" : "send_uncertain"
@@ -1324,7 +1395,7 @@ package actor GenieEngine {
             persisted.partialReplies[partialIndex].bodyResends += 1
             bodyResendSavePending.insert(replyID)
             lastError = code
-            log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "body")
+            sendLog(replyID: replyID, level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "body")
             guard persist() else {
                 hold(replyID: replyID, chatID: chatID, part: .body, body: body,
                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
@@ -1345,7 +1416,7 @@ package actor GenieEngine {
             } else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
                 persisted.pendingSends[index].rateCounted = true
             }
-            log.record(level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "resend")
+            sendLog(replyID: replyID, level: .error, code: code, chatID: chatID, guid: nil, rowid: nil, detail: "resend")
             persist()
         }
     }
@@ -1354,6 +1425,7 @@ package actor GenieEngine {
     /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
     /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
     private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
+        if isOutbound(replyID) { return !outboundAuthorizationMatches(replyID: replyID, chatID: chatID) }
         let current = directoryGUIDs[chatID] ?? ""
         var expected = configGroups.expectedGUIDs(for: chatID)
         if let entry = allowlist.entries.first(where: { $0.id == chatID }) {
@@ -1409,6 +1481,7 @@ package actor GenieEngine {
     }
 
     private func dropDisabled(replyID: String, chatID: Int64, detail: String? = nil) {
+        if isOutbound(replyID) { terminateOutbound(replyID, code: "outbound_chat_disabled"); return }
         holds.removeAll { $0.replyID == replyID }
         persisted.partialReplies.removeAll { $0.replyID == replyID }
         bodyResendSavePending.remove(replyID)
@@ -1473,7 +1546,7 @@ package actor GenieEngine {
             )
         )
         if logIt {
-            log.record(level: .error, code: reason.rawValue, chatID: chatID, guid: nil, rowid: nil,
+            sendLog(replyID: replyID, level: .error, code: reason.rawValue, chatID: chatID, guid: nil, rowid: nil,
                        detail: detail ?? part.rawValue)
         }
     }
@@ -1508,47 +1581,67 @@ package actor GenieEngine {
         replyID: String, chatID: Int64, text: String, at: Date, rateCounted: Bool,
         part: SendPart, markerKind: MarkerKind? = nil
     ) {
+        if let index = outboundRecordIndex(replyID) {
+            persisted.outbound.records[index].stage = part == .marker ? .markerInFlight : .bodyInFlight
+        } else {
+            let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
+            persisted.pendingSends.removeAll { $0.replyID == replyID }
+            persisted.pendingSends.append(
+                PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at,
+                            rateCounted: rateCounted, part: part, markerKind: markerKind)
+            )
+            cap(&persisted.pendingSends)
+        }
         let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
-        persisted.pendingSends.removeAll { $0.replyID == replyID }
-        persisted.pendingSends.append(
-            PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at,
-                        rateCounted: rateCounted, part: part, markerKind: markerKind)
-        )
-        cap(&persisted.pendingSends)
         if !hash.isEmpty {
             persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
+            if isOutbound(replyID) { outboundIntentFingerprints[replyID] = (hash, at) }
         }
         pruneFingerprints(now: at)
     }
 
     private func rollbackIntent(replyID: String) {
-        guard let pending = persisted.pendingSends.first(where: { $0.replyID == replyID }) else { return }
-        persisted.pendingSends.removeAll { $0.replyID == replyID }
-        if let index = persisted.fingerprints.lastIndex(where: { $0.hash == pending.hash && $0.sentAt == pending.at }) {
-            persisted.fingerprints.remove(at: index)
+        if let index = outboundRecordIndex(replyID), persisted.outbound.records[index].stage != .terminal {
+            persisted.outbound.records[index].stage = persisted.outbound.records[index].stage == .bodyInFlight ? .bodyReady : .reserved
+        }
+        if let outboundFingerprint = outboundIntentFingerprints.removeValue(forKey: replyID) {
+            if let index = persisted.fingerprints.lastIndex(where: { $0.hash == outboundFingerprint.0 && $0.sentAt == outboundFingerprint.1 }) {
+                persisted.fingerprints.remove(at: index)
+            }
+        } else if let pending = persisted.pendingSends.first(where: { $0.replyID == replyID }) {
+            persisted.pendingSends.removeAll { $0.replyID == replyID }
+            if let index = persisted.fingerprints.lastIndex(where: { $0.hash == pending.hash && $0.sentAt == pending.at }) {
+                persisted.fingerprints.remove(at: index)
+            }
         }
     }
 
     private func finishIntent(replyID: String) {
         persisted.pendingSends.removeAll { $0.replyID == replyID }
+        outboundIntentFingerprints.removeValue(forKey: replyID)
     }
 
     private func addPartialReply(_ partial: PartialReply) {
+        if let index = outboundRecordIndex(partial.replyID) {
+            persisted.outbound.records[index].stage = .bodyReady
+            return
+        }
         persisted.partialReplies.removeAll { $0.replyID == partial.replyID }
         persisted.partialReplies.append(partial)
         while persisted.partialReplies.count > 5000 {
             let dropped = persisted.partialReplies.removeFirst()
             markReplyHandled(dropped.replyID)
-            log.record(level: .info, code: "reply_partial_dropped", chatID: dropped.chatID,
+            sendLog(replyID: dropped.replyID, level: .info, code: "reply_partial_dropped", chatID: dropped.chatID,
                        guid: nil, rowid: nil, detail: "body")
         }
     }
 
     private func prunePartialReplies() {
         let cutoff = clock.now().addingTimeInterval(-config.routeTTLSeconds)
-        let expired = persisted.partialReplies.filter { $0.at < cutoff }
+        let outboundIDs = Set(persisted.outbound.records.map(\.id))
+        let expired = persisted.partialReplies.filter { $0.at < cutoff && !outboundIDs.contains($0.replyID) }
         guard !expired.isEmpty else { return }
-        persisted.partialReplies.removeAll { $0.at < cutoff }
+        persisted.partialReplies.removeAll { $0.at < cutoff && !outboundIDs.contains($0.replyID) }
         for partial in expired {
             markReplyHandled(partial.replyID)
             log.record(level: .info, code: "reply_partial_dropped", chatID: partial.chatID,
@@ -1635,6 +1728,10 @@ package actor GenieEngine {
     }
 
     private func recordReplyDeadLetter(replyID: String, chatID: Int64, error: String, attempts: Int = 1) -> Bool {
+        if isOutbound(replyID) {
+            terminateOutbound(replyID, code: "outbound_" + error, deadLetter: true)
+            return true
+        }
         let entry = DeadLetterEntry(
             ts: ISO8601.string(from: clock.now()),
             kind: "reply",
@@ -1682,12 +1779,44 @@ package actor GenieEngine {
     }
 
     private func markReplyHandled(_ id: String) {
+        if let index = outboundRecordIndex(id) {
+            if persisted.outbound.records[index].stage != .terminal {
+                persisted.outbound.records[index].stage = .terminal
+                persisted.outbound.records[index].terminalAt = clock.now()
+                persisted.outbound.records[index].terminalCode = "outbound_body_sent"
+            }
+            persisted.partialReplies.removeAll { $0.replyID == id }
+            persisted.pendingSends.removeAll { $0.replyID == id }
+            return
+        }
         persisted.partialReplies.removeAll { $0.replyID == id }
         HandledReplyIDs.insert(
             id,
             into: &persisted.handledReplyIDs,
             protecting: NotionCursor.ids(in: persisted.replyCursor)
         )
+    }
+
+    package func retryOutboundDeadLetters() {
+        guard !outboundPersistenceBlocked else { return }
+        for index in persisted.outbound.records.indices where persisted.outbound.records[index].deadLetterPending {
+            let record = persisted.outbound.records[index]
+            do {
+                try stateStore.appendDeadLetter(DeadLetterEntry(ts: ISO8601.string(from: clock.now()), kind: "outbound",
+                    chatID: nil, guid: nil, rowid: nil, attempts: 1,
+                    error: record.terminalCode ?? "outbound_send_interrupted"))
+            } catch {
+                outboundLog("outbound_deadletter_write_failed")
+                continue
+            }
+            persisted.outbound.records[index].deadLetterPending = false
+            if !persist() {
+                persisted.outbound.records[index].deadLetterPending = true
+                outboundPersistenceBlocked = true
+                outboundLog("outbound_state_save_failed")
+                return
+            }
+        }
     }
 
     private func appendCapped(_ guid: String, to list: inout [String]) {
@@ -1816,6 +1945,11 @@ package actor GenieEngine {
 
     private func resetForDatabaseSwap(_ identity: ChatIdentity) {
         databaseGeneration &+= 1
+        for index in persisted.outbound.records.indices where persisted.outbound.records[index].stage != .terminal {
+            persisted.outbound.records[index].stage = .terminal
+            persisted.outbound.records[index].terminalCode = "outbound_db_reset"
+            persisted.outbound.records[index].terminalAt = clock.now()
+        }
         configGroups.resetVerification()
         persisted.knownChats = [identity]
         persisted.cursorRowID = 0
@@ -1831,7 +1965,7 @@ package actor GenieEngine {
         } catch {
             log.record(level: .error, code: "allowlist_save_failed", chatID: identity.id, guid: nil, rowid: nil)
         }
-        persist()
+        if !persist() { outboundPersistenceBlocked = true }
         lastError = "messages_db_reset"
         log.record(level: .error, code: "messages_db_reset", chatID: identity.id, guid: nil, rowid: nil)
     }
@@ -1885,5 +2019,493 @@ enum HandledReplyIDs {
             merged = Array(merged.suffix(cap))
         }
         ids = merged
+    }
+}
+
+extension GenieEngine {
+    package func pollOutbound() async -> ReplyPollOutcome {
+        retryOutboundDeadLetters()
+        if stop.isStopped { return .skippedStopped }
+        guard directoryChecked else { return .skippedUnchecked }
+        if paused { return .skippedPaused }
+        refreshConfig()
+        let sourceHash = outboundSourceHash()
+        synchronizeOutboundSource(sourceHash)
+        guard config.outboundEnabled else { return .notConfigured }
+        guard !sourceHash.isEmpty else { outboundLog("outbound_source_invalid"); return .notConfigured }
+        if !config.outboundSourceConflict { noticeLog.resolve(["outbound_source_conflict"]) }
+        if !config.outboundTargetCollision { noticeLog.resolve(["outbound_target_collision"]) }
+        guard !outboundFetching else { return .fetchFailed }
+        if outboundPersistenceBlocked {
+            guard persist() else { outboundLog("outbound_state_save_failed"); return .fetchFailed }
+            outboundPersistenceBlocked = false
+        }
+        retryOutboundDeadLetters()
+        outboundFetching = true
+        defer { outboundFetching = false }
+        if persisted.outboundNotionCursor == nil {
+            let start = NotionCursor.freshStart(now: clock.now())
+            persisted.outboundNotionCursor = NotionCursor(createdAt: start, seen: [], notBefore: start).encoded()
+        }
+        guard persist() else {
+            outboundPersistenceBlocked = true
+            outboundLog("outbound_state_save_failed")
+            return .fetchFailed
+        }
+        let expired = persisted.outbound.records.filter { $0.stage != .terminal && clock.now() >= $0.expiresAt }.map(\.id)
+        for id in expired { terminateOutbound(id, code: "outbound_expired") }
+        let generation = databaseGeneration
+        let prepared = outboundSource.prepared(for: config)
+        let originalCursor = persisted.outboundNotionCursor
+        let terminalPages = Set(persisted.outbound.records.filter { $0.stage == .terminal }.flatMap(\.pageHashes))
+        let activePages = Set(persisted.outbound.records.filter { $0.stage != .terminal }.flatMap(\.pageHashes))
+        do {
+            let page = try await prepared.fetch(cursor: originalCursor, skipping: terminalPages, holding: activePages)
+            if stop.isStopped { return .skippedStopped }
+            refreshConfig()
+            guard generation == databaseGeneration, sourceHash == outboundSourceHash(), config.outboundEnabled else {
+                synchronizeOutboundSource(outboundSourceHash())
+                return .fetched
+            }
+            noticeLog.resolve(["outbound_fetch_failed", "outbound_token_missing", "outbound_token_mode", "outbound_token_empty", "outbound_token_unreadable"])
+            let returnedPageHashes = Set(page.entries.map { OutboundHash.digest(kind: "page", values: [$0.pageID]) })
+            for record in persisted.outbound.records where record.stage != .terminal
+                && record.pageHashes.allSatisfy({ !returnedPageHashes.contains($0) }) {
+                outboundLog("outbound_held_body_unavailable")
+            }
+            for entry in page.entries {
+                if stop.isStopped { return .skippedStopped }
+                await deliverOutbound(entry, sourceHash: sourceHash)
+                if outboundPersistenceBlocked {
+                    outboundLog("outbound_state_save_failed")
+                    return .fetchFailed
+                }
+                refreshConfig()
+                guard generation == databaseGeneration, sourceHash == outboundSourceHash(), config.outboundEnabled else {
+                    synchronizeOutboundSource(outboundSourceHash())
+                    return .fetched
+                }
+            }
+            let active = page.entries.filter { entry in
+                let pageHash = OutboundHash.digest(kind: "page", values: [entry.pageID])
+                return !persisted.outbound.records.contains { $0.pageHashes.contains(pageHash) && $0.stage == .terminal }
+            }
+            let previous = persisted.outboundNotionCursor
+            var next = OutboundCursor.reconcile(proposed: page.nextCursor, unhandled: active) ?? previous
+            let unfinished = persisted.outbound.records.filter { $0.stage != .terminal }
+            if var cursor = NotionCursor.decode(next), let oldest = unfinished.map(\.createdAt).min() {
+                let aliases = Set(unfinished.flatMap(\.pageHashes))
+                cursor.seen.removeAll { aliases.contains($0.id) }
+                let at = ISO8601.string(from: oldest)
+                if cursor.createdAt > at { cursor.createdAt = at }
+                cursor.prune()
+                next = cursor.encoded()
+            }
+            persisted.outboundNotionCursor = next
+            if !persist() {
+                persisted.outboundNotionCursor = previous
+                outboundPersistenceBlocked = true
+                outboundLog("outbound_state_save_failed")
+                return .fetchFailed
+            }
+            outboundPollWanted = false
+            return .fetched
+        } catch {
+            let code: String
+            if case ReplyFetchError.notionToken(let token) = error {
+                switch token {
+                case .missing: code = "outbound_token_missing"
+                case .insecureMode: code = "outbound_token_mode"
+                case .empty: code = "outbound_token_empty"
+                case .unreadable: code = "outbound_token_unreadable"
+                }
+            } else { code = "outbound_fetch_failed" }
+            outboundLog(code)
+            outboundPollWanted = false
+            return .fetchFailed
+        }
+    }
+
+    package func pollOutboundIfDue() async {
+        if outboundPollWanted || outboundNextFetchAt == nil || clock.now() >= outboundNextFetchAt! {
+            let result = await pollOutbound()
+            switch result {
+            case .fetched, .fetchFailed, .notConfigured:
+                outboundNextFetchAt = clock.now().addingTimeInterval(config.replyPollIntervalSeconds)
+            default: break
+            }
+        }
+    }
+
+    private func outboundSourceHash() -> String {
+        guard let canonical = NotionDataSourceID.canonical(config.outboundNotionDataSourceID) else { return "" }
+        return OutboundHash.digest(kind: "source", values: [canonical])
+    }
+
+    private func synchronizeOutboundSource(_ hash: String) {
+        if config.outboundSourceConflict { outboundLog("outbound_source_conflict") }
+        if config.outboundTargetCollision { outboundLog("outbound_target_collision") }
+        guard hash != persisted.outbound.sourceHash || !config.outboundEnabled else { return }
+        for index in persisted.outbound.records.indices where persisted.outbound.records[index].stage != .terminal {
+            let id = persisted.outbound.records[index].id
+            persisted.outbound.records[index].stage = .terminal
+            persisted.outbound.records[index].terminalCode = "outbound_source_changed"
+            persisted.outbound.records[index].terminalAt = clock.now()
+            holds.removeAll { $0.replyID == id }
+            persisted.partialReplies.removeAll { $0.replyID == id }
+            persisted.pendingSends.removeAll { $0.replyID == id }
+            outboundParticipantEvidence.removeValue(forKey: id)
+        }
+        persisted.outbound.sourceHash = hash
+        persisted.outboundNotionCursor = nil
+        if !persist() { outboundPersistenceBlocked = true }
+    }
+
+    private func outboundRecordIndex(_ id: String) -> Int? {
+        persisted.outbound.records.firstIndex { $0.id == id }
+    }
+
+    private func isOutbound(_ id: String) -> Bool { outboundRecordIndex(id) != nil }
+
+    private func deliverOutbound(_ entry: FetchedOutbound, sourceHash: String) async {
+        let pageHash = OutboundHash.digest(kind: "page", values: [entry.pageID])
+        let keyHash = entry.idempotencyKey.map { OutboundHash.digest(kind: "key", values: [$0]) }
+        let raw = TextNormalizer.nfc(entry.text ?? "")
+        let validated = outboundBody(raw)
+        let body = validated.body ?? raw
+        let signature = OutboundHash.digest(kind: "signature", values: [entry.target?.rawValue ?? "", body])
+        if let index = persisted.outbound.records.firstIndex(where: { $0.pageHashes.contains(pageHash) }) {
+            let record = persisted.outbound.records[index]
+            guard record.pageHashes.first == pageHash else { return }
+            guard record.stage != .terminal else { return }
+            guard record.signature == signature, record.keyHash == keyHash else {
+                terminateOutbound(record.id, code: "outbound_idempotency_conflict")
+                return
+            }
+            await resumeOutbound(record.id, body: body)
+            return
+        }
+        if let keyHash, let index = persisted.outbound.records.firstIndex(where: { $0.keyHash == keyHash }) {
+            guard persisted.outbound.count < OutboundLedger.capacity else { outboundLog("outbound_ledger_full"); return }
+            persisted.outbound.records[index].pageHashes.append(pageHash)
+            let sameSignature = persisted.outbound.records[index].signature == signature
+            guard persist() else {
+                persisted.outbound.records[index].pageHashes.removeAll { $0 == pageHash }
+                outboundPersistenceBlocked = true
+                outboundLog("outbound_state_save_failed")
+                return
+            }
+            outboundLog(sameSignature ? "outbound_duplicate_key" : "outbound_idempotency_conflict")
+            return
+        }
+        guard persisted.outbound.count < OutboundLedger.capacity else { outboundLog("outbound_ledger_full"); return }
+        guard let created = ISO8601.date(from: entry.createdAt) else {
+            outboundLog("outbound_bad_entry")
+            return
+        }
+        let targetGUID = entry.target.flatMap { config.outboundTargets[$0.rawValue] } ?? ""
+        let destination = OutboundHash.digest(kind: "destination", values: [targetGUID])
+        let bodyHash = validated.body.map { OutboundHash.digest(kind: "body", values: [$0]) } ?? ""
+        var rejection = entry.invalidCode ?? validated.error
+        if entry.target == nil { rejection = "outbound_unknown_target" }
+        if entry.idempotencyKey == nil || created.timeIntervalSince(clock.now()) > 60 {
+            rejection = "outbound_bad_entry"
+        }
+        let duplicate = validated.body != nil && rejection == nil && persisted.outbound.records.contains { record in
+            record.terminalCode != "outbound_duplicate_body" &&
+            record.destinationHash == destination && record.bodyHash == bodyHash &&
+            (record.stage != .terminal || (record.terminalAt.map { clock.now() < $0.addingTimeInterval(OutboundLimits.duplicateBodySeconds) } ?? false))
+        }
+        if duplicate { rejection = "outbound_duplicate_body" }
+        let id = "outbound:" + OutboundHash.digest(kind: "delivery", values: [sourceHash, pageHash])
+        var record = OutboundRecord(id: id, sourceHash: sourceHash, pageHashes: [pageHash],
+            keyHash: keyHash, signature: signature, target: entry.target,
+            destinationHash: destination, bodyHash: bodyHash, selfEvidenceKind: nil, chatID: nil,
+            createdAt: created, expiresAt: created.addingTimeInterval(Double(config.outboundMaxAgeSeconds)),
+            stage: .reserved)
+        if let rejection { record.stage = .terminal; record.terminalCode = rejection; record.terminalAt = clock.now() }
+        persisted.outbound.records.append(record)
+        guard persist() else {
+            outboundPersistenceBlocked = true
+            outboundLog("outbound_state_save_failed")
+            return
+        }
+        if let rejection { outboundLog(rejection); return }
+        await resumeOutbound(id, body: body)
+    }
+
+    private func outboundBody(_ raw: String) -> (body: String?, error: String?) {
+        let normalized = TextNormalizer.nfc(raw)
+        guard !Signal.matches(normalized) else { return (nil, "outbound_signal_body") }
+        guard normalized.unicodeScalars.count <= 8000, !normalized.contains("\0") else {
+            return (nil, "outbound_text_invalid")
+        }
+        switch ReplyComposer.split(body: normalized, marker: config.replyMarker) {
+        case .emptyBody: return (nil, "outbound_empty_body")
+        case .stillSignal: return (nil, "outbound_signal_body")
+        case .send(let body):
+            let normalizedBody = TextNormalizer.nfc(body)
+            guard normalizedBody.unicodeScalars.count <= 8000 else { return (nil, "outbound_text_invalid") }
+            return (normalizedBody, nil)
+        }
+    }
+
+    private enum OutboundDestination {
+        case ready(Int64, OutboundSelfEvidence?)
+        case hold
+        case reject(String)
+    }
+
+    private func outboundDestination(_ target: OutboundTarget?, guidHash: String) -> OutboundDestination {
+        guard let target, let guid = config.outboundTargets[target.rawValue], !guid.isEmpty else { return .reject("outbound_target_unset") }
+        guard !config.outboundTargetCollision else { return .reject("outbound_target_collision") }
+        guard config.outboundEnabled else { return .reject("outbound_source_changed") }
+        guard OutboundHash.digest(kind: "destination", values: [guid]) == guidHash else { return .reject("outbound_target_changed") }
+        guard directoryChecked, listFetchFailingSince == nil, parseProblem != .partial else {
+            outboundLog("outbound_held_unverified")
+            return .hold
+        }
+        let matches = outboundDirectory.filter { $0.guid == guid }
+        guard matches.count == 1 else {
+            outboundLog(matches.count > 1 ? "outbound_target_ambiguous" : "outbound_held_unverified")
+            return .hold
+        }
+        noticeLog.resolve(["outbound_held_unverified", "outbound_target_ambiguous"])
+        let chat = matches[0]
+        let group = SelfChat.resolveGroup(flag: chat.isGroup, chatGUID: chat.guid, chatIdentifier: chat.identifier)
+        var selfEvidence: OutboundSelfEvidence?
+        switch target {
+        case .family:
+            guard config.groupChatGUIDs.contains(guid) else { return .reject("outbound_family_not_configured") }
+            guard group else { return .reject("outbound_family_not_group") }
+        case .self:
+            guard !group else { return .reject("outbound_self_not_self") }
+            if config.selfChatIDs.contains(chat.id) {
+                selfEvidence = .selfChatIDs
+            } else {
+                let ownHandles = directoryHandleKeys.union(watchHandleKeys)
+                let people = chat.participants.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                guard chat.participantsKnown, !people.isEmpty else {
+                    outboundLog("outbound_held_unverified")
+                    return .hold
+                }
+                guard people.count == 1, let participant = SenderHandle.normalize(people[0]) else {
+                    return .reject("outbound_self_not_self")
+                }
+                guard !ownHandles.isEmpty else {
+                    outboundLog("outbound_held_unverified")
+                    return .hold
+                }
+                guard ownHandles.contains(participant) else { return .reject("outbound_self_not_self") }
+                selfEvidence = .participant(participant)
+            }
+        }
+        guard allowsSend(chat.id) else { return .reject("outbound_chat_disabled") }
+        var expected = configGroups.expectedGUIDs(for: chat.id)
+        expected.append(contentsOf: allowlist.entries.filter { $0.id == chat.id }.map(\.guid))
+        guard !expected.isEmpty, expected.allSatisfy({ !$0.isEmpty && $0 == guid }), directoryGUIDs[chat.id] == guid else {
+            return .reject("outbound_guid_mismatch")
+        }
+        return .ready(chat.id, selfEvidence)
+    }
+
+    private func reserveOutboundEvidence(_ id: String, target: OutboundTarget?, current: OutboundSelfEvidence?) -> Bool {
+        guard let index = outboundRecordIndex(id) else { return false }
+        guard target == .self else { return current == nil && persisted.outbound.records[index].selfEvidenceKind == nil }
+        guard let current else { return false }
+        let kind = current.kind
+        if let saved = persisted.outbound.records[index].selfEvidenceKind {
+            guard saved == kind else { return false }
+        } else {
+            persisted.outbound.records[index].selfEvidenceKind = kind
+        }
+        if case .participant(let value) = current {
+            if let previous = outboundParticipantEvidence[id], previous != value { return false }
+            outboundParticipantEvidence[id] = value
+        }
+        return true
+    }
+
+    private func outboundEvidenceMatches(_ id: String, target: OutboundTarget?, current: OutboundSelfEvidence?) -> Bool {
+        guard let index = outboundRecordIndex(id) else { return false }
+        guard target == .self else { return current == nil && persisted.outbound.records[index].selfEvidenceKind == nil }
+        guard let current, persisted.outbound.records[index].selfEvidenceKind == current.kind else { return false }
+        if case .participant(let value) = current {
+            if let previous = outboundParticipantEvidence[id], previous != value { return false }
+            outboundParticipantEvidence[id] = value
+        }
+        return true
+    }
+
+    private func resumeOutbound(_ id: String, body raw: String) async {
+        guard let index = outboundRecordIndex(id), !inFlightReplyIDs.contains(id),
+              !holds.contains(where: { $0.replyID == id }), persisted.outbound.records[index].stage != .terminal else { return }
+        let record = persisted.outbound.records[index]
+        guard clock.now() < record.expiresAt else { terminateOutbound(id, code: "outbound_expired"); return }
+        guard record.sourceHash == outboundSourceHash() else { terminateOutbound(id, code: "outbound_source_changed"); return }
+        switch outboundDestination(record.target, guidHash: record.destinationHash) {
+        case .reject(let code): terminateOutbound(id, code: code)
+        case .hold: return
+        case .ready(let chatID, let evidence):
+            if let previous = record.chatID, previous != chatID {
+                terminateOutbound(id, code: "outbound_target_changed"); return
+            }
+            guard reserveOutboundEvidence(id, target: record.target, current: evidence) else {
+                terminateOutbound(id, code: "outbound_target_changed"); return
+            }
+            if inFlightReplyChats.values.contains(chatID) || persisted.partialReplies.contains(where: { $0.chatID == chatID && $0.replyID != id }) { return }
+            persisted.outbound.records[index].chatID = chatID
+            guard let body = outboundBody(raw).body else {
+                terminateOutbound(id, code: "outbound_idempotency_conflict")
+                return
+            }
+            guard persist() else {
+                outboundPersistenceBlocked = true
+                outboundLog("outbound_state_save_failed")
+                return
+            }
+            await performSend(replyID: id, chatID: chatID,
+                part: record.stage == .bodyReady ? .body : .marker, body: body,
+                attempts: 1, reserved: false, pauseReason: .appleEventNotStarted,
+                createdAt: record.createdAt, originGUID: "")
+        }
+    }
+
+    private func outboundAuthorizationMatches(replyID: String, chatID: Int64) -> Bool {
+        guard let index = outboundRecordIndex(replyID) else { return true }
+        let record = persisted.outbound.records[index]
+        guard record.stage != .terminal, record.sourceHash == outboundSourceHash(), clock.now() < record.expiresAt else { return false }
+        if case .ready(let current, let evidence) = outboundDestination(record.target, guidHash: record.destinationHash) {
+            return current == chatID && outboundEvidenceMatches(replyID, target: record.target, current: evidence)
+        }
+        return false
+    }
+
+    private func outboundSendGuard(replyID: String, chatID: Int64, body: String, part: SendPart,
+        attempts: Int, createdAt: Date, originGUID: String) -> Bool {
+        guard let index = outboundRecordIndex(replyID) else { return true }
+        let record = persisted.outbound.records[index]
+        guard !outboundPersistenceBlocked, record.stage != .terminal else { return false }
+        guard clock.now() < record.expiresAt else { terminateOutbound(replyID, code: "outbound_expired"); return false }
+        guard record.sourceHash == outboundSourceHash(), config.outboundEnabled else {
+            terminateOutbound(replyID, code: "outbound_source_changed"); return false
+        }
+        switch outboundDestination(record.target, guidHash: record.destinationHash) {
+        case .reject(let code): terminateOutbound(replyID, code: code); return false
+        case .hold:
+            hold(replyID: replyID, chatID: chatID, part: part, body: body, reason: .appleEventNotStarted,
+                attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
+            return false
+        case .ready(let current, let evidence):
+            guard current == chatID, outboundEvidenceMatches(replyID, target: record.target, current: evidence) else {
+                terminateOutbound(replyID, code: "outbound_target_changed"); return false
+            }
+        }
+        return true
+    }
+
+    private func terminateOutbound(_ id: String, code: String, deadLetter: Bool = false) {
+        guard let index = outboundRecordIndex(id) else { return }
+        persisted.outbound.records[index].stage = .terminal
+        persisted.outbound.records[index].terminalCode = code
+        persisted.outbound.records[index].terminalAt = clock.now()
+        persisted.outbound.records[index].deadLetterPending = deadLetter
+        holds.removeAll { $0.replyID == id }
+        persisted.pendingSends.removeAll { $0.replyID == id }
+        persisted.partialReplies.removeAll { $0.replyID == id }
+        bodyResendSavePending.remove(id)
+        outboundIntentFingerprints.removeValue(forKey: id)
+        outboundParticipantEvidence.removeValue(forKey: id)
+        outboundLog(code)
+        guard persist() else {
+            outboundPersistenceBlocked = true
+            outboundLog("outbound_state_save_failed")
+            return
+        }
+        if deadLetter { retryOutboundDeadLetters() }
+    }
+
+    private func outboundLog(_ code: String) {
+        let continued: Set<String> = ["outbound_source_conflict", "outbound_target_collision", "outbound_fetch_failed",
+            "outbound_held_unverified", "outbound_target_ambiguous", "outbound_ledger_full", "outbound_state_save_failed",
+            "outbound_held_locked", "outbound_held_not_started", "outbound_held_rate_limited", "outbound_source_invalid",
+            "outbound_held_body_unavailable", "outbound_token_missing", "outbound_token_mode", "outbound_token_empty", "outbound_token_unreadable"]
+        if continued.contains(code), !noticeLog.shouldLog(code) { return }
+        let warning: Set<String> = ["outbound_bad_entry", "outbound_unknown_target", "outbound_empty_body",
+            "outbound_signal_body", "outbound_text_invalid", "outbound_held_unverified", "outbound_target_ambiguous",
+            "outbound_held_locked", "outbound_held_not_started", "outbound_held_rate_limited", "outbound_held_body_unavailable"]
+        let info: Set<String> = ["outbound_expired", "outbound_chat_disabled", "outbound_target_changed",
+            "outbound_duplicate_key", "outbound_duplicate_body", "outbound_marker_sent",
+            "outbound_body_sent", "outbound_db_reset", "outbound_source_changed"]
+        let level: LogLevel = info.contains(code) ? .info : warning.contains(code) ? .warning : .error
+        log.record(level: level, code: code, chatID: nil, guid: nil, rowid: nil)
+    }
+
+    private func sendLog(replyID: String, level: LogLevel, code: String, chatID: Int64?, guid: String?, rowid: Int64?, detail: String? = nil) {
+        guard isOutbound(replyID) else {
+            log.record(level: level, code: code, chatID: chatID, guid: guid, rowid: rowid, detail: detail)
+            return
+        }
+        if code != "apple_event_1712" { noticeLog.resolve(["outbound_held_not_started"]) }
+        if screenLock != .locked { noticeLog.resolve(["outbound_held_locked"]) }
+        if let chatID, !persisted.haltedChatIDs.contains(chatID) { noticeLog.resolve(["outbound_held_rate_limited"]) }
+        if code == "marker_image_unavailable" || code == "marker_image_failed" {
+            log.record(level: level, code: code, chatID: nil, guid: nil, rowid: nil, detail: detail)
+            return
+        }
+        let mapped: String
+        switch code {
+        case "reply_sent": mapped = detail == "resend" ? "outbound_body_resent" : detail == "body" ? "outbound_body_sent" : "outbound_marker_sent"
+        case "screen_locked": mapped = "outbound_held_locked"
+        case "apple_event_1712": mapped = "outbound_held_not_started"
+        case "rate_limited": mapped = "outbound_held_rate_limited"
+        default: mapped = code.hasPrefix("outbound_") ? code : "outbound_" + code
+        }
+        outboundLog(mapped)
+    }
+
+    private static func settleOutboundInterrupted(state: inout PersistedState, store: any StatePersisting, log: any GenieLog, now: Date) -> Bool {
+        var needsTransitionSave = false
+        for index in state.outbound.records.indices {
+            let record = state.outbound.records[index]
+            if record.stage == .markerInFlight || record.stage == .bodyInFlight {
+                state.outbound.records[index].stage = .terminal
+                state.outbound.records[index].terminalCode = record.stage == .bodyInFlight
+                    ? "outbound_body_send_interrupted" : "outbound_send_interrupted"
+                state.outbound.records[index].terminalAt = now
+                state.outbound.records[index].deadLetterPending = true
+                state.pendingSends.removeAll { $0.replyID == record.id }
+                state.partialReplies.removeAll { $0.replyID == record.id }
+                needsTransitionSave = true
+            }
+        }
+        if needsTransitionSave {
+            do { try store.save(state) }
+            catch {
+                log.record(level: .error, code: "outbound_state_save_failed", chatID: nil, guid: nil, rowid: nil)
+                return false
+            }
+        }
+
+        var cleared: [Int] = []
+        for index in state.outbound.records.indices where state.outbound.records[index].deadLetterPending {
+            let record = state.outbound.records[index]
+            do {
+                try store.appendDeadLetter(DeadLetterEntry(ts: ISO8601.string(from: now), kind: "outbound",
+                    chatID: nil, guid: nil, rowid: nil, attempts: 1,
+                    error: record.terminalCode ?? "outbound_send_interrupted"))
+                state.outbound.records[index].deadLetterPending = false
+                cleared.append(index)
+            } catch {
+                log.record(level: .error, code: "outbound_deadletter_write_failed", chatID: nil, guid: nil, rowid: nil)
+            }
+        }
+        guard !cleared.isEmpty else { return true }
+        do { try store.save(state); return true }
+        catch {
+            for index in cleared { state.outbound.records[index].deadLetterPending = true }
+            log.record(level: .error, code: "outbound_state_save_failed", chatID: nil, guid: nil, rowid: nil)
+            return false
+        }
     }
 }

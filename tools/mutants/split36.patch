@@ -1,11 +1,75 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1398,7 +1398,7 @@
-         guard let pending = persisted.pendingSends.first(where: { $0.replyID == replyID }) else { return }
-         persisted.pendingSends.removeAll { $0.replyID == replyID }
-         if let index = persisted.fingerprints.lastIndex(where: { $0.hash == pending.hash && $0.sentAt == pending.at }) {
--            persisted.fingerprints.remove(at: index)
-+            persisted.fingerprints.removeAll { $0.hash == pending.hash && $0.sentAt == pending.at }
+@@ -1579,71 +1579,71 @@
+ 
+     private func recordIntent(
+         replyID: String, chatID: Int64, text: String, at: Date, rateCounted: Bool,
+         part: SendPart, markerKind: MarkerKind? = nil
+     ) {
+         if let index = outboundRecordIndex(replyID) {
+             persisted.outbound.records[index].stage = part == .marker ? .markerInFlight : .bodyInFlight
+         } else {
+             let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
+             persisted.pendingSends.removeAll { $0.replyID == replyID }
+             persisted.pendingSends.append(
+                 PendingSend(replyID: replyID, chatID: chatID, hash: hash, at: at,
+                             rateCounted: rateCounted, part: part, markerKind: markerKind)
+             )
+             cap(&persisted.pendingSends)
+         }
+         let hash = markerKind == .image ? "" : SHA256.hex(Data(TextNormalizer.nfc(text).utf8))
+         if !hash.isEmpty {
+             persisted.fingerprints.append(SentFingerprint(hash: hash, sentAt: at))
+             if isOutbound(replyID) { outboundIntentFingerprints[replyID] = (hash, at) }
+         }
+         pruneFingerprints(now: at)
+     }
+ 
+     private func rollbackIntent(replyID: String) {
+         if let index = outboundRecordIndex(replyID), persisted.outbound.records[index].stage != .terminal {
+             persisted.outbound.records[index].stage = persisted.outbound.records[index].stage == .bodyInFlight ? .bodyReady : .reserved
+         }
+         if let outboundFingerprint = outboundIntentFingerprints.removeValue(forKey: replyID) {
+             if let index = persisted.fingerprints.lastIndex(where: { $0.hash == outboundFingerprint.0 && $0.sentAt == outboundFingerprint.1 }) {
+                 persisted.fingerprints.remove(at: index)
+             }
+         } else if let pending = persisted.pendingSends.first(where: { $0.replyID == replyID }) {
+             persisted.pendingSends.removeAll { $0.replyID == replyID }
+             if let index = persisted.fingerprints.lastIndex(where: { $0.hash == pending.hash && $0.sentAt == pending.at }) {
+-                persisted.fingerprints.remove(at: index)
++                persisted.fingerprints.removeAll { $0.hash == pending.hash && $0.sentAt == pending.at }
+             }
          }
      }
  
+     private func finishIntent(replyID: String) {
+         persisted.pendingSends.removeAll { $0.replyID == replyID }
+         outboundIntentFingerprints.removeValue(forKey: replyID)
+     }
+ 
+     private func addPartialReply(_ partial: PartialReply) {
+         if let index = outboundRecordIndex(partial.replyID) {
+             persisted.outbound.records[index].stage = .bodyReady
+             return
+         }
+         persisted.partialReplies.removeAll { $0.replyID == partial.replyID }
+         persisted.partialReplies.append(partial)
+         while persisted.partialReplies.count > 5000 {
+             let dropped = persisted.partialReplies.removeFirst()
+             markReplyHandled(dropped.replyID)
+             sendLog(replyID: dropped.replyID, level: .info, code: "reply_partial_dropped", chatID: dropped.chatID,
+                        guid: nil, rowid: nil, detail: "body")
+         }
+     }
+ 
+     private func prunePartialReplies() {
+         let cutoff = clock.now().addingTimeInterval(-config.routeTTLSeconds)
+         let outboundIDs = Set(persisted.outbound.records.map(\.id))
+         let expired = persisted.partialReplies.filter { $0.at < cutoff && !outboundIDs.contains($0.replyID) }
+         guard !expired.isEmpty else { return }
+         persisted.partialReplies.removeAll { $0.at < cutoff && !outboundIDs.contains($0.replyID) }
+         for partial in expired {
+             markReplyHandled(partial.replyID)
+             log.record(level: .info, code: "reply_partial_dropped", chatID: partial.chatID,
+                        guid: nil, rowid: nil, detail: "body")
+         }

@@ -1,0 +1,13 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2268,8 +2268,7 @@
+         let matches = outboundDirectory.filter { $0.guid == guid }
+-        guard matches.count == 1 else {
+-            outboundLog(matches.count > 1 ? "outbound_target_ambiguous" : "outbound_held_unverified")
++        guard let chat = matches.first else {
++            outboundLog("outbound_held_unverified")
+             return .hold
+         }
+         noticeLog.resolve(["outbound_held_unverified", "outbound_target_ambiguous"])
+-        let chat = matches[0]
+         let group = SelfChat.resolveGroup(flag: chat.isGroup, chatGUID: chat.guid, chatIdentifier: chat.identifier)

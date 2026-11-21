@@ -145,6 +145,8 @@ package struct PersistedState: Codable, Equatable {
     var pendingSends: [PendingSend]
     var partialReplies: [PartialReply]
     var knownChats: [ChatIdentity]
+    var outbound = OutboundLedger()
+    var outboundNotionCursor: String?
 
     static let empty = PersistedState(
         v: 1,
@@ -164,6 +166,8 @@ package struct PersistedState: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case v
+        case outbound
+        case outboundNotionCursor = "outbound_notion_cursor"
         case cursorRowID = "cursor_rowid"
         case seenGUIDs = "seen_guids"
         case sentGUIDs = "sent_guids"
@@ -227,6 +231,8 @@ package struct PersistedState: Codable, Equatable {
         pendingSends = try container.decodeIfPresent([PendingSend].self, forKey: .pendingSends) ?? []
         partialReplies = try container.decodeIfPresent([PartialReply].self, forKey: .partialReplies) ?? []
         knownChats = try container.decodeIfPresent([ChatIdentity].self, forKey: .knownChats) ?? []
+        outbound = try container.decodeIfPresent(OutboundLedger.self, forKey: .outbound) ?? OutboundLedger()
+        outboundNotionCursor = try container.decodeIfPresent(String.self, forKey: .outboundNotionCursor)
     }
 }
 

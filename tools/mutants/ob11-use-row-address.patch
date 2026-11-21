@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/NotionOutboundSource.swift
++++ b/Sources/GenieCore/NotionOutboundSource.swift
+@@ -23,7 +23,7 @@
+             let key = plain(properties["idempotency_key"], type: "title")
+             let targetRaw = plain(properties["target"], type: "rich_text")
+             let text = plain(properties["text"], type: "rich_text")
+-            let target = targetRaw.flatMap(OutboundTarget.init(rawValue:))
++            let target = properties["chat_id"] == nil ? targetRaw.flatMap(OutboundTarget.init(rawValue:)) : .self
+             var invalid: String?
+             if key == nil || key?.isEmpty == true || (key?.utf8.count ?? 0) > 128
+                 || key?.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95, 58].contains($0) }) != true

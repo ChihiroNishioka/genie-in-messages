@@ -1,0 +1,14 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2465,6 +2465,11 @@
+         var needsTransitionSave = false
+         for index in state.outbound.records.indices {
+             let record = state.outbound.records[index]
++            if record.stage == .markerInFlight {
++                state.outbound.records[index].stage = .reserved
++                needsTransitionSave = true
++                continue
++            }
+             if record.stage == .markerInFlight || record.stage == .bodyInFlight {
+                 state.outbound.records[index].stage = .terminal
+                 state.outbound.records[index].terminalCode = record.stage == .bodyInFlight

@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2394,7 +2394,7 @@
+                 attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
+             return false
+         case .ready(let current, let evidence):
+-            guard current == chatID, outboundEvidenceMatches(replyID, target: record.target, current: evidence) else {
++            guard current == chatID, part == .body || outboundEvidenceMatches(replyID, target: record.target, current: evidence) else {
+                 terminateOutbound(replyID, code: "outbound_target_changed"); return false
+             }
+         }

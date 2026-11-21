@@ -1,11 +1,11 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1132,7 +1132,7 @@
+@@ -1174,7 +1174,7 @@
                      failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
-                     detail: attempt.detail)
+                     detail: attempt.detail, rateAt: reservedAt)
                  return
 -            case .failure(.failed) where attempt.kind == .image:
 +            case .failure(.failed) where attempt.kind == .text:
-                 log.record(level: .warning, code: "marker_image_failed", chatID: chatID,
+                 sendLog(replyID: replyID, level: .warning, code: "marker_image_failed", chatID: chatID,
                             guid: nil, rowid: nil)
                  rollbackIntent(replyID: replyID)

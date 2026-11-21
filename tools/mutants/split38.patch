@@ -1,11 +1,75 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1172,7 +1172,7 @@
+@@ -1322,71 +1322,71 @@
+             return
+         }
+         guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else {
+             rollbackIntent(replyID: replyID)
+             persist()
+             return
+         }
+         let sendResult: Result<SendReceipt, SendFailure>
+         do { sendResult = .success(try await sender.send(chatID: chatID, text: body)) }
+         catch let failure as SendFailure { sendResult = .failure(failure) }
+         catch { sendResult = .failure(.failed) }
+         if isOutbound(replyID) { refreshConfig() }
+         if generation != databaseGeneration {
+             if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+             finishIntent(replyID: replyID)
+             markReplyHandled(replyID)
+             persist()
+             logDroppedForDatabaseReset(detail: sendingResend ? "resend" : "body")
+             return
+         }
+         if let index = outboundRecordIndex(replyID),
+            persisted.outbound.records[index].sourceHash != outboundSourceHash() || (isOutbound(replyID) && !config.outboundEnabled) {
+             if case .success(let receipt) = sendResult { appendCapped(receipt.guid, to: &persisted.sentGUIDs) }
+             terminateOutbound(replyID, code: "outbound_source_changed")
+             return
+         }
+         switch sendResult {
+         case .success(let receipt) where !receipt.guid.isEmpty:
+             finishIntent(replyID: replyID)
+             appendCapped(receipt.guid, to: &persisted.sentGUIDs)
+             persisted.partialReplies.removeAll { $0.replyID == replyID }
+             markReplyHandled(replyID)
              holds.removeAll { $0.replyID == replyID }
              lastError = nil
-             log.record(level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+             sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
 -                       rowid: receipt.id, detail: sendingResend ? "resend" : "body")
 +                       rowid: receipt.id, detail: body)
              persist()
          case .success:
              await handleBodyFailure(replyID: replyID, chatID: chatID, body: body, failure: .uncertain,
+                 attempts: attempts, sendingResend: sendingResend, pauseReason: pauseReason,
+                 createdAt: createdAt, originGUID: originGUID)
+         case .failure(.notStarted):
+             rollbackIntent(replyID: replyID)
+             hold(replyID: replyID, chatID: chatID, part: .body, body: body,
+                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
+                  detail: "body",
+                  createdAt: createdAt, originGUID: originGUID)
+             if attempts == 1 { lastError = "apple_event_1712" }
+             persist()
+         case .failure(let failure):
+             await handleBodyFailure(replyID: replyID, chatID: chatID, body: body, failure: failure,
+                 attempts: attempts, sendingResend: sendingResend, pauseReason: pauseReason,
+                 createdAt: createdAt, originGUID: originGUID)
+         }
+     }
+ 
+     private func handleBodyFailure(
+         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
+         sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, originGUID: String
+     ) async {
+         if isOutbound(replyID) {
+             terminateOutbound(replyID,
+                 code: failure == .failed ? "outbound_body_send_failed" : "outbound_body_send_uncertain",
+                 deadLetter: true)
+             return
+         }
+         guard let partialIndex = persisted.partialReplies.firstIndex(where: { $0.replyID == replyID }) else { return }
+         let partial = persisted.partialReplies[partialIndex]
+         let code = failure == .failed ? "send_failed" : "send_uncertain"
+         switch BodyResendPolicy.decide(resendsUsed: partial.bodyResends) {
+         case .resend:

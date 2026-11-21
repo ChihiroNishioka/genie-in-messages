@@ -1,10 +1,54 @@
 --- a/Sources/GenieMenuBar/GenieController.swift
 +++ b/Sources/GenieMenuBar/GenieController.swift
-@@ -195,7 +195,6 @@
+@@ -163,51 +163,50 @@
+             return try build(paths: paths, config: config, log: log, stop: stop)
+         }
+     }
+ 
+     private static func openAllowlist(
+         paths: ConfigPaths,
+         config: FileConfigProvider,
+         log: FileGenieLog,
+         stop: StopSignal,
+         note: inout String?
+     ) throws -> GenieEngine {
+         do {
+             return try build(paths: paths, config: config, log: log, stop: stop)
+         } catch is AllowlistError {
+             try FileAllowlistStore.quarantine(paths.allowlistFile)
+             note = "allowlist_reset"
+             return try build(paths: paths, config: config, log: log, stop: stop)
+         }
+     }
+ 
+     private static func build(
+         paths: ConfigPaths,
+         config: FileConfigProvider,
+         log: FileGenieLog,
+         stop: StopSignal
+     ) throws -> GenieEngine {
+         let loaded = try config.load()
+         let secrets = FileSecretProvider(paths: paths)
+         let probe = ScreenLockProbe()
+         let engine = try GenieEngine(
+             configProvider: config,
+             initialConfig: loaded,
              stateStore: FileStateStore(paths: paths),
              allowlistStore: FileAllowlistStore(file: paths.allowlistFile),
              replySource: ConfiguredReplySource(config: config, secrets: secrets),
 -            httpReplySource: ConfiguredHTTPReplySource(config: config, secrets: secrets),
+             outboundSource: ConfiguredOutboundSource(config: config, secrets: secrets),
              sender: ImsgMessageSender(config: config),
              markerImage: BundledMarkerImage(),
              webhook: URLSessionWebhook(),
+             secrets: secrets,
+             lock: probe,
+             log: log,
+             stop: stop
+         )
+         probe.observe { state in
+             Task { await engine.noteLock(state) }
+         }
+         return engine
+     }
+ }

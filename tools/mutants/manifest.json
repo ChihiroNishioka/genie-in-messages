@@ -973,5 +973,125 @@
     "name": "GIF-DOC-OLD",
     "patch": "gif-doc-old.patch",
     "filter": "GroupDocumentationTests.testReadmeExplainsFamilyGroupsAndReplacesOldMarkerParagraph"
+  },
+  {
+    "name": "ob05-accept-target",
+    "patch": "ob05-accept-target.patch",
+    "filter": "OutboundNotionTests.testOB05UnknownTargetAndUnsetTarget"
+  },
+  {
+    "name": "ob06-skip-family-qualification",
+    "patch": "ob06-skip-family-qualification.patch",
+    "filter": "OutboundAuthorizationTests.testOB06FamilyRequiresConfiguredGroup"
+  },
+  {
+    "name": "ob07-skip-self-proof",
+    "patch": "ob07-skip-self-proof.patch",
+    "filter": "OutboundAuthorizationTests.testOB07SelfRequiresPositiveProof"
+  },
+  {
+    "name": "ob08-skip-allowlist",
+    "patch": "ob08-skip-allowlist.patch",
+    "filter": "OutboundAuthorizationTests.testOB08EffectivePermissionRequired"
+  },
+  {
+    "name": "ob09-first-match",
+    "patch": "ob09-first-match.patch",
+    "filter": "OutboundAuthorizationTests.testOB09AmbiguousGUIDHoldsWithoutChoosingFirstChat"
+  },
+  {
+    "name": "ob10-skip-guid",
+    "patch": "ob10-skip-guid.patch",
+    "filter": "OutboundAuthorizationTests.testOB10AllPermissionGUIDsMustMatch"
+  },
+  {
+    "name": "ob11-use-row-address",
+    "patch": "ob11-use-row-address.patch",
+    "filter": "OutboundPollerTests.testOB11NotionAddressColumnsCannotOverrideConfiguredTargetThroughTick"
+  },
+  {
+    "name": "ob12-use-stale-reservation",
+    "patch": "ob12-use-stale-reservation.patch",
+    "filter": "OutboundAuthorizationTests.testOB12SelfEvidenceChangesBetweenPartsAreTerminal"
+  },
+  {
+    "name": "ob18-retry-uncertain-body",
+    "patch": "ob18-retry-uncertain-body.patch",
+    "filter": "OutboundSendTests.testOB18UncertainBodyIsNeverRetried"
+  },
+  {
+    "name": "ob19-skip-sent-guid",
+    "patch": "ob19-skip-sent-guid.patch",
+    "filter": "OutboundSendTests.testOB19OutboundEchoesNeverPostWebhook"
+  },
+  {
+    "name": "ob22-skip-expiry",
+    "patch": "ob22-skip-expiry.patch",
+    "filter": "OutboundIdempotencyTests.testOB22ExpiredNeverStartsSend"
+  },
+  {
+    "name": "ob23-skip-body-validation",
+    "patch": "ob23-skip-body-validation.patch",
+    "filter": "OutboundPrivacyTests.testOB23BodyValidation"
+  },
+  {
+    "name": "ob24-forget-alias",
+    "patch": "ob24-forget-alias.patch",
+    "filter": "OutboundIdempotencyTests.testOB24PageEditingDoesNotCreateNewSend"
+  },
+  {
+    "name": "ob26-skip-body-hash",
+    "patch": "ob26-skip-body-hash.patch",
+    "filter": "OutboundIdempotencyTests.testOB26BodyDedupeExpiresAndIsPerDestination"
+  },
+  {
+    "name": "ob27-ignore-ledger-on-load",
+    "patch": "ob27-ignore-ledger-on-load.patch",
+    "filter": "OutboundIdempotencyTests.testOB27LedgerSurvivesJSONReload"
+  },
+  {
+    "name": "ob28-send-before-save",
+    "patch": "ob28-send-before-save.patch",
+    "filter": "OutboundIdempotencyTests.testOB28ReservationSavedBeforeFirstSend"
+  },
+  {
+    "name": "ob29-retry-interrupted-marker",
+    "patch": "ob29-retry-interrupted-marker.patch",
+    "filter": "OutboundIdempotencyTests.testOB29InterruptedMarkerIsTerminal"
+  },
+  {
+    "name": "ob29-resume-interrupted-body",
+    "patch": "ob29-resume-interrupted-body.patch",
+    "filter": "OutboundRecoveryTests.testOB29InterruptedBodyNeverRestarts"
+  },
+  {
+    "name": "ob31-evict-ledger",
+    "patch": "ob31-evict-ledger.patch",
+    "filter": "OutboundIdempotencyTests.testOB31FullLedgerPreservesHistory"
+  },
+  {
+    "name": "ob36-log-values",
+    "patch": "ob36-log-values.patch",
+    "filter": "OutboundPrivacyTests.testOB36OutboundLogsAndStateContainNoValues"
+  },
+  {
+    "name": "outbound-ob14-gif-success-also-text",
+    "patch": "gif-success-also-text.patch",
+    "filter": "OutboundRecoveryTests.testOB14GIFSuccessSendsImageAndBodyOnly"
+  },
+  {
+    "name": "outbound-ob15-gif-no-fallback",
+    "patch": "gif-no-fallback.patch",
+    "filter": "OutboundRecoveryTests.testOB15GIFFailureUsesCustomMarkerAndUnavailableImageSkipsLaunch"
+  },
+  {
+    "name": "outbound-ob16-gif-uncertain-fallback",
+    "patch": "gif-uncertain-fallback.patch",
+    "filter": "OutboundRecoveryTests.testOB16UncertainAndEmptyGUIDMarkerAreTerminalAcrossRestart"
+  },
+  {
+    "name": "outbound-ob17-gif-notstarted-fallback",
+    "patch": "gif-notstarted-fallback.patch",
+    "filter": "OutboundRecoveryTests.testOB17NotStartedMarkerAndBodyHoldPreserveRetryBudget"
   }
 ]

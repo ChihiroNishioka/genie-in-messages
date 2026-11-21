@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2213,7 +2213,7 @@
+         }
+         let duplicate = validated.body != nil && rejection == nil && persisted.outbound.records.contains { record in
+             record.terminalCode != "outbound_duplicate_body" &&
+-            record.destinationHash == destination && record.bodyHash == bodyHash &&
++            false && record.destinationHash == destination && record.bodyHash == bodyHash &&
+             (record.stage != .terminal || (record.terminalAt.map { clock.now() < $0.addingTimeInterval(OutboundLimits.duplicateBodySeconds) } ?? false))
+         }
+         if duplicate { rejection = "outbound_duplicate_body" }

@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2198,6 +2198,7 @@
+             outboundLog(sameSignature ? "outbound_duplicate_key" : "outbound_idempotency_conflict")
+             return
+         }
++        if persisted.outbound.count >= OutboundLedger.capacity { persisted.outbound.records.removeFirst() }
+         guard persisted.outbound.count < OutboundLedger.capacity else { outboundLog("outbound_ledger_full"); return }
+         guard let created = ISO8601.date(from: entry.createdAt) else {
+             outboundLog("outbound_bad_entry")
