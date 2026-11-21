@@ -1,0 +1,16 @@
+--- a/Sources/GenieCore/Signal.swift
++++ b/Sources/GenieCore/Signal.swift
+@@ -49,11 +49,10 @@
+             return SignalScan(remainder: normalized, matched: false)
+         }
+         rest = rest.dropFirst()
+-        if rest.first?.value == 0xFE0F { rest = rest.dropFirst() }
+-        guard rest.first?.value != 0x200D else {
++        let joined = rest.drop(while: { $0.value == 0xFE0F }).first?.value == 0x200D
++        guard !joined else {
+             return SignalScan(remainder: normalized, matched: false)
+         }
+-        rest = rest.drop(while: CharacterSet.whitespacesAndNewlines.contains)
+         return SignalScan(remainder: String(rest), matched: true)
+     }
+ 

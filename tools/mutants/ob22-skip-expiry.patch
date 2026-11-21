@@ -1,6 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -2338,7 +2338,7 @@
+@@ -2399,7 +2399,7 @@
          guard let index = outboundRecordIndex(id), !inFlightReplyIDs.contains(id),
                !holds.contains(where: { $0.replyID == id }), persisted.outbound.records[index].stage != .terminal else { return }
          let record = persisted.outbound.records[index]
@@ -9,7 +9,7 @@
          guard record.sourceHash == outboundSourceHash() else { terminateOutbound(id, code: "outbound_source_changed"); return }
          switch outboundDestination(record.target, guidHash: record.destinationHash) {
          case .reject(let code): terminateOutbound(id, code: code)
-@@ -2371,7 +2371,7 @@
+@@ -2432,7 +2432,7 @@
      private func outboundAuthorizationMatches(replyID: String, chatID: Int64) -> Bool {
          guard let index = outboundRecordIndex(replyID) else { return true }
          let record = persisted.outbound.records[index]
@@ -18,8 +18,8 @@
          if case .ready(let current, let evidence) = outboundDestination(record.target, guidHash: record.destinationHash) {
              return current == chatID && outboundEvidenceMatches(replyID, target: record.target, current: evidence)
          }
-@@ -2383,7 +2383,7 @@
-         guard let index = outboundRecordIndex(replyID) else { return true }
+@@ -2475,7 +2475,7 @@
+         guard let index = outboundRecordIndex(replyID) else { return false }
          let record = persisted.outbound.records[index]
          guard !outboundPersistenceBlocked, record.stage != .terminal else { return false }
 -        guard clock.now() < record.expiresAt else { terminateOutbound(replyID, code: "outbound_expired"); return false }

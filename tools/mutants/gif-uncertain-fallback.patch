@@ -1,6 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1179,6 +1179,9 @@
+@@ -1208,6 +1208,9 @@
                             guid: nil, rowid: nil)
                  rollbackIntent(replyID: replyID)
                  attempt = .text(config.replyMarker)
@@ -9,4 +9,4 @@
 +                attempt = .text(config.replyMarker)
              case .failure(let failure):
                  await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                     failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                     failure: failure, attempts: attempts, createdAt: createdAt, origin: origin,

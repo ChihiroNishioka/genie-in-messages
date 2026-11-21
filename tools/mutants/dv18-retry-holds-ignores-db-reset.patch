@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -614,7 +614,7 @@
+         let generation = databaseGeneration
+         for (index, hold) in ready.enumerated() {
+             let isCurrentGeneration = generation == databaseGeneration
+-            if !isCurrentGeneration || stop.isStopped || !directoryChecked {
++            if stop.isStopped || !directoryChecked {
+                 let remaining = ready[index...]
+                 if isCurrentGeneration {
+                     holds.append(contentsOf: remaining)

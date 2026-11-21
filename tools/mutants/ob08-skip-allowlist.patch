@@ -1,6 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1850,7 +1850,7 @@
+@@ -1882,7 +1882,7 @@
      }
  
      private func allowsSend(_ id: Int64) -> Bool {
@@ -8,8 +8,8 @@
 +        true
      }
  
-     private func noteConfigGroups() {
-@@ -2300,7 +2300,7 @@
+     private func isDoveChat(_ id: Int64, guid: String? = nil) -> Bool {
+@@ -2361,7 +2361,7 @@
          guard allowsSend(chat.id) else { return .reject("outbound_chat_disabled") }
          var expected = configGroups.expectedGUIDs(for: chat.id)
          expected.append(contentsOf: allowlist.entries.filter { $0.id == chat.id }.map(\.guid))

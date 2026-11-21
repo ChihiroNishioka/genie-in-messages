@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Signal.swift
++++ b/Sources/GenieCore/Signal.swift
+@@ -44,7 +44,7 @@
+ 
+     static func scan(_ text: String) -> SignalScan {
+         let normalized = TextNormalizer.nfc(text)
+-        var rest = normalized.unicodeScalars.drop(while: Signal.isSkippableLeading)
++        var rest = normalized.unicodeScalars.drop(while: { $0.value != scalar })
+         guard rest.first?.value == scalar else {
+             return SignalScan(remainder: normalized, matched: false)
+         }

@@ -1,6 +1,7 @@
 import Foundation
 
 package struct GenieConfig: Equatable, Sendable {
+    package var doveChatGUIDs: [String] = []
     package var groupChatGUIDs: [String] = []
     package var replyMarker: String = "\u{1F9DE}\u{200D}\u{2642}\u{FE0F}"
     package var replyMarkerInvalid: Bool = false
@@ -82,11 +83,8 @@ package struct GenieConfig: Equatable, Sendable {
 
     func sanitized() -> GenieConfig {
         var copy = self
-        var seenGroupGUIDs: Set<String> = []
-        copy.groupChatGUIDs = copy.groupChatGUIDs.compactMap { raw in
-            let guid = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !guid.isEmpty && seenGroupGUIDs.insert(guid).inserted ? guid : nil
-        }
+        copy.groupChatGUIDs = Self.uniqueGUIDs(copy.groupChatGUIDs)
+        copy.doveChatGUIDs = Self.uniqueGUIDs(copy.doveChatGUIDs)
         let candidate = Self.trimMarkerWhitespace(TextNormalizer.nfc(copy.replyMarker))
         if Self.isValidReplyMarker(candidate) {
             copy.replyMarker = candidate
@@ -137,13 +135,21 @@ package struct GenieConfig: Equatable, Sendable {
         return String(String.UnicodeScalarView(trimmed))
     }
 
+    private static func uniqueGUIDs(_ values: [String]) -> [String] {
+        var seen: Set<String> = []
+        return values.compactMap { raw in
+            let guid = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !guid.isEmpty && seen.insert(guid).inserted ? guid : nil
+        }
+    }
+
     private static func isValidReplyMarker(_ marker: String) -> Bool {
         guard !TextNormalizer.isBlank(marker),
               let firstGrapheme = marker.first,
               let first = firstGrapheme.unicodeScalars.first, !TextNormalizer.isInvisible(first),
               first.properties.isEmojiPresentation || (first.properties.isEmoji
                   && firstGrapheme.unicodeScalars.dropFirst().first?.value == 0xFE0F),
-              !marker.unicodeScalars.contains(where: { $0.value == 0x1FA94 }),
+              !marker.unicodeScalars.contains(where: { $0.value == 0x1FA94 || $0.value == DoveSignal.scalar }),
               !marker.unicodeScalars.contains(where: {
                   $0.properties.generalCategory == .control || CharacterSet.newlines.contains($0)
               }),
@@ -178,6 +184,7 @@ package struct GenieConfig: Equatable, Sendable {
 
 extension GenieConfig: Codable {
     enum CodingKeys: String, CodingKey {
+        case doveChatGUIDs = "dove_chat_guids"
         case groupChatGUIDs = "group_chat_guids"
         case replyMarker = "reply_marker"
         case jobWebhookURL = "job_webhook_url"
@@ -212,6 +219,7 @@ extension GenieConfig: Codable {
     package init(from decoder: Decoder) throws {
         let defaults = GenieConfig.productDefaults
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        doveChatGUIDs = try c.decodeIfPresent([String].self, forKey: .doveChatGUIDs) ?? []
         groupChatGUIDs = try c.decodeIfPresent([String].self, forKey: .groupChatGUIDs) ?? []
         replyMarker = try c.decodeIfPresent(String.self, forKey: .replyMarker) ?? ReplyComposer.markerText
         replyMarkerInvalid = false

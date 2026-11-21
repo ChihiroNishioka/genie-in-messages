@@ -448,7 +448,7 @@ final class GroupChatTests: XCTestCase {
         let result = await e.ingestWatchLine(String(decoding: data, as: UTF8.self))
         XCTAssertEqual(result, .delivered)
         let body = try payload(h)
-        XCTAssertEqual(Set(body.keys), ["v", "event", "idempotency_key", "guid", "chat_id", "text", "sender_is_me", "sender_name", "sender_handle"])
+        XCTAssertEqual(Set(body.keys), ["v", "event", "idempotency_key", "guid", "chat_id", "text", "sender_is_me", "sender_name", "sender_handle", "trigger"])
     }
 
     func testGC12NormalizedHandleAndUnknownHandleUseTenKeys() async throws {
@@ -458,7 +458,7 @@ final class GroupChatTests: XCTestCase {
             let result = await receive(e, input(sender: raw))
             XCTAssertEqual(result, .delivered)
             let body = try payload(h)
-            XCTAssertEqual(body.count, 10)
+            XCTAssertEqual(body.count, 11)
             XCTAssertEqual(body["sender_handle"] as? String, expected)
             XCTAssertEqual(body["v"] as? Int, 1)
         }
@@ -474,7 +474,7 @@ final class GroupChatTests: XCTestCase {
                 let result = await receive(e, input(sender: raw))
                 XCTAssertEqual(result, .delivered)
                 let body = try payload(h)
-                XCTAssertEqual(body.count, 10)
+                XCTAssertEqual(body.count, jobURL.isEmpty ? 11 : 10)
                 XCTAssertEqual(body["sender_handle"] as? String, expected)
                 XCTAssertEqual(body["v"] as? Int, 1)
                 XCTAssertEqual(h.webhook.urls.map(\.absoluteString), [jobURL.isEmpty ? "https://127.0.0.1/webhook" : jobURL])

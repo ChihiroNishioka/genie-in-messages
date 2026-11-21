@@ -1,11 +1,11 @@
 --- a/Sources/GenieCore/ReplyComposer.swift
 +++ b/Sources/GenieCore/ReplyComposer.swift
-@@ -64,7 +64,7 @@
+@@ -91,7 +91,7 @@
              }
              if let count = prefixes.compactMap({ prefixLength($0, in: scalars) }).first {
                  scalars.removeFirst(count)
 -                changed = true
 +                changed = false
              }
-         }
- 
+             if stripDove {
+                 let dove = DoveSignal.scan(String(String.UnicodeScalarView(scalars)))

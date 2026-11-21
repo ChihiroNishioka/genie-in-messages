@@ -1,0 +1,27 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -658,13 +658,13 @@
+         if event.isReaction {
+             return finish(event, .ignoredReaction)
+         }
+-        if !event.guid.isEmpty, persisted.sentGUIDs.contains(event.guid) {
++        if !DoveSignal.matches(event.text), !event.guid.isEmpty, persisted.sentGUIDs.contains(event.guid) {
+             return finish(event, .ignoredSentGUID)
+         }
+         if !event.guid.isEmpty, persisted.seenGUIDs.contains(event.guid) {
+             return finish(event, .duplicate)
+         }
+-        if fingerprintMatches(text: event.text, createdAt: event.createdAt) {
++        if !DoveSignal.matches(event.text), fingerprintMatches(text: event.text, createdAt: event.createdAt) {
+             return finish(event, .ignoredFingerprint)
+         }
+         let normalized = TextNormalizer.nfc(event.text)
+@@ -702,7 +702,7 @@
+             return .deferredPaused
+         }
+         if let requestText {
+-            guard !TextNormalizer.isBlank(requestText) else { return finish(event, .ignoredEmptyDove) }
++            _ = requestText
+             guard !event.guid.isEmpty else { return finish(event, .ignoredMissingDoveGUID) }
+         }
+         return await deliverWebhook(

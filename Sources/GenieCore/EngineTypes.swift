@@ -6,6 +6,17 @@ enum HoldReason: String, Codable {
     case rateLimited = "rate_limited"
 }
 
+enum ReplyTrigger: String, Encodable {
+    case lamp
+    case dove
+}
+
+enum SendOrigin: Equatable {
+    case lamp
+    case dove(chatGUIDHash: String?)
+    case outbound(rawDove: Bool)
+}
+
 struct HeldSend: Equatable {
     var replyID: String
     var chatID: Int64
@@ -15,7 +26,7 @@ struct HeldSend: Equatable {
     var attempts: Int
     var nextAttemptAt: Date
     var createdAt: Date
-    var originGUID: String
+    var origin: SendOrigin
 }
 
 package protocol MessageSending: Sendable {
@@ -103,6 +114,8 @@ package enum IngestResult: Equatable {
     case duplicate
     case ignoredNotFromMe
     case ignoredNotAllowed
+    case ignoredEmptyDove
+    case ignoredMissingDoveGUID
     case ignoredNoSignal
     case ignoredReplyMarker
     case ignoredMutation

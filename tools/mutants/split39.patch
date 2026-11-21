@@ -1,38 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -589,71 +589,71 @@
-         case .skippedUnchecked, .skippedPaused, .skippedStopped:
-             break
-         }
-         return outcome
-     }
- 
-     package func retryHolds() async {
-         retryOutboundDeadLetters()
-         if stop.isStopped { return }
-         guard directoryChecked else { return }
-         if paused { return }
-         refreshConfig()
-         let now = clock.now()
-         var ready: [HeldSend] = []
-         var kept: [HeldSend] = []
-         for hold in holds {
-             if now < hold.nextAttemptAt || inFlightReplyIDs.contains(hold.replyID) {
-                 kept.append(hold)
-                 continue
-             }
-             inFlightReplyIDs.insert(hold.replyID)
-                 inFlightReplyChats[hold.replyID] = hold.chatID
-             ready.append(hold)
-         }
-         holds = kept
-         for (index, hold) in ready.enumerated() {
-             if stop.isStopped || !directoryChecked {
-                 let remaining = Array(ready[index...])
-                 holds.append(contentsOf: remaining)
-                 for item in remaining {
-                     inFlightReplyIDs.remove(item.replyID)
-                     inFlightReplyChats.removeValue(forKey: item.replyID)
+@@ -621,7 +621,7 @@
                  }
                  return
              }
@@ -41,35 +9,3 @@
                  inFlightReplyIDs.remove(hold.replyID)
                  inFlightReplyChats.removeValue(forKey: hold.replyID)
                  markReplyHandled(hold.replyID)
-                 persisted.partialReplies.removeAll { $0.replyID == hold.replyID }
-                 bodyResendSavePending.remove(hold.replyID)
-                 log.record(level: .info, code: "reply_too_old", chatID: hold.chatID, guid: nil, rowid: nil)
-                 persist()
-                 continue
-             }
-             await performSend(
-                 replyID: hold.replyID,
-                 chatID: hold.chatID,
-                 part: hold.part,
-                 body: hold.body,
-                 attempts: hold.attempts + 1,
-                 reserved: true,
-                 pauseReason: hold.reason,
-                 createdAt: hold.createdAt,
-                 originGUID: hold.originGUID
-             )
-         }
-     }
- 
-     private func handle(_ event: WatchEvent) async -> IngestResult {
-         if let chatID = event.chatID, let guid = event.chatGUID, !guid.isEmpty {
-             if observeChat(id: chatID, guid: guid) {
-                 return .ignoredDatabaseReset
-             }
-         }
-         if event.isMutation {
-             log.record(level: .info, code: "ignored_mutation", chatID: event.chatID, guid: event.guid, rowid: event.id)
-             return .ignoredMutation
-         }
-         if event.isReaction {
-             return finish(event, .ignoredReaction)

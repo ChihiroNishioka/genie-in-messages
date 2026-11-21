@@ -20,12 +20,15 @@ struct MessageRoute: Codable, Equatable {
     var chatID: Int64
     var at: Date
     var addressee: String? = nil
+    var trigger: String? = nil
+    var chatGUIDHash: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case guid
         case chatID = "chat_id"
         case at
-        case addressee
+        case addressee, trigger
+        case chatGUIDHash = "chat_guid_hash"
     }
 }
 

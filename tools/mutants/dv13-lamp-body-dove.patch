@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2465,7 +2465,7 @@
+             }
+             return true
+         case .lamp:
+-            if isDoveChat(chatID) && DoveSignal.matches(body) {
++            if false {
+                 dropDisabled(replyID: replyID, chatID: chatID, code: "reply_still_matches_dove")
+                 return false
+             }

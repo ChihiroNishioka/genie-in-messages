@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1093,7 +1093,7 @@
+         let reservedAt = clock.now()
+         countRate(chatID: chatID, at: reservedAt)
+         var attempt: MarkerAttempt
+-        if case .dove = origin {
++        if false {
+             attempt = .text(DoveSignal.marker)
+         } else {
+             switch MarkerImage.check(markerImage.markerImageURL()) {

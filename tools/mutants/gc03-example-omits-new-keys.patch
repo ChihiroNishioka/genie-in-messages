@@ -1,33 +1,11 @@
 --- a/config.example.json
 +++ b/config.example.json
-@@ -1,29 +1,27 @@
- {
-   "webhook_url": "",
-   "job_webhook_url": "",
-   "job_chat_ids": [],
-   "reply_fetch_url": "",
-   "imsg_executable": "/opt/homebrew/opt/imsg/libexec/imsg",
-   "rate_limit_count": 5,
-   "rate_limit_window_seconds": 60,
-   "webhook_max_attempts": 5,
-   "webhook_initial_backoff_seconds": 1,
-   "webhook_max_backoff_seconds": 60,
-   "reply_poll_interval_seconds": 10,
-   "hold_retry_interval_seconds": 15,
-   "fingerprint_window_seconds": 120,
-   "chats_limit": 100,
-   "route_ttl_seconds": 604800,
-   "send_timeout_seconds": 150,
-   "chats_timeout_seconds": 30,
-   "reply_page_limit": 100,
-   "notion_data_source_id": "",
-   "outbound_notion_data_source_id": "",
-   "outbound_targets": {},
-   "outbound_max_age_seconds": 900,
+@@ -24,7 +24,5 @@
    "self_sender_name": "me",
    "sender_names": {},
--  "self_chat_ids": [],
+   "self_chat_ids": [],
 -  "group_chat_guids": [],
+-  "dove_chat_guids": [],
 -  "reply_marker": "🧞‍♂️"
-+  "self_chat_ids": []
++  "dove_chat_guids": []
  }

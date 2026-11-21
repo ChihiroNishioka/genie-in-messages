@@ -146,7 +146,7 @@ final class GroupPrivacyRegressionTests: XCTestCase {
         XCTAssertEqual(mine, .delivered)
         XCTAssertEqual(h.webhook.bodies.count, 1)
         let body = try json(XCTUnwrap(h.webhook.bodies.first))
-        XCTAssertEqual(body.count, 9)
+        XCTAssertEqual(body.count, 10)
         XCTAssertNil(body["sender_handle"])
         XCTAssertEqual(body["sender_name"] as? String, "me")
         h.replies.pages = [ReplyPage(replies: [routedReply("self-regression", chat: 42, text: "answer", guid: "privacy-incoming-2")], nextCursor: nil)]
@@ -180,7 +180,7 @@ final class GroupPrivacyRegressionTests: XCTestCase {
             let result = await e.ingestWatchLine(event)
             XCTAssertEqual(result, .delivered)
             let body = try json(XCTUnwrap(h.webhook.bodies.first))
-            XCTAssertEqual(body.count, 9)
+            XCTAssertEqual(body.count, job ? 9 : 10)
             XCTAssertNil(body["sender_handle"])
             if mode <= 1 { XCTAssertEqual(body["sender_name"] as? String, "me") }
         }

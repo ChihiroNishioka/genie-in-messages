@@ -1,9 +1,9 @@
 --- a/Sources/GenieCore/GenieConfig.swift
 +++ b/Sources/GenieCore/GenieConfig.swift
-@@ -177,7 +177,7 @@
-     package init(from decoder: Decoder) throws {
+@@ -220,7 +220,7 @@
          let defaults = GenieConfig.productDefaults
          let c = try decoder.container(keyedBy: CodingKeys.self)
+         doveChatGUIDs = try c.decodeIfPresent([String].self, forKey: .doveChatGUIDs) ?? []
 -        groupChatGUIDs = try c.decodeIfPresent([String].self, forKey: .groupChatGUIDs) ?? []
 +        groupChatGUIDs = (try? c.decodeIfPresent([String].self, forKey: .groupChatGUIDs)) ?? []
          replyMarker = try c.decodeIfPresent(String.self, forKey: .replyMarker) ?? ReplyComposer.markerText

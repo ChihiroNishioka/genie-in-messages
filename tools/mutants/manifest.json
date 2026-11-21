@@ -1093,5 +1093,90 @@
     "name": "outbound-ob17-gif-notstarted-fallback",
     "patch": "gif-notstarted-fallback.patch",
     "filter": "OutboundRecoveryTests.testOB17NotStartedMarkerAndBodyHoldPreserveRetryBudget"
+  },
+  {
+    "name": "dv01-any-position",
+    "patch": "dv01-any-position.patch",
+    "filter": "DoveTriggerTests.testDV05OnlyLeadingDoveTriggers"
+  },
+  {
+    "name": "dv02-keep-fe0f",
+    "patch": "dv02-keep-fe0f.patch",
+    "filter": "DoveTriggerTests.testDV06RequestTextStripsVariationSelectorAndSpaces"
+  },
+  {
+    "name": "dv03-own-dove-posts",
+    "patch": "dv03-own-dove-posts.patch",
+    "filter": "DoveReplyTests.testDV14OwnMarkerEchoStopsAtSentGUID"
+  },
+  {
+    "name": "dv04-accept-empty-dove",
+    "patch": "dv04-accept-empty-dove.patch",
+    "filter": "DoveTriggerTests.testDV15EmptyDoveEchoNeverPosts"
+  },
+  {
+    "name": "dv05-dove-row-chat",
+    "patch": "dv05-dove-row-chat.patch",
+    "filter": "DoveReplyTests.testDV12DoveReplyNeverLeavesItsChat"
+  },
+  {
+    "name": "dv06-job-lamp-trigger",
+    "patch": "dv06-job-lamp-trigger.patch",
+    "filter": "DoveTriggerTests.testDV08LampPayloadOnlyAddsTriggerOnOrdinaryRoute"
+  },
+  {
+    "name": "dv07-marker-by-chat",
+    "patch": "dv07-marker-by-chat.patch",
+    "filter": "DoveReplyTests.testDV11LampReplyInDoveChatKeepsGIF"
+  },
+  {
+    "name": "dv08-dove-no-trigger",
+    "patch": "dv08-dove-no-trigger.patch",
+    "filter": "DoveTriggerTests.testDV07DovePayloadExactKeys"
+  },
+  {
+    "name": "dv09-dove-any-allowed-chat",
+    "patch": "dv09-dove-any-allowed-chat.patch",
+    "filter": "DoveTriggerTests.testDV04DoveOnlyInDoveChats"
+  },
+  {
+    "name": "dv11-dove-uses-gif",
+    "patch": "dv11-dove-uses-gif.patch",
+    "filter": "DoveReplyTests.testDV10DoveReplyIsTextBirdThenBody"
+  },
+  {
+    "name": "dv12-dove-job-route",
+    "patch": "dv12-dove-job-route.patch",
+    "filter": "DoveTriggerTests.testDV09DoveIgnoresJobRoute"
+  },
+  {
+    "name": "dv13-lamp-body-dove",
+    "patch": "dv13-lamp-body-dove.patch",
+    "filter": "DoveReplyTests.testDV17LampBodyStartingWithDoveIsDroppedInDoveChat"
+  },
+  {
+    "name": "dv14-route-trigger-dropped",
+    "patch": "dv14-route-trigger-dropped.patch",
+    "filter": "DoveReplyTests.testDV18DoveTriggerSurvivesRestart"
+  },
+  {
+    "name": "dv15-outbound-skip-dove-recheck",
+    "patch": "dv15-outbound-skip-dove-recheck.patch",
+    "filter": "DoveReplyTests.testDV20OutboundRechecksAfterHoldAndMarker"
+  },
+  {
+    "name": "dv16-webhook-exception-ignores-db-reset",
+    "patch": "dv16-webhook-exception-ignores-db-reset.patch",
+    "filter": "DoveTriggerTests.testDV21DatabaseSwapDiscardsFinalWebhookException"
+  },
+  {
+    "name": "dv17-lamp-stale-send-permission",
+    "patch": "dv17-lamp-stale-send-permission.patch",
+    "filter": "DoveReplyTests.testDV17LampRechecksPermissionAfterSavingSendIntent"
+  },
+  {
+    "name": "dv18-retry-holds-ignores-db-reset",
+    "patch": "dv18-retry-holds-ignores-db-reset.patch",
+    "filter": "DoveReplyTests.testDV13DatabaseSwapDiscardsRemainingReadyHolds"
   }
 ]

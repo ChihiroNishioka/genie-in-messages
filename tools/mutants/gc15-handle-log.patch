@@ -1,7 +1,7 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -755,7 +755,7 @@
-                 )
+@@ -853,7 +853,7 @@
+                 if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
                  if (200...299).contains(response.statusCode) {
                      lastError = nil
 -                    log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)

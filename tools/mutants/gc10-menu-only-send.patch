@@ -1,6 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1622,7 +1622,7 @@
+@@ -1882,7 +1882,7 @@
      }
  
      private func allowsSend(_ id: Int64) -> Bool {
@@ -8,4 +8,4 @@
 +        allowlist.contains(id)
      }
  
-     private func noteConfigGroups() {
+     private func isDoveChat(_ id: Int64, guid: String? = nil) -> Bool {

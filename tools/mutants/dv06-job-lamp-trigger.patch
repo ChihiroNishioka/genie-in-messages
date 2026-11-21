@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -778,7 +778,7 @@
+                 chatID: chatID, text: text, createdAt: event.createdAt,
+                 senderIsMe: senderIsMe, senderName: senderName,
+                 senderHandle: sharedSenderHandle(),
+-                trigger: job ? nil : trigger, requestText: requestText
++                trigger: trigger, requestText: requestText
+             )
+             return try payload.encodeData()
+         }
