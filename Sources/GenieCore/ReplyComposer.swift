@@ -60,7 +60,7 @@ enum ReplyComposer {
         return index
     }
 
-    static func split(body: String, marker: String = markerText) -> SplitOutcome {
+    static func split(body: String, marker: String = markerText, stripDove: Bool = false) -> SplitOutcome {
         let normalized = TextNormalizer.nfc(body)
         var scalars = Array(normalized.unicodeScalars)
 
@@ -92,6 +92,13 @@ enum ReplyComposer {
             if let count = prefixes.compactMap({ prefixLength($0, in: scalars) }).first {
                 scalars.removeFirst(count)
                 changed = true
+            }
+            if stripDove {
+                let dove = DoveSignal.scan(String(String.UnicodeScalarView(scalars)))
+                if dove.matched {
+                    scalars = Array(dove.remainder.unicodeScalars)
+                    changed = true
+                }
             }
         }
 

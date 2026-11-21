@@ -1,7 +1,7 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1174,7 +1174,7 @@
-                     failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+@@ -1203,7 +1203,7 @@
+                     failure: .uncertain, attempts: attempts, createdAt: createdAt, origin: origin,
                      detail: attempt.detail, rateAt: reservedAt)
                  return
 -            case .failure(.failed) where attempt.kind == .image:

@@ -1,75 +1,10 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1044,71 +1044,71 @@
-             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                 reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
-             return
+@@ -1105,6 +1105,6 @@
+                     sendLog(replyID: replyID, level: .warning, code: "marker_image_unavailable", chatID: chatID,
+                                guid: nil, rowid: nil, detail: reason.rawValue)
+                 }
+-                attempt = .text(config.replyMarker)
++                attempt = .text(config.marker)
+             }
          }
-         if locked == .locked {
-             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
-             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: .screenLocked,
-                  attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
-             if first { lastError = "screen_locked" }
-             return
-         }
-         if persisted.haltedChatIDs.contains(chatID) || !authorize(chatID: chatID, now: clock.now()) {
-             let newlyHalted = !persisted.haltedChatIDs.contains(chatID)
-             if newlyHalted {
-                 persisted.haltedChatIDs.append(chatID)
-                 persist()
-                 lastError = "rate_limited"
-                 sendLog(replyID: replyID, level: .error, code: "rate_limited", chatID: chatID, guid: nil, rowid: nil)
-             }
-             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: .rateLimited,
-                  attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
-             return
-         }
-         let reservedAt = clock.now()
-         countRate(chatID: chatID, at: reservedAt)
-         var attempt: MarkerAttempt
-         switch MarkerImage.check(markerImage.markerImageURL()) {
-         case .usable(let path):
-             noticeLog.resolve(["marker_image_unavailable"])
-             attempt = .image(path: path)
-         case .unavailable(let reason):
-             if noticeLog.shouldLog("marker_image_unavailable") {
-                 sendLog(replyID: replyID, level: .warning, code: "marker_image_unavailable", chatID: chatID,
-                            guid: nil, rowid: nil, detail: reason.rawValue)
-             }
--            attempt = .text(config.replyMarker)
-+            attempt = .text(config.marker)
-         }
- 
-         while true {
-             if isOutbound(replyID) { refreshConfig() }
-             let text: String
-             if case .text(let marker) = attempt {
-                 text = marker
-             } else {
-                 text = ""
-             }
-             recordIntent(replyID: replyID, chatID: chatID, text: text,
-                          at: reservedAt, rateCounted: true, part: .marker, markerKind: attempt.kind)
-             guard persist() else {
-                 releaseRate(chatID: chatID, at: reservedAt)
-                 rollbackIntent(replyID: replyID)
-                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                      createdAt: createdAt, originGUID: originGUID)
-                 return
-             }
-             if paused || stop.isStopped {
-                 releaseRate(chatID: chatID, at: reservedAt)
-                 rollbackIntent(replyID: replyID)
-                 persist()
-                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
-                      attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
-                 return
-             }
-             if !allowsSend(chatID) {
-                 releaseRate(chatID: chatID, at: reservedAt)
-                 rollbackIntent(replyID: replyID)
-                 dropDisabled(replyID: replyID, chatID: chatID, detail: "marker")
-                 return
-             }
-             if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {

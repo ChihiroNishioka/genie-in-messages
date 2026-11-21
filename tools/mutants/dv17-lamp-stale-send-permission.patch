@@ -1,0 +1,38 @@
+diff --git a/Sources/GenieCore/Engine.swift b/Sources/GenieCore/Engine.swift
+index 588b959..88da818 100644
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -1136,7 +1136,6 @@ package actor GenieEngine {
+                      attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
+                 return
+             }
+-            if origin == .lamp && DoveSignal.matches(body) { refreshConfig() }
+             if !allowsSend(chatID) {
+                 releaseRate(chatID: chatID, at: reservedAt)
+                 rollbackIntent(replyID: replyID)
+@@ -1152,7 +1151,7 @@ package actor GenieEngine {
+                 return
+             }
+ 
+-            if origin != .lamp { refreshConfig() }
++            if origin != .lamp || DoveSignal.matches(body) { refreshConfig() }
+             guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, origin: origin) else {
+                 releaseRate(chatID: chatID, at: reservedAt)
+                 rollbackIntent(replyID: replyID)
+@@ -1345,7 +1344,6 @@ package actor GenieEngine {
+                  attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
+             return
+         }
+-        if origin == .lamp && DoveSignal.matches(body) { refreshConfig() }
+         if !allowsSend(chatID) {
+             rollbackIntent(replyID: replyID)
+             dropDisabled(replyID: replyID, chatID: chatID, detail: "body")
+@@ -1358,7 +1356,7 @@ package actor GenieEngine {
+                 reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
+             return
+         }
+-        if origin != .lamp { refreshConfig() }
++        if origin != .lamp || DoveSignal.matches(body) { refreshConfig() }
+         guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, origin: origin) else {
+             rollbackIntent(replyID: replyID)
+             persist()

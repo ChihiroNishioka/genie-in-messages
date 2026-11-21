@@ -1,12 +1,12 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1166,6 +1166,9 @@
-                 }
-                 sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
-                            rowid: receipt.id, detail: attempt.detail)
+@@ -1200,6 +1200,9 @@
+                 sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID,
+                            guid: isDoveMarker ? nil : receipt.guid, rowid: receipt.id,
+                            detail: isDoveMarker ? "dove" : attempt.detail)
 +                if attempt.kind == .image {
 +                    _ = try? await sender.send(chatID: chatID, text: config.replyMarker)
 +                }
                  await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
-                                pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+                                pauseReason: pauseReason, createdAt: createdAt, origin: origin)
                  return

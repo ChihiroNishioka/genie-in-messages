@@ -33,7 +33,29 @@ enum Signal {
         scan(text).matched
     }
 
-    private static func isSkippableLeading(_ scalar: Unicode.Scalar) -> Bool {
+    static func isSkippableLeading(_ scalar: Unicode.Scalar) -> Bool {
         CharacterSet.whitespacesAndNewlines.contains(scalar) || TextNormalizer.isInvisible(scalar)
     }
+}
+
+enum DoveSignal {
+    static let marker = "🐦"
+    static let scalar: UInt32 = 0x1F426
+
+    static func scan(_ text: String) -> SignalScan {
+        let normalized = TextNormalizer.nfc(text)
+        var rest = normalized.unicodeScalars.drop(while: Signal.isSkippableLeading)
+        guard rest.first?.value == scalar else {
+            return SignalScan(remainder: normalized, matched: false)
+        }
+        rest = rest.dropFirst()
+        if rest.first?.value == 0xFE0F { rest = rest.dropFirst() }
+        guard rest.first?.value != 0x200D else {
+            return SignalScan(remainder: normalized, matched: false)
+        }
+        rest = rest.drop(while: CharacterSet.whitespacesAndNewlines.contains)
+        return SignalScan(remainder: String(rest), matched: true)
+    }
+
+    static func matches(_ text: String) -> Bool { scan(text).matched }
 }

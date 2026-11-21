@@ -1,0 +1,11 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -702,7 +702,7 @@
+             return .deferredPaused
+         }
+         if let requestText {
+-            guard !TextNormalizer.isBlank(requestText) else { return finish(event, .ignoredEmptyDove) }
++            _ = requestText
+             guard !event.guid.isEmpty else { return finish(event, .ignoredMissingDoveGUID) }
+         }
+         return await deliverWebhook(

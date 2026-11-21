@@ -640,7 +640,7 @@ package actor GenieEngine {
                 reserved: true,
                 pauseReason: hold.reason,
                 createdAt: hold.createdAt,
-                originGUID: hold.originGUID
+                origin: hold.origin
             )
         }
     }
@@ -671,7 +671,14 @@ package actor GenieEngine {
         if ReplyComposer.isReplyMarker(normalized, marker: config.replyMarker) {
             return finish(event, .ignoredReplyMarker)
         }
-        if !Signal.matches(normalized) {
+        let requestText: String?
+        if Signal.matches(normalized) {
+            requestText = nil
+        } else if let chatID = event.chatID, isDoveChat(chatID, guid: event.chatGUID) {
+            let dove = DoveSignal.scan(normalized)
+            guard dove.matched else { return finish(event, .ignoredNoSignal) }
+            requestText = dove.remainder
+        } else {
             return finish(event, .ignoredNoSignal)
         }
         guard let chatID = event.chatID, allowsReceive(chatID, guid: event.chatGUID) else {
@@ -694,10 +701,15 @@ package actor GenieEngine {
         if paused {
             return .deferredPaused
         }
+        if let requestText {
+            guard !TextNormalizer.isBlank(requestText) else { return finish(event, .ignoredEmptyDove) }
+            guard !event.guid.isEmpty else { return finish(event, .ignoredMissingDoveGUID) }
+        }
         return await deliverWebhook(
             event: event,
             chatID: chatID,
             text: normalized,
+            requestText: requestText,
             senderIsMe: event.isFromMe,
             senderName: payloadSenderName(event)
         )
@@ -734,13 +746,17 @@ package actor GenieEngine {
         event: WatchEvent,
         chatID: Int64,
         text: String,
+        requestText: String?,
         senderIsMe: Bool,
         senderName: String
     ) async -> IngestResult {
-        let job = config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty
+        let trigger: ReplyTrigger = requestText == nil ? .lamp : .dove
+        let job = trigger == .lamp && config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty
         let rawURL = (job ? config.jobWebhookURL : config.webhookURL).trimmingCharacters(in: .whitespacesAndNewlines)
         let kind = job ? "job_webhook" : "webhook"
-        let detail: String? = job ? "job" : nil
+        let doveGUID = trigger == .dove ? configGroups.resolved[chatID] : nil
+        let generation = databaseGeneration
+        let detail: String? = job ? "job" : requestText.map { _ in "dove" }
         if rawURL.isEmpty {
             return deadLetter(event, error: "webhook_not_configured", attempts: 0, kind: kind, detail: detail)
         }
@@ -761,14 +777,17 @@ package actor GenieEngine {
                 v: 1, event: "message", idempotencyKey: event.guid, guid: event.guid,
                 chatID: chatID, text: text, createdAt: event.createdAt,
                 senderIsMe: senderIsMe, senderName: senderName,
-                senderHandle: sharedSenderHandle()
+                senderHandle: sharedSenderHandle(),
+                trigger: job ? nil : trigger, requestText: requestText
             )
             return try payload.encodeData()
         }
         do { _ = try encodePayload() }
         catch { return deadLetter(event, error: "webhook_encode_failed", attempts: 0, kind: kind, detail: detail) }
         if !event.guid.isEmpty {
-            rememberRoute(guid: event.guid, chatID: chatID, addressee: replyAddressee(event, chatID: chatID))
+            rememberRoute(guid: event.guid, chatID: chatID, addressee: replyAddressee(event, chatID: chatID),
+                          trigger: trigger == .dove ? trigger.rawValue : nil,
+                          chatGUIDHash: doveGUID.map { SHA256.hex(Data($0.utf8)) })
             if !persist() {
                 return .blocked
             }
@@ -783,8 +802,10 @@ package actor GenieEngine {
             if paused {
                 return .deferredPaused
             }
-            if !allowsReceive(chatID, guid: event.chatGUID) {
-                log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
+            if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
+                log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id,
+                           detail: trigger == .dove ? "dove" : nil)
                 return finish(event, .ignoredNotAllowed)
             }
             let token: String
@@ -810,8 +831,10 @@ package actor GenieEngine {
             if paused {
                 return .deferredPaused
             }
-            if !allowsReceive(chatID, guid: event.chatGUID) {
-                log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
+            if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
+                log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id,
+                           detail: trigger == .dove ? "dove" : nil)
                 return finish(event, .ignoredNotAllowed)
             }
             let body: Data
@@ -828,6 +851,7 @@ package actor GenieEngine {
                     body: body,
                     idempotencyKey: event.guid
                 )
+                if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
                 if (200...299).contains(response.statusCode) {
                     lastError = nil
                     log.record(level: .info, code: "webhook_delivered", chatID: chatID, guid: event.guid, rowid: event.id, detail: detail)
@@ -838,6 +862,7 @@ package actor GenieEngine {
                     return deadLetter(event, error: last, attempts: attempt, kind: kind, detail: detail)
                 }
             } catch {
+                if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
                 last = "webhook_transport"
             }
             if attempt < maxAttempts {
@@ -924,14 +949,15 @@ package actor GenieEngine {
             return
         }
         let chatID = route.chatID
-        if !allowsSend(chatID) {
+        let trigger: ReplyTrigger = route.trigger == ReplyTrigger.dove.rawValue ? .dove : .lamp
+        if trigger == .lamp && !allowsSend(chatID) {
             log.record(level: .info, code: "reply_chat_disabled", chatID: chatID, guid: nil, rowid: nil)
             markReplyHandled(reply.id)
             persist()
             return
         }
         let body: String
-        switch ReplyComposer.split(body: reply.text, marker: config.replyMarker) {
+        switch ReplyComposer.split(body: reply.text, marker: config.replyMarker, stripDove: trigger == .dove) {
         case .emptyBody:
             markReplyHandled(reply.id)
             persisted.partialReplies.removeAll { $0.replyID == reply.id }
@@ -948,6 +974,7 @@ package actor GenieEngine {
         case .send(let value):
             let candidate = ReplyComposer.withAddressee(route.addressee, to: value)
             body = Signal.matches(candidate) || ReplyComposer.isReplyMarker(candidate, marker: config.replyMarker)
+                || (trigger == .dove && DoveSignal.matches(candidate))
                 ? value : candidate
         }
 
@@ -975,7 +1002,7 @@ package actor GenieEngine {
             reserved: false,
             pauseReason: .appleEventNotStarted,
             createdAt: created,
-            originGUID: origin
+            origin: trigger == .dove ? .dove(chatGUIDHash: route.chatGUIDHash) : .lamp
         )
     }
 
@@ -988,7 +1015,7 @@ package actor GenieEngine {
         reserved: Bool,
         pauseReason: HoldReason,
         createdAt: Date,
-        originGUID: String
+        origin: SendOrigin
     ) async {
         if !reserved {
             guard inFlightReplyIDs.insert(replyID).inserted else { return }
@@ -1002,30 +1029,30 @@ package actor GenieEngine {
         if part == .marker {
             await sendMarker(
                 replyID: replyID, chatID: chatID, body: body, attempts: attempts,
-                pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID
+                pauseReason: pauseReason, createdAt: createdAt, origin: origin
             )
         } else {
             await sendBody(
                 replyID: replyID, chatID: chatID, body: body, attempts: attempts,
-                pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID
+                pauseReason: pauseReason, createdAt: createdAt, origin: origin
             )
         }
     }
 
     private func sendMarker(
         replyID: String, chatID: Int64, body: String, attempts: Int, pauseReason: HoldReason,
-        createdAt: Date, originGUID: String
+        createdAt: Date, origin: SendOrigin
     ) async {
-        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
+        guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, origin: origin) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
-                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
             return
         }
         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "marker"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
             return
         }
         let generation = databaseGeneration
@@ -1033,22 +1060,22 @@ package actor GenieEngine {
         noteLock(locked)
         guard generation == databaseGeneration else { return }
         refreshConfig()
-        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
+        guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, origin: origin) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
-                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
             return
         }
         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "marker"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
             return
         }
         if locked == .locked {
             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: .screenLocked,
-                 attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: first, createdAt: createdAt, origin: origin)
             if first { lastError = "screen_locked" }
             return
         }
@@ -1061,26 +1088,30 @@ package actor GenieEngine {
                 sendLog(replyID: replyID, level: .error, code: "rate_limited", chatID: chatID, guid: nil, rowid: nil)
             }
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: .rateLimited,
-                 attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: false, createdAt: createdAt, origin: origin)
             return
         }
         let reservedAt = clock.now()
         countRate(chatID: chatID, at: reservedAt)
         var attempt: MarkerAttempt
-        switch MarkerImage.check(markerImage.markerImageURL()) {
-        case .usable(let path):
-            noticeLog.resolve(["marker_image_unavailable"])
-            attempt = .image(path: path)
-        case .unavailable(let reason):
-            if noticeLog.shouldLog("marker_image_unavailable") {
-                sendLog(replyID: replyID, level: .warning, code: "marker_image_unavailable", chatID: chatID,
-                           guid: nil, rowid: nil, detail: reason.rawValue)
+        if case .dove = origin {
+            attempt = .text(DoveSignal.marker)
+        } else {
+            switch MarkerImage.check(markerImage.markerImageURL()) {
+            case .usable(let path):
+                noticeLog.resolve(["marker_image_unavailable"])
+                attempt = .image(path: path)
+            case .unavailable(let reason):
+                if noticeLog.shouldLog("marker_image_unavailable") {
+                    sendLog(replyID: replyID, level: .warning, code: "marker_image_unavailable", chatID: chatID,
+                               guid: nil, rowid: nil, detail: reason.rawValue)
+                }
+                attempt = .text(config.replyMarker)
             }
-            attempt = .text(config.replyMarker)
         }
 
         while true {
-            if isOutbound(replyID) { refreshConfig() }
+            if isOutbound(replyID) || DoveSignal.matches(body) { refreshConfig() }
             let text: String
             if case .text(let marker) = attempt {
                 text = marker
@@ -1094,7 +1125,7 @@ package actor GenieEngine {
                 rollbackIntent(replyID: replyID)
                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                     createdAt: createdAt, originGUID: originGUID)
+                     createdAt: createdAt, origin: origin)
                 return
             }
             if paused || stop.isStopped {
@@ -1102,9 +1133,10 @@ package actor GenieEngine {
                 rollbackIntent(replyID: replyID)
                 persist()
                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body, reason: pauseReason,
-                     attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                     attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
                 return
             }
+            if origin == .lamp && DoveSignal.matches(body) { refreshConfig() }
             if !allowsSend(chatID) {
                 releaseRate(chatID: chatID, at: reservedAt)
                 rollbackIntent(replyID: replyID)
@@ -1116,11 +1148,12 @@ package actor GenieEngine {
                 rollbackIntent(replyID: replyID)
                 persist()
                 restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                    reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                    reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
                 return
             }
 
-            guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else {
+            if origin != .lamp { refreshConfig() }
+            guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .marker, attempts: attempts, createdAt: createdAt, origin: origin) else {
                 releaseRate(chatID: chatID, at: reservedAt)
                 rollbackIntent(replyID: replyID)
                 persist()
@@ -1161,17 +1194,19 @@ package actor GenieEngine {
                 guard persist() else {
                     hold(replyID: replyID, chatID: chatID, part: .body, body: body,
                          reason: .appleEventNotStarted, attempts: 1, logIt: false,
-                         createdAt: createdAt, originGUID: originGUID)
+                         createdAt: createdAt, origin: origin)
                     return
                 }
-                sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
-                           rowid: receipt.id, detail: attempt.detail)
+                let isDoveMarker = text == DoveSignal.marker
+                sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID,
+                           guid: isDoveMarker ? nil : receipt.guid, rowid: receipt.id,
+                           detail: isDoveMarker ? "dove" : attempt.detail)
                 await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: 1,
-                               pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+                               pauseReason: pauseReason, createdAt: createdAt, origin: origin)
                 return
             case .success:
                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                    failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                    failure: .uncertain, attempts: attempts, createdAt: createdAt, origin: origin,
                     detail: attempt.detail, rateAt: reservedAt)
                 return
             case .failure(.failed) where attempt.kind == .image:
@@ -1181,7 +1216,7 @@ package actor GenieEngine {
                 attempt = .text(config.replyMarker)
             case .failure(let failure):
                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                    failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
+                    failure: failure, attempts: attempts, createdAt: createdAt, origin: origin,
                     detail: attempt.detail, rateAt: reservedAt)
                 return
             }
@@ -1190,7 +1225,7 @@ package actor GenieEngine {
 
     private func handleMarkerFailure(
         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
-        createdAt: Date, originGUID: String, detail: String = "marker", rateAt: Date? = nil
+        createdAt: Date, origin: SendOrigin, detail: String = "marker", rateAt: Date? = nil
     ) async {
         if isOutbound(replyID) && failure != .notStarted {
             if failure == .failed {
@@ -1208,7 +1243,7 @@ package actor GenieEngine {
             hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
                  detail: detail,
-                 createdAt: createdAt, originGUID: originGUID)
+                 createdAt: createdAt, origin: origin)
             if attempts == 1 { lastError = "apple_event_1712" }
             persist()
         case .failed:
@@ -1223,7 +1258,7 @@ package actor GenieEngine {
             } else {
                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                     createdAt: createdAt, originGUID: originGUID)
+                     createdAt: createdAt, origin: origin)
                 persist()
             }
             sendLog(replyID: replyID, level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
@@ -1243,19 +1278,20 @@ package actor GenieEngine {
 
     private func sendBody(
         replyID: String, chatID: Int64, body: String, attempts: Int, pauseReason: HoldReason,
-        createdAt: Date, originGUID: String
+        createdAt: Date, origin: SendOrigin
     ) async {
+        if origin != .lamp || DoveSignal.matches(body) { refreshConfig() }
         if !isOutbound(replyID), !persisted.partialReplies.contains(where: { $0.replyID == replyID }) { return }
-        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
+        guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, origin: origin) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
-                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
             return
         }
         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
-                reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
             return
         }
         let generation = databaseGeneration
@@ -1263,22 +1299,22 @@ package actor GenieEngine {
         noteLock(locked)
         guard generation == databaseGeneration else { return }
         refreshConfig()
-        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
+        guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, origin: origin) else { return }
         if paused || stop.isStopped {
             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
-                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
             return
         }
         guard allowsSend(chatID) else { dropDisabled(replyID: replyID, chatID: chatID, detail: "body"); return }
         if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID) {
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
-                reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
             return
         }
         if locked == .locked {
             let first = attempts == 1 && !holds.contains { $0.replyID == replyID }
             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: .screenLocked,
-                 attempts: attempts, logIt: first, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: first, createdAt: createdAt, origin: origin)
             if first { lastError = "screen_locked" }
             return
         }
@@ -1286,7 +1322,7 @@ package actor GenieEngine {
             guard persist() else {
                 hold(replyID: replyID, chatID: chatID, part: .body, body: body,
                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                     createdAt: createdAt, originGUID: originGUID)
+                     createdAt: createdAt, origin: origin)
                 return
             }
             bodyResendSavePending.remove(replyID)
@@ -1298,17 +1334,18 @@ package actor GenieEngine {
             rollbackIntent(replyID: replyID)
             hold(replyID: replyID, chatID: chatID, part: .body, body: body,
                  reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                 createdAt: createdAt, originGUID: originGUID)
+                 createdAt: createdAt, origin: origin)
             return
         }
-        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else { return }
+        guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, origin: origin) else { return }
         if paused || stop.isStopped {
             rollbackIntent(replyID: replyID)
             persist()
             hold(replyID: replyID, chatID: chatID, part: .body, body: body, reason: pauseReason,
-                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, originGUID: originGUID)
+                 attempts: attempts, logIt: false, immediate: true, createdAt: createdAt, origin: origin)
             return
         }
+        if origin == .lamp && DoveSignal.matches(body) { refreshConfig() }
         if !allowsSend(chatID) {
             rollbackIntent(replyID: replyID)
             dropDisabled(replyID: replyID, chatID: chatID, detail: "body")
@@ -1318,10 +1355,11 @@ package actor GenieEngine {
             rollbackIntent(replyID: replyID)
             persist()
             restoreHoldWhenUnchecked(replyID: replyID, chatID: chatID, part: .body, body: body,
-                reason: pauseReason, attempts: attempts, createdAt: createdAt, originGUID: originGUID)
+                reason: pauseReason, attempts: attempts, createdAt: createdAt, origin: origin)
             return
         }
-        guard outboundSendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, originGUID: originGUID) else {
+        if origin != .lamp { refreshConfig() }
+        guard sendGuard(replyID: replyID, chatID: chatID, body: body, part: .body, attempts: attempts, createdAt: createdAt, origin: origin) else {
             rollbackIntent(replyID: replyID)
             persist()
             return
@@ -1353,31 +1391,32 @@ package actor GenieEngine {
             markReplyHandled(replyID)
             holds.removeAll { $0.replyID == replyID }
             lastError = nil
-            sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: receipt.guid,
+            let loggedGUID: String? = if case .dove = origin { nil } else { receipt.guid }
+            sendLog(replyID: replyID, level: .info, code: "reply_sent", chatID: chatID, guid: loggedGUID,
                        rowid: receipt.id, detail: sendingResend ? "resend" : "body")
             persist()
         case .success:
             await handleBodyFailure(replyID: replyID, chatID: chatID, body: body, failure: .uncertain,
                 attempts: attempts, sendingResend: sendingResend, pauseReason: pauseReason,
-                createdAt: createdAt, originGUID: originGUID)
+                createdAt: createdAt, origin: origin)
         case .failure(.notStarted):
             rollbackIntent(replyID: replyID)
             hold(replyID: replyID, chatID: chatID, part: .body, body: body,
                  reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
                  detail: "body",
-                 createdAt: createdAt, originGUID: originGUID)
+                 createdAt: createdAt, origin: origin)
             if attempts == 1 { lastError = "apple_event_1712" }
             persist()
         case .failure(let failure):
             await handleBodyFailure(replyID: replyID, chatID: chatID, body: body, failure: failure,
                 attempts: attempts, sendingResend: sendingResend, pauseReason: pauseReason,
-                createdAt: createdAt, originGUID: originGUID)
+                createdAt: createdAt, origin: origin)
         }
     }
 
     private func handleBodyFailure(
         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
-        sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, originGUID: String
+        sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, origin: SendOrigin
     ) async {
         if isOutbound(replyID) {
             terminateOutbound(replyID,
@@ -1399,12 +1438,12 @@ package actor GenieEngine {
             guard persist() else {
                 hold(replyID: replyID, chatID: chatID, part: .body, body: body,
                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                     createdAt: createdAt, originGUID: originGUID)
+                     createdAt: createdAt, origin: origin)
                 return
             }
             bodyResendSavePending.remove(replyID)
             await sendBody(replyID: replyID, chatID: chatID, body: body, attempts: attempts + 1,
-                           pauseReason: pauseReason, createdAt: createdAt, originGUID: originGUID)
+                           pauseReason: pauseReason, createdAt: createdAt, origin: origin)
         case .deadLetter:
             persisted.partialReplies.removeAll { $0.replyID == replyID }
             holds.removeAll { $0.replyID == replyID }
@@ -1424,10 +1463,11 @@ package actor GenieEngine {
     /// そのトークの guid を一覧で確かめられたときだけ送る。
     /// 一覧が空、その id が無い、取得に失敗、guid が違う、のいずれも送らない。
     /// 理由はメニューとログに出す。番号、メール、識別子は出さない。
-    private func rejectMismatchedChatGuid(replyID: String, chatID: Int64) -> Bool {
+    private func rejectMismatchedChatGuid(replyID: String, chatID: Int64, doveGUID: String? = nil) -> Bool {
         if isOutbound(replyID) { return !outboundAuthorizationMatches(replyID: replyID, chatID: chatID) }
         let current = directoryGUIDs[chatID] ?? ""
         var expected = configGroups.expectedGUIDs(for: chatID)
+        if let doveGUID { expected.append(doveGUID) }
         if let entry = allowlist.entries.first(where: { $0.id == chatID }) {
             expected.append(entry.guid)
         }
@@ -1480,14 +1520,15 @@ package actor GenieEngine {
         logListCode(code)
     }
 
-    private func dropDisabled(replyID: String, chatID: Int64, detail: String? = nil) {
+    private func dropDisabled(replyID: String, chatID: Int64, detail: String? = nil, code: String = "reply_chat_disabled") {
         if isOutbound(replyID) { terminateOutbound(replyID, code: "outbound_chat_disabled"); return }
         holds.removeAll { $0.replyID == replyID }
         persisted.partialReplies.removeAll { $0.replyID == replyID }
         bodyResendSavePending.remove(replyID)
         markReplyHandled(replyID)
-        lastError = "reply_chat_disabled"
-        log.record(level: .info, code: "reply_chat_disabled", chatID: chatID, guid: nil, rowid: nil, detail: detail)
+        lastError = code
+        log.record(level: code == "reply_still_matches_dove" ? .error : .info, code: code,
+                   chatID: chatID, guid: nil, rowid: nil, detail: detail)
         persist()
     }
 
@@ -1500,7 +1541,7 @@ package actor GenieEngine {
         reason: HoldReason,
         attempts: Int,
         createdAt: Date,
-        originGUID: String
+        origin: SendOrigin
     ) {
         guard !directoryChecked else { return }
         hold(
@@ -1513,7 +1554,7 @@ package actor GenieEngine {
             logIt: false,
             immediate: true,
             createdAt: createdAt,
-            originGUID: originGUID
+            origin: origin
         )
     }
 
@@ -1528,7 +1569,7 @@ package actor GenieEngine {
         immediate: Bool = false,
         detail: String? = nil,
         createdAt: Date,
-        originGUID: String
+        origin: SendOrigin
     ) {
         holds.removeAll { $0.replyID == replyID }
         let delay = immediate ? 0 : config.holdRetryIntervalSeconds
@@ -1542,7 +1583,7 @@ package actor GenieEngine {
                 attempts: attempts,
                 nextAttemptAt: clock.now().addingTimeInterval(delay),
                 createdAt: createdAt,
-                originGUID: originGUID
+                origin: origin
             )
         )
         if logIt {
@@ -1853,7 +1894,19 @@ package actor GenieEngine {
         allowlist.contains(id) || configGroups.permitsSend(id)
     }
 
+    private func isDoveChat(_ id: Int64, guid: String? = nil) -> Bool {
+        guard directoryChecked, let expected = configGroups.resolved[id],
+              config.doveChatGUIDs.contains(expected) else { return false }
+        return configGroups.permitsReceive(id, guid: guid)
+    }
+
     private func noteConfigGroups() {
+        let unmatched = Set(config.doveChatGUIDs).subtracting(config.groupChatGUIDs).count
+        let doveCode = "dove_chat_not_in_groups"
+        if unmatched == 0 { noticeLog.resolve([doveCode]) }
+        else if noticeLog.shouldLog(doveCode) {
+            log.record(level: .warning, code: doveCode, chatID: nil, guid: nil, rowid: nil, detail: String(unmatched))
+        }
         for (code, count) in [("group_chat_not_found", configGroups.notFound), ("group_chat_not_group", configGroups.notGroup)] {
             if count == 0 { noticeLog.resolve([code]) }
             else if noticeLog.shouldLog(code) {
@@ -1887,12 +1940,13 @@ package actor GenieEngine {
         }
     }
 
-    private func rememberRoute(guid: String, chatID: Int64, addressee: String? = nil) {
+    private func rememberRoute(guid: String, chatID: Int64, addressee: String? = nil, trigger: String? = nil, chatGUIDHash: String? = nil) {
         let now = clock.now()
         persisted.routes.removeAll {
             $0.guid == guid || now.timeIntervalSince($0.at) > config.routeTTLSeconds
         }
-        persisted.routes.append(MessageRoute(guid: guid, chatID: chatID, at: now, addressee: addressee))
+        persisted.routes.append(MessageRoute(guid: guid, chatID: chatID, at: now, addressee: addressee, trigger: trigger,
+                                             chatGUIDHash: chatGUIDHash))
         if persisted.routes.count > 5000 {
             persisted.routes.removeFirst(persisted.routes.count - 5000)
         }
@@ -2172,6 +2226,7 @@ extension GenieEngine {
         let keyHash = entry.idempotencyKey.map { OutboundHash.digest(kind: "key", values: [$0]) }
         let raw = TextNormalizer.nfc(entry.text ?? "")
         let validated = outboundBody(raw)
+        let rawDove = DoveSignal.matches(raw)
         let body = validated.body ?? raw
         let signature = OutboundHash.digest(kind: "signature", values: [entry.target?.rawValue ?? "", body])
         if let index = persisted.outbound.records.firstIndex(where: { $0.pageHashes.contains(pageHash) }) {
@@ -2182,7 +2237,7 @@ extension GenieEngine {
                 terminateOutbound(record.id, code: "outbound_idempotency_conflict")
                 return
             }
-            await resumeOutbound(record.id, body: body)
+            await resumeOutbound(record.id, body: body, rawDove: rawDove)
             return
         }
         if let keyHash, let index = persisted.outbound.records.firstIndex(where: { $0.keyHash == keyHash }) {
@@ -2211,6 +2266,10 @@ extension GenieEngine {
         if entry.idempotencyKey == nil || created.timeIntervalSince(clock.now()) > 60 {
             rejection = "outbound_bad_entry"
         }
+        if rejection == nil, entry.target == .family, rawDove || DoveSignal.matches(body),
+           directoryChecked, configGroups.resolved.values.contains(targetGUID), config.doveChatGUIDs.contains(targetGUID) {
+            rejection = "outbound_dove_body"
+        }
         let duplicate = validated.body != nil && rejection == nil && persisted.outbound.records.contains { record in
             record.terminalCode != "outbound_duplicate_body" &&
             record.destinationHash == destination && record.bodyHash == bodyHash &&
@@ -2223,15 +2282,24 @@ extension GenieEngine {
             destinationHash: destination, bodyHash: bodyHash, selfEvidenceKind: nil, chatID: nil,
             createdAt: created, expiresAt: created.addingTimeInterval(Double(config.outboundMaxAgeSeconds)),
             stage: .reserved)
-        if let rejection { record.stage = .terminal; record.terminalCode = rejection; record.terminalAt = clock.now() }
+        if let rejection {
+            record.stage = .terminal
+            record.terminalCode = rejection
+            record.terminalAt = clock.now()
+            record.deadLetterPending = rejection == "outbound_dove_body"
+        }
         persisted.outbound.records.append(record)
         guard persist() else {
             outboundPersistenceBlocked = true
             outboundLog("outbound_state_save_failed")
             return
         }
-        if let rejection { outboundLog(rejection); return }
-        await resumeOutbound(id, body: body)
+        if let rejection {
+            if rejection == "outbound_dove_body" { retryOutboundDeadLetters() }
+            outboundLog(rejection)
+            return
+        }
+        await resumeOutbound(id, body: body, rawDove: rawDove)
     }
 
     private func outboundBody(_ raw: String) -> (body: String?, error: String?) {
@@ -2337,7 +2405,7 @@ extension GenieEngine {
         return true
     }
 
-    private func resumeOutbound(_ id: String, body raw: String) async {
+    private func resumeOutbound(_ id: String, body raw: String, rawDove: Bool) async {
         guard let index = outboundRecordIndex(id), !inFlightReplyIDs.contains(id),
               !holds.contains(where: { $0.replyID == id }), persisted.outbound.records[index].stage != .terminal else { return }
         let record = persisted.outbound.records[index]
@@ -2367,7 +2435,7 @@ extension GenieEngine {
             await performSend(replyID: id, chatID: chatID,
                 part: record.stage == .bodyReady ? .body : .marker, body: body,
                 attempts: 1, reserved: false, pauseReason: .appleEventNotStarted,
-                createdAt: record.createdAt, originGUID: "")
+                createdAt: record.createdAt, origin: .outbound(rawDove: rawDove))
         }
     }
 
@@ -2381,9 +2449,41 @@ extension GenieEngine {
         return false
     }
 
-    private func outboundSendGuard(replyID: String, chatID: Int64, body: String, part: SendPart,
-        attempts: Int, createdAt: Date, originGUID: String) -> Bool {
-        guard let index = outboundRecordIndex(replyID) else { return true }
+    private func sendGuard(replyID: String, chatID: Int64, body: String, part: SendPart,
+        attempts: Int, createdAt: Date, origin: SendOrigin) -> Bool {
+        switch origin {
+        case .dove(let chatGUIDHash):
+            guard let guid = config.doveChatGUIDs.first(where: {
+                config.groupChatGUIDs.contains($0) && SHA256.hex(Data($0.utf8)) == chatGUIDHash
+            }) else {
+                dropDisabled(replyID: replyID, chatID: chatID, code: "reply_dove_chat_disabled")
+                return false
+            }
+            if rejectMismatchedChatGuid(replyID: replyID, chatID: chatID, doveGUID: guid) {
+                if !persisted.handledReplyIDs.contains(replyID) {
+                    hold(replyID: replyID, chatID: chatID, part: part, body: body, reason: .appleEventNotStarted,
+                        attempts: attempts, logIt: false, createdAt: createdAt, origin: origin)
+                }
+                return false
+            }
+            guard isDoveChat(chatID, guid: guid) else {
+                dropDisabled(replyID: replyID, chatID: chatID, code: "reply_dove_chat_disabled")
+                return false
+            }
+            return true
+        case .lamp:
+            if isDoveChat(chatID) && DoveSignal.matches(body) {
+                dropDisabled(replyID: replyID, chatID: chatID, code: "reply_still_matches_dove")
+                return false
+            }
+            return true
+        case .outbound(let rawDove):
+            if isDoveChat(chatID) && (rawDove || DoveSignal.matches(body)) {
+                terminateOutbound(replyID, code: "outbound_dove_body", deadLetter: true)
+                return false
+            }
+        }
+        guard let index = outboundRecordIndex(replyID) else { return false }
         let record = persisted.outbound.records[index]
         guard !outboundPersistenceBlocked, record.stage != .terminal else { return false }
         guard clock.now() < record.expiresAt else { terminateOutbound(replyID, code: "outbound_expired"); return false }
@@ -2394,7 +2494,7 @@ extension GenieEngine {
         case .reject(let code): terminateOutbound(replyID, code: code); return false
         case .hold:
             hold(replyID: replyID, chatID: chatID, part: part, body: body, reason: .appleEventNotStarted,
-                attempts: attempts, logIt: false, createdAt: createdAt, originGUID: originGUID)
+                attempts: attempts, logIt: false, createdAt: createdAt, origin: origin)
             return false
         case .ready(let current, let evidence):
             guard current == chatID, outboundEvidenceMatches(replyID, target: record.target, current: evidence) else {

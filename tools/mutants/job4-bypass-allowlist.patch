@@ -1,29 +1,29 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -615,7 +615,7 @@
-         if !Signal.matches(normalized) {
+@@ -681,7 +681,7 @@
+         } else {
              return finish(event, .ignoredNoSignal)
          }
 -        guard let chatID = event.chatID, allowsReceive(chatID, guid: event.chatGUID) else {
-+        guard let chatID = event.chatID, (allowsReceive(chatID, guid: event.chatGUID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty)) else {
++        guard let chatID = event.chatID, allowsReceive(chatID, guid: event.chatGUID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty) else {
              return finish(event, .ignoredNotAllowed)
          }
          if let key = SenderHandle.normalize(event.destinationCallerID) {
-@@ -704,7 +704,7 @@
-             if paused {
+@@ -803,7 +803,7 @@
                  return .deferredPaused
              }
--            if !allowsReceive(chatID, guid: event.chatGUID) {
-+            if !(allowsReceive(chatID, guid: event.chatGUID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty)) {
-                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
+             if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+-            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
++            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !(allowsReceive(chatID, guid: event.chatGUID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty)) {
+                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id,
+                            detail: trigger == .dove ? "dove" : nil)
                  return finish(event, .ignoredNotAllowed)
-             }
-@@ -731,7 +731,7 @@
-             if paused {
+@@ -832,7 +832,7 @@
                  return .deferredPaused
              }
--            if !allowsReceive(chatID, guid: event.chatGUID) {
-+            if !(allowsReceive(chatID, guid: event.chatGUID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty)) {
-                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id)
+             if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+-            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
++            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !(allowsReceive(chatID, guid: event.chatGUID) || (config.jobChatIDs.contains(chatID) && !config.jobWebhookURL.isEmpty)) {
+                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id,
+                            detail: trigger == .dove ? "dove" : nil)
                  return finish(event, .ignoredNotAllowed)
-             }

@@ -1,0 +1,29 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -674,7 +674,7 @@
+         let requestText: String?
+         if Signal.matches(normalized) {
+             requestText = nil
+-        } else if let chatID = event.chatID, isDoveChat(chatID, guid: event.chatGUID) {
++        } else if let chatID = event.chatID, allowsReceive(chatID, guid: event.chatGUID) {
+             let dove = DoveSignal.scan(normalized)
+             guard dove.matched else { return finish(event, .ignoredNoSignal) }
+             requestText = dove.remainder
+@@ -803,7 +803,7 @@
+                 return .deferredPaused
+             }
+             if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+-            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
++            if trigger == .dove ? !allowsReceive(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
+                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id,
+                            detail: trigger == .dove ? "dove" : nil)
+                 return finish(event, .ignoredNotAllowed)
+@@ -832,7 +832,7 @@
+                 return .deferredPaused
+             }
+             if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+-            if trigger == .dove ? !isDoveChat(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
++            if trigger == .dove ? !allowsReceive(chatID, guid: doveGUID) : !allowsReceive(chatID, guid: event.chatGUID) {
+                 log.record(level: .info, code: "webhook_chat_disabled", chatID: chatID, guid: event.guid, rowid: event.id,
+                            detail: trigger == .dove ? "dove" : nil)
+                 return finish(event, .ignoredNotAllowed)

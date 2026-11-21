@@ -25,5 +25,6 @@
   "sender_names": {},
   "self_chat_ids": [],
   "group_chat_guids": [],
+  "dove_chat_guids": [],
   "reply_marker": "🧞‍♂️"
 }

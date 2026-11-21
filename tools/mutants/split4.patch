@@ -1,38 +1,6 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1173,71 +1173,71 @@
-                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                     failure: .uncertain, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
-                     detail: attempt.detail, rateAt: reservedAt)
-                 return
-             case .failure(.failed) where attempt.kind == .image:
-                 sendLog(replyID: replyID, level: .warning, code: "marker_image_failed", chatID: chatID,
-                            guid: nil, rowid: nil)
-                 rollbackIntent(replyID: replyID)
-                 attempt = .text(config.replyMarker)
-             case .failure(let failure):
-                 await handleMarkerFailure(replyID: replyID, chatID: chatID, body: body,
-                     failure: failure, attempts: attempts, createdAt: createdAt, originGUID: originGUID,
-                     detail: attempt.detail, rateAt: reservedAt)
-                 return
-             }
-         }
-     }
- 
-     private func handleMarkerFailure(
-         replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
-         createdAt: Date, originGUID: String, detail: String = "marker", rateAt: Date? = nil
-     ) async {
-         if isOutbound(replyID) && failure != .notStarted {
-             if failure == .failed {
-                 let at = persisted.pendingSends.first(where: { $0.replyID == replyID })?.at ?? rateAt
-                 if let at { releaseRate(chatID: chatID, at: at) }
-             }
-             terminateOutbound(replyID, code: failure == .failed ? "outbound_send_failed" : "outbound_send_uncertain", deadLetter: true)
-             return
-         }
-         let pending = persisted.pendingSends.first { $0.replyID == replyID }
-         switch failure {
+@@ -1234,7 +1234,7 @@
          case .notStarted:
              if let at = pending?.at ?? rateAt { releaseRate(chatID: chatID, at: at) }
              rollbackIntent(replyID: replyID)
@@ -40,36 +8,4 @@
 +            hold(replyID: replyID, chatID: chatID, part: .marker, body: "",
                   reason: .appleEventNotStarted, attempts: attempts, logIt: attempts == 1,
                   detail: detail,
-                  createdAt: createdAt, originGUID: originGUID)
-             if attempts == 1 { lastError = "apple_event_1712" }
-             persist()
-         case .failed:
-             if let pending { releaseRate(chatID: chatID, at: pending.at) }
-             rollbackIntent(replyID: replyID)
-             holds.removeAll { $0.replyID == replyID }
-             if recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: "send_failed") {
-                 finishIntent(replyID: replyID)
-                 markReplyHandled(replyID)
-                 persist()
-                 lastError = "send_failed"
-             } else {
-                 hold(replyID: replyID, chatID: chatID, part: .marker, body: body,
-                      reason: .appleEventNotStarted, attempts: attempts, logIt: false,
-                      createdAt: createdAt, originGUID: originGUID)
-                 persist()
-             }
-             sendLog(replyID: replyID, level: .error, code: "send_failed", chatID: chatID, guid: nil, rowid: nil, detail: detail)
-         case .uncertain:
-             holds.removeAll { $0.replyID == replyID }
-             markReplyHandled(replyID)
-             let wrote = recordReplyDeadLetter(replyID: replyID, chatID: chatID, error: "send_uncertain")
-             if wrote { finishIntent(replyID: replyID) }
-             else if let index = persisted.pendingSends.firstIndex(where: { $0.replyID == replyID }) {
-                 persisted.pendingSends[index].rateCounted = true
-             }
-             if wrote { lastError = "send_uncertain" }
-             sendLog(replyID: replyID, level: .error, code: "send_uncertain", chatID: chatID, guid: nil, rowid: nil, detail: detail)
-             persist()
-         }
-     }
- 
+                  createdAt: createdAt, origin: origin)

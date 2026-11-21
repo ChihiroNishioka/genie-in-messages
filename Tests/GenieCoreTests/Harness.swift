@@ -23,14 +23,16 @@ final class FakeWebhook: WebhookPosting, @unchecked Sendable {
     var secrets: [String] = []
     var bodies: [Data] = []
     var urls: [URL] = []
+    var idempotencyKeys: [String] = []
+    var onPost: (() async -> Void)?
     func post(url: URL, secret: String, body: Data, idempotencyKey: String) async throws -> WebhookHTTPResult {
         urls.append(url)
         secrets.append(secret)
         bodies.append(body)
-        if results.isEmpty {
-            return WebhookHTTPResult(statusCode: 200)
-        }
-        return try results.removeFirst().get()
+        idempotencyKeys.append(idempotencyKey)
+        let result = results.isEmpty ? .success(WebhookHTTPResult(statusCode: 200)) : results.removeFirst()
+        await onPost?()
+        return try result.get()
     }
 }
 
@@ -203,9 +205,11 @@ final class Harness {
 final class RecordingStateStore: StatePersisting, @unchecked Sendable {
     let memory: MemoryStateStore
     private(set) var saves: [PersistedState] = []
+    private let onSave: (PersistedState) throws -> Void
 
-    init(state: PersistedState = .empty) {
+    init(state: PersistedState = .empty, onSave: @escaping (PersistedState) throws -> Void = { _ in }) {
         memory = MemoryStateStore(state: state)
+        self.onSave = onSave
     }
 
     func load() throws -> PersistedState { try memory.load() }
@@ -213,6 +217,7 @@ final class RecordingStateStore: StatePersisting, @unchecked Sendable {
     func save(_ state: PersistedState) throws {
         try memory.save(state)
         saves.append(state)
+        try onSave(state)
     }
 
     func appendDeadLetter(_ entry: DeadLetterEntry) throws {
@@ -221,25 +226,29 @@ final class RecordingStateStore: StatePersisting, @unchecked Sendable {
 }
 
 final class FailNextSaveStateStore: StatePersisting, @unchecked Sendable {
-    let memory: MemoryStateStore
+    private let store: any StatePersisting
     var failNextSave = false
 
-    init(memory: MemoryStateStore) {
-        self.memory = memory
+    convenience init(memory: MemoryStateStore) {
+        self.init(store: memory)
     }
 
-    func load() throws -> PersistedState { try memory.load() }
+    init(store: any StatePersisting) {
+        self.store = store
+    }
+
+    func load() throws -> PersistedState { try store.load() }
 
     func save(_ state: PersistedState) throws {
         if failNextSave {
             failNextSave = false
             throw StateError.corrupt
         }
-        try memory.save(state)
+        try store.save(state)
     }
 
     func appendDeadLetter(_ entry: DeadLetterEntry) throws {
-        try memory.appendDeadLetter(entry)
+        try store.appendDeadLetter(entry)
     }
 }
 

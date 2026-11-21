@@ -1,0 +1,10 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -862,7 +862,6 @@
+                     return deadLetter(event, error: last, attempts: attempt, kind: kind, detail: detail)
+                 }
+             } catch {
+-                if trigger == .dove, generation != databaseGeneration { return .ignoredDatabaseReset }
+                 last = "webhook_transport"
+             }
+             if attempt < maxAttempts {

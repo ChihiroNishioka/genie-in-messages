@@ -40,9 +40,12 @@ struct WebhookPayload: Encodable {
     var senderIsMe: Bool
     var senderName: String
     var senderHandle: String? = nil
+    var trigger: ReplyTrigger? = nil
+    var requestText: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case v, event, guid, text
+        case v, event, guid, text, trigger
+        case requestText = "request_text"
         case idempotencyKey = "idempotency_key"
         case chatID = "chat_id"
         case createdAt = "created_at"

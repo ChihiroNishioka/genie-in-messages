@@ -624,7 +624,7 @@ private let deviceChatsNDJSON = """
 
 private let payloadKeys: Set<String> = [
     "v", "event", "idempotency_key", "guid", "chat_id", "text", "created_at",
-    "sender_is_me", "sender_name",
+    "sender_is_me", "sender_name", "trigger",
 ]
 
 private struct DecodedPayload {

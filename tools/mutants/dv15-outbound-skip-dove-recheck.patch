@@ -1,0 +1,16 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -2471,11 +2471,8 @@
+                 return false
+             }
+             return true
+-        case .outbound(let rawDove):
+-            if isDoveChat(chatID) && (rawDove || DoveSignal.matches(body)) {
+-                terminateOutbound(replyID, code: "outbound_dove_body", deadLetter: true)
+-                return false
+-            }
++        case .outbound:
++            break
+         }
+         guard let index = outboundRecordIndex(replyID) else { return false }
+         let record = persisted.outbound.records[index]

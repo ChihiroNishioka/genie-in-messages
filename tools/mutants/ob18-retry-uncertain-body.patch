@@ -1,8 +1,8 @@
 --- a/Sources/GenieCore/Engine.swift
 +++ b/Sources/GenieCore/Engine.swift
-@@ -1379,7 +1379,7 @@
+@@ -1409,7 +1409,7 @@
          replyID: String, chatID: Int64, body: String, failure: SendFailure, attempts: Int,
-         sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, originGUID: String
+         sendingResend: Bool, pauseReason: HoldReason, createdAt: Date, origin: SendOrigin
      ) async {
 -        if isOutbound(replyID) {
 +        if false && isOutbound(replyID) {

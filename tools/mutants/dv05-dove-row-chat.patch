@@ -1,0 +1,27 @@
+--- a/Sources/GenieCore/Engine.swift
++++ b/Sources/GenieCore/Engine.swift
+@@ -941,13 +941,13 @@
+             persist()
+             return
+         }
+-        if let sourceChat = reply.chatID, sourceChat != route.chatID {
++        if let sourceChat = reply.chatID, sourceChat != route.chatID, route.trigger != ReplyTrigger.dove.rawValue {
+             log.record(level: .error, code: "reply_chat_mismatch", chatID: reply.chatID, guid: nil, rowid: nil)
+             markReplyHandled(reply.id)
+             persist()
+             return
+         }
+-        let chatID = route.chatID
++        let chatID = reply.chatID ?? route.chatID
+         let trigger: ReplyTrigger = route.trigger == ReplyTrigger.dove.rawValue ? .dove : .lamp
+         if trigger == .lamp && !allowsSend(chatID) {
+             log.record(level: .info, code: "reply_chat_disabled", chatID: chatID, guid: nil, rowid: nil)
+@@ -2445,6 +2445,8 @@
+     private func sendGuard(replyID: String, chatID: Int64, body: String, part: SendPart,
+         attempts: Int, createdAt: Date, origin: SendOrigin) -> Bool {
+         switch origin {
++        case .dove where !isDoveChat(chatID):
++            return allowsSend(chatID)
+         case .dove(let chatGUIDHash):
+             guard let guid = config.doveChatGUIDs.first(where: {
+                 config.groupChatGUIDs.contains($0) && SHA256.hex(Data($0.utf8)) == chatGUIDHash

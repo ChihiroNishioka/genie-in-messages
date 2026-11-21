@@ -41,8 +41,34 @@ final class GroupDocumentationTests: XCTestCase {
     func testExampleUsesEmptyGroupsAndDefaultReplyMarker() throws {
         let data = try Data(contentsOf: repoRoot().appendingPathComponent("config.example.json"))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(try ConfigLoader.load(from: repoRoot().appendingPathComponent("config.example.json")).doveChatGUIDs, [])
         XCTAssertEqual(json["group_chat_guids"] as? [String], [])
         XCTAssertEqual(json["reply_marker"] as? String, "🧞‍♂️")
+    }
+
+    func testDV24DoveDocumentationAndExampleAgree() throws {
+        let root = repoRoot()
+        let spec = try String(contentsOf: root.appendingPathComponent("SPEC.md"), encoding: .utf8)
+        let specStart = try XCTUnwrap(spec.range(of: "\n### 4.13 "))
+        let afterSpecHeading = spec[specStart.upperBound...]
+        let nextSpecHeading = afterSpecHeading.range(of: #"\n#{1,3} "#, options: .regularExpression)
+        let specSection = afterSpecHeading[..<(nextSpecHeading?.lowerBound ?? afterSpecHeading.endIndex)]
+        for required in ["`dove_chat_guids`", #"`trigger: "dove"`"#, "Job 経路には `trigger` を付けない"] {
+            XCTAssertTrue(specSection.contains(required), required)
+        }
+        let readme = try String(contentsOf: root.appendingPathComponent("README.md"), encoding: .utf8)
+        XCTAssertTrue(readme.contains("dove_chat_guids"))
+        XCTAssertTrue(readme.contains("trigger"))
+        let afterHeading = try XCTUnwrap(readme.components(separatedBy: "## 家族のグループで 🐦（伝書鳩）を呼ぶ\n").dropFirst().first)
+        let doveSection = try XCTUnwrap(afterHeading.components(separatedBy: "\n## ").first)
+        for required in ["Genie 側は実装済み（モックのテストのみ）",
+                         "受け口ルーチン（Grok Bot 側）は未更新で、別作業です",
+                         "実機では未確認", "](docs/dove-trigger.md)"] {
+            XCTAssertTrue(doveSection.contains(required), required)
+        }
+        let data = try Data(contentsOf: root.appendingPathComponent("config.example.json"))
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(json?["dove_chat_guids"] as? [String], [])
     }
 
     func testSpecRecordsGroupContractAndDecisions() throws {
